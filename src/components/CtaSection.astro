@@ -1,0 +1,59 @@
+---
+import type { CtaConfig } from "../types.js";
+
+interface Props {
+  value: CtaConfig;
+}
+
+const { value } = Astro.props;
+const {
+  headline,
+  body,
+  ctaLabel,
+  ctaUrl,
+  ctaSecondaryLabel,
+  ctaSecondaryUrl,
+  theme = "accent",
+} = value;
+---
+
+<section class={`epx-cta epx-theme--${theme}`}>
+  <div class="epx-cta__inner epx-container">
+    <h2 class="epx-cta__headline">{headline}</h2>
+    {body && <p class="epx-cta__body">{body}</p>}
+    <div class="epx-cta__actions">
+      {ctaLabel && ctaUrl && (
+        <a href={ctaUrl} class="epx-btn epx-btn--primary">{ctaLabel}</a>
+      )}
+      {ctaSecondaryLabel && ctaSecondaryUrl && (
+        <a href={ctaSecondaryUrl} class="epx-btn epx-btn--secondary">{ctaSecondaryLabel}</a>
+      )}
+    </div>
+  </div>
+</section>
+
+<style>
+  .epx-cta { padding: 80px 0; text-align: center; }
+  .epx-container { max-width: 780px; margin: 0 auto; padding: 0 24px; }
+  .epx-cta__headline { font-size: 2.2rem; font-weight: 800; margin: 0 0 16px; }
+  .epx-cta__body { font-size: 1.1rem; opacity: 0.8; max-width: 560px; margin: 0 auto 32px; line-height: 1.6; }
+  .epx-cta__actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  .epx-btn {
+    display: inline-block;
+    padding: 13px 30px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    text-decoration: none;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .epx-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .epx-btn--primary { background: #fff; color: #2563eb; }
+  .epx-btn--secondary { background: transparent; border: 2px solid currentColor; color: inherit; }
+
+  .epx-theme--light { background: #f8f9fb; color: #111; }
+  .epx-theme--light .epx-btn--primary { background: #2563eb; color: #fff; }
+  .epx-theme--dark { background: #111; color: #fff; }
+  .epx-theme--accent { background: #2563eb; color: #fff; }
+</style>

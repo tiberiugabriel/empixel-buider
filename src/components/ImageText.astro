@@ -1,0 +1,77 @@
+---
+import type { ImageTextConfig } from "../types.js";
+
+interface Props {
+  value: ImageTextConfig;
+}
+
+const { value } = Astro.props;
+const {
+  imageUrl,
+  imageAlt = "",
+  headline,
+  body,
+  ctaLabel,
+  ctaUrl,
+  layout = "image-left",
+  theme = "light",
+} = value;
+---
+
+<section class={`epx-image-text epx-theme--${theme}`}>
+  <div class={`epx-image-text__inner epx-container epx-image-text--${layout}`}>
+    <div class="epx-image-text__image-wrap">
+      <img src={imageUrl} alt={imageAlt} class="epx-image-text__img" loading="lazy" />
+    </div>
+    <div class="epx-image-text__content">
+      <h2 class="epx-image-text__headline">{headline}</h2>
+      {body && <p class="epx-image-text__body">{body}</p>}
+      {ctaLabel && ctaUrl && (
+        <a href={ctaUrl} class="epx-btn epx-btn--primary">{ctaLabel}</a>
+      )}
+    </div>
+  </div>
+</section>
+
+<style>
+  .epx-image-text { padding: 80px 0; }
+  .epx-container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+  .epx-image-text__inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+  }
+  .epx-image-text--image-right { direction: rtl; }
+  .epx-image-text--image-right > * { direction: ltr; }
+
+  .epx-image-text__img {
+    width: 100%;
+    height: auto;
+    border-radius: 12px;
+    object-fit: cover;
+    display: block;
+  }
+  .epx-image-text__headline { font-size: 2rem; font-weight: 800; margin: 0 0 16px; }
+  .epx-image-text__body { font-size: 1rem; line-height: 1.7; opacity: 0.75; margin: 0 0 24px; }
+
+  .epx-btn {
+    display: inline-block;
+    padding: 11px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+  .epx-btn:hover { opacity: 0.85; }
+  .epx-btn--primary { background: #2563eb; color: #fff; }
+
+  @media (max-width: 768px) {
+    .epx-image-text__inner { grid-template-columns: 1fr; direction: ltr; }
+    .epx-image-text--image-right .epx-image-text__image-wrap { order: -1; }
+  }
+
+  .epx-theme--light { background: #fff; color: #111; }
+  .epx-theme--dark { background: #111; color: #fff; }
+  .epx-theme--accent { background: #eff6ff; color: #111; }
+</style>

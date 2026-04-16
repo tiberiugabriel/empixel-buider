@@ -1,0 +1,71 @@
+---
+import type { FeaturesGridConfig } from "../types.js";
+import { parseItems } from "../types.js";
+
+interface Props {
+  value: FeaturesGridConfig;
+}
+
+const { value } = Astro.props;
+const {
+  headline,
+  subheadline,
+  columns = "3",
+  theme = "light",
+} = value;
+
+const items = parseItems(value.items);
+---
+
+<section class={`epx-features epx-theme--${theme}`}>
+  <div class="epx-container">
+    {(headline || subheadline) && (
+      <div class="epx-section-header">
+        {headline && <h2 class="epx-section-title">{headline}</h2>}
+        {subheadline && <p class="epx-section-subtitle">{subheadline}</p>}
+      </div>
+    )}
+    <div class={`epx-features__grid epx-features__grid--cols-${columns}`}>
+      {items.map((item) => (
+        <div class="epx-feature-card">
+          {item.icon && <div class="epx-feature-card__icon">{item.icon}</div>}
+          <h3 class="epx-feature-card__title">{item.title}</h3>
+          {item.body && <p class="epx-feature-card__body">{item.body}</p>}
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .epx-features { padding: 80px 0; }
+  .epx-container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+  .epx-section-header { text-align: center; margin-bottom: 48px; }
+  .epx-section-title { font-size: 2rem; font-weight: 800; margin: 0 0 12px; }
+  .epx-section-subtitle { font-size: 1.1rem; opacity: 0.7; max-width: 600px; margin: 0 auto; }
+
+  .epx-features__grid {
+    display: grid;
+    gap: 28px;
+  }
+  .epx-features__grid--cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .epx-features__grid--cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .epx-features__grid--cols-4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 768px) {
+    .epx-features__grid--cols-3,
+    .epx-features__grid--cols-4 { grid-template-columns: 1fr 1fr; }
+    .epx-features__grid--cols-2 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .epx-features__grid { grid-template-columns: 1fr !important; }
+  }
+
+  .epx-feature-card { padding: 28px; border-radius: 12px; background: rgba(0,0,0,0.03); }
+  .epx-feature-card__icon { font-size: 2.2rem; margin-bottom: 14px; }
+  .epx-feature-card__title { font-size: 1.1rem; font-weight: 700; margin: 0 0 8px; }
+  .epx-feature-card__body { font-size: 0.95rem; line-height: 1.6; opacity: 0.75; margin: 0; }
+
+  .epx-theme--light { background: #fff; color: #111; }
+  .epx-theme--dark { background: #111; color: #fff; }
+  .epx-theme--accent { background: #eff6ff; color: #111; }
+</style>

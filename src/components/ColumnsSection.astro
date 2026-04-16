@@ -1,0 +1,68 @@
+---
+import type { ColumnsConfig } from "../types.js";
+
+interface Props {
+  value: ColumnsConfig;
+}
+
+const { value } = Astro.props;
+const {
+  columns = "2",
+  theme = "light",
+  col1Content = "",
+  col2Content = "",
+  col3Content = "",
+} = value;
+
+// Simple paragraph renderer for plain text columns
+function renderContent(text: string) {
+  return text
+    .split(/\n\n+/)
+    .map((para) => para.trim())
+    .filter(Boolean);
+}
+
+const col1Paras = renderContent(col1Content);
+const col2Paras = renderContent(col2Content);
+const col3Paras = columns === "3" ? renderContent(col3Content) : [];
+---
+
+<section class={`epx-columns epx-theme--${theme}`}>
+  <div class={`epx-columns__inner epx-container epx-columns--${columns}`}>
+    <div class="epx-col">
+      {col1Paras.map((p) => <p>{p}</p>)}
+    </div>
+    <div class="epx-col">
+      {col2Paras.map((p) => <p>{p}</p>)}
+    </div>
+    {columns === "3" && (
+      <div class="epx-col">
+        {col3Paras.map((p) => <p>{p}</p>)}
+      </div>
+    )}
+  </div>
+</section>
+
+<style>
+  .epx-columns { padding: 60px 0; }
+  .epx-container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+  .epx-columns__inner { display: grid; gap: 48px; }
+  .epx-columns--2 { grid-template-columns: 1fr 1fr; }
+  .epx-columns--3 { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 768px) {
+    .epx-columns--3 { grid-template-columns: 1fr; }
+    .epx-columns--2 { grid-template-columns: 1fr; }
+  }
+
+  .epx-col p {
+    font-size: 1rem;
+    line-height: 1.75;
+    opacity: 0.8;
+    margin: 0 0 16px;
+  }
+  .epx-col p:last-child { margin-bottom: 0; }
+
+  .epx-theme--light { background: #fff; color: #111; }
+  .epx-theme--dark { background: #111; color: #fff; }
+  .epx-theme--accent { background: #f8f9fb; color: #111; }
+</style>

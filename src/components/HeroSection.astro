@@ -1,0 +1,90 @@
+---
+import type { HeroConfig } from "../types.js";
+
+interface Props {
+  value: HeroConfig;
+}
+
+const { value } = Astro.props;
+const {
+  headline,
+  subheadline,
+  ctaLabel,
+  ctaUrl,
+  ctaSecondaryLabel,
+  ctaSecondaryUrl,
+  backgroundImageUrl,
+  layout = "center",
+  theme = "light",
+  paddingTop = "xl",
+  paddingBottom = "xl",
+} = value;
+---
+
+<section
+  class={`epx-hero epx-hero--${layout} epx-theme--${theme} epx-pt--${paddingTop} epx-pb--${paddingBottom}`}
+  style={backgroundImageUrl ? `background-image: url(${backgroundImageUrl}); background-size: cover; background-position: center;` : ""}
+>
+  <div class="epx-hero__inner epx-container">
+    <div class="epx-hero__content">
+      <h1 class="epx-hero__headline">{headline}</h1>
+      {subheadline && <p class="epx-hero__subheadline">{subheadline}</p>}
+      {(ctaLabel || ctaSecondaryLabel) && (
+        <div class="epx-hero__actions">
+          {ctaLabel && ctaUrl && (
+            <a href={ctaUrl} class="epx-btn epx-btn--primary">{ctaLabel}</a>
+          )}
+          {ctaSecondaryLabel && ctaSecondaryUrl && (
+            <a href={ctaSecondaryUrl} class="epx-btn epx-btn--secondary">{ctaSecondaryLabel}</a>
+          )}
+        </div>
+      )}
+    </div>
+  </div>
+</section>
+
+<style>
+  .epx-hero {
+    position: relative;
+    width: 100%;
+  }
+  .epx-hero__inner { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+  .epx-hero--center .epx-hero__content { text-align: center; max-width: 760px; margin: 0 auto; }
+  .epx-hero--left .epx-hero__content { text-align: left; max-width: 640px; }
+  .epx-hero__headline { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.15; font-weight: 800; margin: 0 0 16px; }
+  .epx-hero__subheadline { font-size: 1.2rem; line-height: 1.6; opacity: 0.8; margin: 0 0 28px; }
+  .epx-hero__actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  .epx-hero--center .epx-hero__actions { justify-content: center; }
+
+  /* Theme */
+  .epx-theme--light { background: #fff; color: #111; }
+  .epx-theme--dark { background: #111; color: #fff; }
+  .epx-theme--accent { background: #2563eb; color: #fff; }
+
+  /* Padding */
+  .epx-pt--none { padding-top: 0; }
+  .epx-pt--sm { padding-top: 32px; }
+  .epx-pt--md { padding-top: 64px; }
+  .epx-pt--lg { padding-top: 96px; }
+  .epx-pt--xl { padding-top: 128px; }
+  .epx-pb--none { padding-bottom: 0; }
+  .epx-pb--sm { padding-bottom: 32px; }
+  .epx-pb--md { padding-bottom: 64px; }
+  .epx-pb--lg { padding-bottom: 96px; }
+  .epx-pb--xl { padding-bottom: 128px; }
+
+  /* Buttons */
+  .epx-btn {
+    display: inline-block;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    text-decoration: none;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .epx-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .epx-btn--primary { background: #2563eb; color: #fff; }
+  .epx-theme--accent .epx-btn--primary { background: #fff; color: #2563eb; }
+  .epx-btn--secondary { background: transparent; color: inherit; border: 2px solid currentColor; }
+</style>
