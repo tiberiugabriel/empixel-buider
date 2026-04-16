@@ -11,7 +11,7 @@ export function empixelBuilder(): PluginDescriptor {
     capabilities: ["read:content"],
     adminPages: [
       {
-        path: "editor",
+        path: "/editor",
         label: "Page Editor",
         icon: "layout",
       },

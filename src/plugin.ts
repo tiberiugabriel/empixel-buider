@@ -84,7 +84,7 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
       entry: "empixel-builder/admin",
       pages: [
         {
-          path: "editor",
+          path: "/editor",
           label: "Page Editor",
         },
       ],
