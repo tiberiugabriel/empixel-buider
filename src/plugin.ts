@@ -5,7 +5,7 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
   return definePlugin({
     id: "empixel-builder",
     version: "0.1.0",
-    capabilities: ["admin:ui", "api:routes"],
+    capabilities: [],
     storage: {
       layouts: {
         indexes: [],
