@@ -2,6 +2,9 @@
   "name": "empixel-builder",
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "empixel-builder": "./src/add.ts"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./plugin": "./src/plugin.ts",
