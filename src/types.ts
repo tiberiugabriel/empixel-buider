@@ -12,7 +12,15 @@ export type BlockType =
   | "gallery"
   | "video"
   | "columns"
-  | "spacer";
+  | "spacer"
+  | "section";
+
+/** Block types that can contain other blocks */
+export const CONTAINER_TYPES: BlockType[] = ["section", "columns"];
+
+export function isContainerType(type: BlockType): boolean {
+  return CONTAINER_TYPES.includes(type);
+}
 
 // ─── Section Block (stored in layout) ─────────────────────────────────────────
 
@@ -21,6 +29,10 @@ export interface SectionBlock {
   type: BlockType;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   config: Record<string, any>;
+  /** Children blocks — for type === "section" */
+  children?: SectionBlock[];
+  /** Slotted children — for type === "columns" (slots[0] = col1, slots[1] = col2, ...) */
+  slots?: SectionBlock[][];
 }
 
 // ─── Page Layout ──────────────────────────────────────────────────────────────
@@ -160,9 +172,19 @@ export interface VideoConfig {
 export interface ColumnsConfig {
   columns?: "2" | "3";
   theme?: "light" | "dark" | "accent";
-  col1Content: string;
-  col2Content: string;
+  /** @deprecated Use slots[] instead */
+  col1Content?: string;
+  /** @deprecated Use slots[] instead */
+  col2Content?: string;
+  /** @deprecated Use slots[] instead */
   col3Content?: string;
+}
+
+export interface SectionConfig {
+  background?: "transparent" | "white" | "light-gray" | "dark" | "accent";
+  paddingTop?: "none" | "sm" | "md" | "lg" | "xl";
+  paddingBottom?: "none" | "sm" | "md" | "lg" | "xl";
+  theme?: "light" | "dark" | "accent";
 }
 
 export interface SpacerConfig {

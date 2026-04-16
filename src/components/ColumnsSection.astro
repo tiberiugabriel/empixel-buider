@@ -1,45 +1,46 @@
 ---
-import type { ColumnsConfig } from "../types.js";
+import type { ColumnsConfig, SectionBlock } from "../types.js";
+import BlockRenderer from "./BlockRenderer.astro";
 
 interface Props {
   value: ColumnsConfig;
+  slots?: SectionBlock[][];
 }
 
-const { value } = Astro.props;
-const {
-  columns = "2",
-  theme = "light",
-  col1Content = "",
-  col2Content = "",
-  col3Content = "",
-} = value;
+const { value, slots } = Astro.props;
+const { columns = "2", theme = "light" } = value;
+const numCols = parseInt(columns, 10);
 
-// Simple paragraph renderer for plain text columns
-function renderContent(text: string) {
-  return text
-    .split(/\n\n+/)
-    .map((para) => para.trim())
-    .filter(Boolean);
+// Use slots (nested block format) if any slot has content
+const useSlots = slots && slots.some((slot) => slot.length > 0);
+
+// Build column data for template
+type ColData = { key: number; blocks: SectionBlock[] | null; legacyText: string };
+const colData: ColData[] = [];
+for (let i = 0; i < numCols; i++) {
+  colData.push({
+    key: i,
+    blocks: useSlots ? (slots![i] ?? []) : null,
+    legacyText: useSlots ? "" : ((value[`col${i + 1}Content` as keyof ColumnsConfig] as string) ?? ""),
+  });
 }
 
-const col1Paras = renderContent(col1Content);
-const col2Paras = renderContent(col2Content);
-const col3Paras = columns === "3" ? renderContent(col3Content) : [];
+function renderParas(text: string) {
+  return text.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+}
 ---
 
 <section class={`epx-columns epx-theme--${theme}`}>
   <div class={`epx-columns__inner epx-container epx-columns--${columns}`}>
-    <div class="epx-col">
-      {col1Paras.map((p) => <p>{p}</p>)}
-    </div>
-    <div class="epx-col">
-      {col2Paras.map((p) => <p>{p}</p>)}
-    </div>
-    {columns === "3" && (
+    {colData.map((col) => (
       <div class="epx-col">
-        {col3Paras.map((p) => <p>{p}</p>)}
+        {col.blocks !== null ? (
+          col.blocks.map((block) => <BlockRenderer block={block} />)
+        ) : (
+          renderParas(col.legacyText).map((p) => <p>{p}</p>)
+        )}
       </div>
-    )}
+    ))}
   </div>
 </section>
 

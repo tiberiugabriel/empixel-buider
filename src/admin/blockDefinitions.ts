@@ -358,6 +358,58 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
   },
 
   {
+    type: "section",
+    label: "Section Container",
+    icon: "📦",
+    description: "Wrapper block that can contain other blocks",
+    defaultConfig: {
+      background: "white",
+      paddingTop: "lg",
+      paddingBottom: "lg",
+      theme: "light",
+    },
+    fields: [
+      {
+        key: "background",
+        label: "Background",
+        type: "select",
+        options: [
+          { value: "transparent", label: "Transparent" },
+          { value: "white", label: "White" },
+          { value: "light-gray", label: "Light Gray" },
+          { value: "dark", label: "Dark" },
+          { value: "accent", label: "Accent Blue" },
+        ],
+      },
+      {
+        key: "paddingTop",
+        label: "Padding Top",
+        type: "select",
+        options: [
+          { value: "none", label: "None" },
+          { value: "sm", label: "Small" },
+          { value: "md", label: "Medium" },
+          { value: "lg", label: "Large" },
+          { value: "xl", label: "Extra Large" },
+        ],
+      },
+      {
+        key: "paddingBottom",
+        label: "Padding Bottom",
+        type: "select",
+        options: [
+          { value: "none", label: "None" },
+          { value: "sm", label: "Small" },
+          { value: "md", label: "Medium" },
+          { value: "lg", label: "Large" },
+          { value: "xl", label: "Extra Large" },
+        ],
+      },
+      THEME_FIELD,
+    ],
+  },
+
+  {
     type: "spacer",
     label: "Spacer",
     icon: "↕️",

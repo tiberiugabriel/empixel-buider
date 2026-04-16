@@ -1,0 +1,35 @@
+---
+import type { SectionBlock, SectionConfig } from "../types.js";
+import BlockRenderer from "./BlockRenderer.astro";
+
+interface Props {
+  value: SectionConfig;
+  children?: SectionBlock[];
+}
+
+const { value, children = [] } = Astro.props;
+const { background = "white", paddingTop = "lg", paddingBottom = "lg" } = value;
+
+const bgMap: Record<string, string> = {
+  transparent: "transparent",
+  white: "#fff",
+  "light-gray": "#f3f4f6",
+  dark: "#111",
+  accent: "#eff6ff",
+};
+
+const spacingMap: Record<string, string> = {
+  none: "0",
+  sm: "32px",
+  md: "48px",
+  lg: "64px",
+  xl: "96px",
+};
+---
+
+<section
+  class={`epx-section-container epx-theme--${value.theme ?? "light"}`}
+  style={`background: ${bgMap[background] ?? "#fff"}; padding-top: ${spacingMap[paddingTop] ?? "64px"}; padding-bottom: ${spacingMap[paddingBottom] ?? "64px"};`}
+>
+  {children.map((child) => <BlockRenderer block={child} />)}
+</section>

@@ -1,10 +1,20 @@
 import React, { useCallback, useEffect, useReducer, useState } from "react";
 import { apiFetch, parseApiResponse } from "emdash/plugin-utils";
 import type { SectionBlock, PageLayout, BlockType } from "../types.js";
+import { isContainerType } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { LeftPanel } from "./LeftPanel.js";
 import { Canvas } from "./Canvas.js";
 import { RightPanel } from "./RightPanel.js";
+import {
+  findBlockById,
+  removeFromTree,
+  updateBlockInTree,
+  addToContainer,
+  reorderInContainer,
+  findPath,
+  insertAtPath,
+} from "./treeUtils.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,7 +43,10 @@ type Action =
   | { type: "SELECT"; id: string | null }
   | { type: "SAVE_START" }
   | { type: "SAVE_SUCCESS" }
-  | { type: "SAVE_ERROR"; error: string };
+  | { type: "SAVE_ERROR"; error: string }
+  | { type: "ADD_TO_CONTAINER"; containerId: string; slotIndex?: number; block: SectionBlock }
+  | { type: "MOVE_BLOCK"; sourceId: string; targetContainerId: string | null; targetSlotIndex: number | null; targetIndex: number }
+  | { type: "REORDER_IN_CONTAINER"; containerId: string; slotIndex: number | null; newOrder: SectionBlock[] };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -46,17 +59,14 @@ function reducer(state: State, action: Action): State {
     case "ADD_BLOCK":
       return { ...state, sections: [...state.sections, action.block], selectedId: action.block.id, isDirty: true };
     case "UPDATE_BLOCK":
+      return { ...state, sections: updateBlockInTree(action.id, action.config, state.sections), isDirty: true };
+    case "REMOVE_BLOCK":
       return {
         ...state,
-        sections: state.sections.map((s) =>
-          s.id === action.id ? { ...s, config: { ...s.config, ...action.config } } : s
-        ),
+        sections: removeFromTree(action.id, state.sections),
+        selectedId: state.selectedId === action.id ? null : state.selectedId,
         isDirty: true,
       };
-    case "REMOVE_BLOCK": {
-      const next = state.sections.filter((s) => s.id !== action.id);
-      return { ...state, sections: next, selectedId: state.selectedId === action.id ? null : state.selectedId, isDirty: true };
-    }
     case "REORDER":
       return { ...state, sections: action.sections, isDirty: true };
     case "SELECT":
@@ -67,6 +77,23 @@ function reducer(state: State, action: Action): State {
       return { ...state, isSaving: false, isDirty: false };
     case "SAVE_ERROR":
       return { ...state, isSaving: false, saveError: action.error };
+    case "ADD_TO_CONTAINER": {
+      const next = addToContainer(action.containerId, action.slotIndex ?? null, action.block, state.sections);
+      return { ...state, sections: next, selectedId: action.block.id, isDirty: true };
+    }
+    case "MOVE_BLOCK": {
+      const block = findBlockById(action.sourceId, state.sections);
+      if (!block) return state;
+      let next = removeFromTree(action.sourceId, state.sections);
+      next = insertAtPath(block, action.targetContainerId === null
+        ? { level: "top", index: action.targetIndex }
+        : { level: "container", containerId: action.targetContainerId, slotIndex: action.targetSlotIndex, index: action.targetIndex },
+        next
+      );
+      return { ...state, sections: next, isDirty: true };
+    }
+    case "REORDER_IN_CONTAINER":
+      return { ...state, sections: reorderInContainer(action.containerId, action.slotIndex, action.newOrder, state.sections), isDirty: true };
     default:
       return state;
   }
@@ -164,7 +191,27 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
   const addBlock = useCallback((type: BlockType) => {
     const def = getBlockDef(type);
     if (!def) return;
-    dispatch({ type: "ADD_BLOCK", block: { id: crypto.randomUUID(), type, config: { ...def.defaultConfig } } });
+    const block: SectionBlock = { id: crypto.randomUUID(), type, config: { ...def.defaultConfig } };
+    if (state.selectedId && !isContainerType(type)) {
+      const path = findPath(state.selectedId, state.sections);
+      if (path?.level === "container") {
+        dispatch({ type: "ADD_TO_CONTAINER", containerId: path.containerId, slotIndex: path.slotIndex ?? undefined, block });
+        return;
+      }
+      const selected = findBlockById(state.selectedId, state.sections);
+      if (selected && isContainerType(selected.type)) {
+        dispatch({ type: "ADD_TO_CONTAINER", containerId: selected.id, slotIndex: selected.type === "columns" ? 0 : undefined, block });
+        return;
+      }
+    }
+    dispatch({ type: "ADD_BLOCK", block });
+  }, [state.selectedId, state.sections]);
+
+  const addToContainerByType = useCallback((containerId: string, slotIndex: number | null, type: BlockType) => {
+    const def = getBlockDef(type);
+    if (!def) return;
+    const block: SectionBlock = { id: crypto.randomUUID(), type, config: { ...def.defaultConfig } };
+    dispatch({ type: "ADD_TO_CONTAINER", containerId, slotIndex: slotIndex ?? undefined, block });
   }, []);
 
   const updateBlock = useCallback((id: string, config: Record<string, unknown>) => {
@@ -177,6 +224,14 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
 
   const reorder = useCallback((sections: SectionBlock[]) => {
     dispatch({ type: "REORDER", sections });
+  }, []);
+
+  const moveBlock = useCallback((sourceId: string, targetContainerId: string | null, targetSlotIndex: number | null, targetIndex: number) => {
+    dispatch({ type: "MOVE_BLOCK", sourceId, targetContainerId, targetSlotIndex, targetIndex });
+  }, []);
+
+  const reorderInContainerBlocks = useCallback((containerId: string, slotIndex: number | null, newOrder: SectionBlock[]) => {
+    dispatch({ type: "REORDER_IN_CONTAINER", containerId, slotIndex, newOrder });
   }, []);
 
   const selectBlock = useCallback((id: string) => {
@@ -201,7 +256,7 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
     }
   }, [pageId, state.sections]);
 
-  const selectedBlock = state.sections.find((s) => s.id === state.selectedId) ?? null;
+  const selectedBlock = state.selectedId ? findBlockById(state.selectedId, state.sections) : null;
 
   if (state.isLoading) {
     return (
@@ -254,6 +309,9 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
           onSelect={selectBlock}
           onRemove={removeBlock}
           onReorder={reorder}
+          onMoveBlock={moveBlock}
+          onReorderInContainer={reorderInContainerBlocks}
+          onAddToContainer={addToContainerByType}
         />
         <RightPanel
           block={selectedBlock}
@@ -452,21 +510,31 @@ function BuilderStyles() {
       .epx-canvas__empty-state p { margin: 0; font-size: 13px; }
       .epx-canvas__list { display: flex; flex-direction: column; gap: 6px; }
 
-      .epx-section-row {
-        display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-        background: #fff; border: 2px solid transparent; border-radius: 8px;
-        cursor: pointer; transition: border-color 0.1s, box-shadow 0.1s;
+      .epx-block-preview {
+        position: relative; border-radius: 8px; overflow: hidden;
+        border: 2px solid transparent; cursor: pointer;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        background: #fff;
       }
-      .epx-section-row:hover { border-color: #93c5fd; }
-      .epx-section-row.is-selected { border-color: #2563eb; box-shadow: 0 0 0 3px #dbeafe; }
-      .epx-section-row__drag-handle { cursor: grab; color: #bbb; font-size: 16px; padding: 2px 4px; user-select: none; flex-shrink: 0; }
-      .epx-section-row__drag-handle:hover { color: #666; }
-      .epx-section-row__info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-      .epx-section-row__icon { font-size: 18px; flex-shrink: 0; }
-      .epx-section-row__text { display: flex; flex-direction: column; min-width: 0; }
-      .epx-section-row__label { font-weight: 600; font-size: 13px; }
-      .epx-section-row__preview { font-size: 11px; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .epx-section-row__remove { margin-left: auto; flex-shrink: 0; }
+      .epx-block-preview:hover { border-color: #93c5fd; }
+      .epx-block-preview.is-selected { border-color: #2563eb; box-shadow: 0 0 0 3px #dbeafe; }
+      .epx-block-preview__handle {
+        position: absolute; top: 6px; left: 6px; z-index: 10;
+        background: rgba(255,255,255,0.9); border: 1px solid #e0e0e0;
+        border-radius: 4px; padding: 2px 5px; font-size: 13px; color: #888;
+        cursor: grab; user-select: none; line-height: 1;
+        transition: opacity 0.15s;
+      }
+      .epx-block-preview__handle:hover { color: #444; }
+      .epx-block-preview__delete {
+        position: absolute; top: 6px; right: 6px; z-index: 10;
+        background: rgba(255,255,255,0.9); border: 1px solid #e0e0e0;
+        border-radius: 4px; width: 22px; height: 22px; display: flex;
+        align-items: center; justify-content: center; font-size: 14px;
+        color: #888; cursor: pointer; line-height: 1; padding: 0;
+        transition: opacity 0.15s, background 0.15s, color 0.15s;
+      }
+      .epx-block-preview__delete:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
 
       .epx-right-panel {
         background: #fff; border-left: 1px solid #e0e0e0;
@@ -480,6 +548,10 @@ function BuilderStyles() {
       .epx-right-panel__icon { font-size: 20px; }
       .epx-right-panel__title { font-size: 14px; font-weight: 700; margin: 0; }
       .epx-right-panel__description { font-size: 12px; color: #888; padding: 6px 14px 10px; margin: 0; border-bottom: 1px solid #f0f0f0; }
+      .epx-right-panel__tabs { display: flex; border-bottom: 1px solid #e0e0e0; }
+      .epx-right-panel__tab { flex: 1; padding: 8px 0; border: none; background: none; font-size: 13px; font-weight: 500; color: #888; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; }
+      .epx-right-panel__tab:hover { color: #444; }
+      .epx-right-panel__tab.is-active { color: #2563eb; border-bottom-color: #2563eb; }
       .epx-right-panel__fields { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
 
       .epx-field { display: flex; flex-direction: column; gap: 4px; }
@@ -514,6 +586,78 @@ function BuilderStyles() {
         cursor: pointer; text-align: center; transition: background 0.1s;
       }
       .epx-btn-add:hover { background: #dbeafe; }
+
+      .epx-container-block {
+        border: 2px dashed #93c5fd; border-radius: 8px; background: #f0f7ff;
+        position: relative; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .epx-container-block:hover { border-color: #60a5fa; }
+      .epx-container-block.is-selected { border-color: #2563eb; box-shadow: 0 0 0 3px #dbeafe; }
+      .epx-container-block.is-dragging { opacity: 0.4; }
+      .epx-container-block__header {
+        display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+        font-size: 11px; font-weight: 700; color: #60a5fa; text-transform: uppercase; letter-spacing: 0.05em;
+        border-bottom: 1px dashed #bfdbfe;
+      }
+      .epx-container-block__handle {
+        cursor: grab; user-select: none; padding: 2px 4px; border-radius: 3px; color: #93c5fd;
+      }
+      .epx-container-block__handle:hover { background: rgba(147,197,253,0.2); }
+      .epx-container-block__label { flex: 1; }
+      .epx-container-block__delete {
+        background: none; border: none; cursor: pointer; color: #93c5fd; font-size: 16px; padding: 0 2px; line-height: 1;
+        border-radius: 4px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+      }
+      .epx-container-block__delete:hover { background: #fee2e2; color: #dc2626; }
+      .epx-container-block__children { padding: 6px; display: flex; flex-direction: column; gap: 4px; min-height: 40px; }
+      .epx-container__empty-zone {
+        border: 1px dashed #bfdbfe; border-radius: 6px; padding: 16px;
+        text-align: center; font-size: 11px; color: #93c5fd; background: rgba(219,234,254,0.3);
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .epx-container__empty-zone.is-over { background: #dbeafe; border-color: #3b82f6; color: #2563eb; }
+
+      .epx-columns-block {
+        border: 2px dashed #a78bfa; border-radius: 8px; background: #faf5ff;
+        position: relative; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .epx-columns-block:hover { border-color: #7c3aed; }
+      .epx-columns-block.is-selected { border-color: #7c3aed; box-shadow: 0 0 0 3px #ede9fe; }
+      .epx-columns-block.is-dragging { opacity: 0.4; }
+      .epx-columns-block__header {
+        display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+        font-size: 11px; font-weight: 700; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.05em;
+        border-bottom: 1px dashed #ddd6fe;
+      }
+      .epx-columns-block__handle { cursor: grab; user-select: none; padding: 2px 4px; border-radius: 3px; color: #a78bfa; }
+      .epx-columns-block__handle:hover { background: rgba(167,139,250,0.2); }
+      .epx-columns-block__label { flex: 1; }
+      .epx-columns-block__delete {
+        background: none; border: none; cursor: pointer; color: #a78bfa; font-size: 16px; padding: 0 2px; line-height: 1;
+        border-radius: 4px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+      }
+      .epx-columns-block__delete:hover { background: #fee2e2; color: #dc2626; }
+      .epx-columns-block__grid { padding: 6px; display: grid; gap: 6px; }
+      .epx-columns__slot {
+        border: 1px dashed #ddd6fe; border-radius: 6px; padding: 6px;
+        display: flex; flex-direction: column; gap: 4px; min-height: 40px; background: rgba(237,233,254,0.3);
+      }
+      .epx-columns__slot-label {
+        font-size: 10px; font-weight: 600; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 0 4px;
+      }
+
+      .epx-add-block-btn {
+        margin-top: 4px; padding: 5px 10px; border: 1px dashed #93c5fd; border-radius: 5px;
+        background: transparent; color: #60a5fa; font-size: 11px; font-weight: 600;
+        cursor: pointer; text-align: center; width: 100%; transition: background 0.1s;
+      }
+      .epx-add-block-btn:hover { background: #eff6ff; }
+      .epx-add-block-picker {
+        background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.12); margin-top: 4px;
+        display: flex; flex-direction: column; gap: 2px;
+      }
+      .epx-add-block-picker__title { font-size: 10px; color: #888; font-weight: 700; text-transform: uppercase; padding: 0 8px 6px; letter-spacing: 0.05em; }
 
       .epx-builder--loading, .epx-builder--error {
         position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column;
