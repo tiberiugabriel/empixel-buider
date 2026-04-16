@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "empixel-builder": "./src/add.ts"
+    "empixel-builder": "./src/add.js"
   },
   "exports": {
     ".": "./src/index.ts",
