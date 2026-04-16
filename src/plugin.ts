@@ -68,7 +68,7 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
             });
           }
 
-          const result = await ctx.content.list({ collection, limit });
+          const result = await ctx.content.list(collection, { limit });
 
           const items = result.items.map((entry: any) => ({
             id: entry.id,
