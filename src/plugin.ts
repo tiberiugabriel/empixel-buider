@@ -1,19 +1,21 @@
 import { definePlugin } from "emdash";
+import type { PluginContext } from "emdash";
 import type { PageLayout, SectionBlock } from "./types.js";
 
 export function createPlugin(_options: Record<string, unknown> = {}) {
   return definePlugin({
     id: "empixel-builder",
     version: "0.1.0",
-    capabilities: [],
+    capabilities: ["read:content"],
     storage: {
       layouts: {
         indexes: [],
       },
     },
     routes: {
+      // GET  ?pageId=  → load layout
+      // POST { pageId, sections } → save layout
       layout: {
-        // No input schema — GET reads from query params, POST reads from body
         handler: async (ctx) => {
           const method = ctx.request.method;
 
@@ -51,30 +53,39 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
           return new Response("Method Not Allowed", { status: 405 });
         },
       },
+
+      // GET ?collection=pages&limit=50 → list entries for page selector
+      entries: {
+        handler: async (ctx: PluginContext) => {
+          const url = new URL(ctx.request.url);
+          const collection = url.searchParams.get("collection") ?? "pages";
+          const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10), 200);
+
+          if (!ctx.content) {
+            return new Response(JSON.stringify({ error: { message: "read:content capability required" } }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          const result = await ctx.content.list({ collection, limit });
+
+          const items = result.items.map((entry: any) => ({
+            id: entry.id,
+            title: entry.data?.title ?? entry.id,
+          }));
+
+          return { data: items, collection };
+        },
+      },
     },
-    hooks: {
-      "admin:menu:register": (menu) => {
-        menu.addItem({
-          id: "empixel-btn",
-          label: "Open Pixel Editor",
-          action: "/editor"
-        });
-      }
-    },
+    hooks: {},
     admin: {
       entry: "empixel-builder/admin",
-      navigation: [
-        {
-          label: "Pixel Builder",
-          icon: "layout",
-          path: "/editor",
-        }
-      ],
       pages: [
         {
           path: "editor",
           label: "Page Editor",
-          layout: "fullscreen"
         },
       ],
     },

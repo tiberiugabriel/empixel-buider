@@ -8,6 +8,7 @@ export function empixelBuilder(): PluginDescriptor {
     entrypoint: "empixel-builder/plugin",
     adminEntry: "empixel-builder/admin",
     componentsEntry: "empixel-builder/astro",
+    capabilities: ["read:content"],
     adminPages: [
       {
         path: "editor",
