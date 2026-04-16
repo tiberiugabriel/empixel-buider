@@ -264,6 +264,47 @@ interface SortableBlockProps {
   onRemove: () => void;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const BORDER_RADIUS_MAP: Record<string, string> = {
+  none: "0", sm: "4px", md: "8px", lg: "16px", full: "9999px",
+};
+
+const MAX_WIDTH_MAP: Record<string, string> = {
+  sm: "640px", md: "768px", lg: "1140px", full: "100%",
+};
+
+function resolveBlockStyle(style: Record<string, unknown> | undefined): {
+  outerStyle: React.CSSProperties;
+  innerStyle: React.CSSProperties;
+} {
+  if (!style) return { outerStyle: {}, innerStyle: {} };
+
+  const num = (v: unknown) => (typeof v === "number" ? v : undefined);
+
+  const outerStyle: React.CSSProperties = {};
+  if (num(style.marginTop) !== undefined) outerStyle.marginTop = num(style.marginTop);
+  if (num(style.marginBottom) !== undefined) outerStyle.marginBottom = num(style.marginBottom);
+
+  const innerStyle: React.CSSProperties = {};
+  if (num(style.paddingTop) !== undefined) innerStyle.paddingTop = num(style.paddingTop);
+  if (num(style.paddingRight) !== undefined) innerStyle.paddingRight = num(style.paddingRight);
+  if (num(style.paddingBottom) !== undefined) innerStyle.paddingBottom = num(style.paddingBottom);
+  if (num(style.paddingLeft) !== undefined) innerStyle.paddingLeft = num(style.paddingLeft);
+  if (style.borderRadius && BORDER_RADIUS_MAP[style.borderRadius as string]) {
+    innerStyle.borderRadius = BORDER_RADIUS_MAP[style.borderRadius as string];
+  }
+  if (style.maxWidth && MAX_WIDTH_MAP[style.maxWidth as string]) {
+    innerStyle.maxWidth = MAX_WIDTH_MAP[style.maxWidth as string];
+    innerStyle.marginLeft = "auto";
+    innerStyle.marginRight = "auto";
+  }
+
+  return { outerStyle, innerStyle };
+}
+
+// ─── SortableBlock ─────────────────────────────────────────────────────────────
+
 function SortableBlock({
   section,
   containerId,
@@ -283,10 +324,15 @@ function SortableBlock({
     } satisfies BlockDragData,
   });
 
-  const style: React.CSSProperties = {
+  const { outerStyle, innerStyle } = resolveBlockStyle(
+    section.config.style as Record<string, unknown> | undefined
+  );
+
+  const wrapperStyle: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
+    ...outerStyle,
   };
 
   const Preview = PREVIEW_COMPONENTS[section.type];
@@ -294,7 +340,7 @@ function SortableBlock({
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={wrapperStyle}
       className={`epx-block-preview${isSelected ? " is-selected" : ""}`}
       onClick={onSelect}
       onMouseEnter={() => setHovered(true)}
@@ -319,13 +365,15 @@ function SortableBlock({
       >
         ×
       </button>
-      {Preview ? (
-        <Preview config={section.config} children={section.children} slots={section.slots} />
-      ) : (
-        <div style={{ padding: "12px 14px", color: "#888", fontSize: 12 }}>
-          Unknown block: {section.type}
-        </div>
-      )}
+      <div style={innerStyle}>
+        {Preview ? (
+          <Preview config={section.config} children={section.children} slots={section.slots} />
+        ) : (
+          <div style={{ padding: "12px 14px", color: "#888", fontSize: 12 }}>
+            Unknown block: {section.type}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

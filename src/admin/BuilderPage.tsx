@@ -568,6 +568,53 @@ function BuilderStyles() {
       .epx-field--toggle .epx-field__toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
       .epx-field__toggle-input { width: 16px; height: 16px; cursor: pointer; }
 
+      /* ── Spacing controls ── */
+      .epx-spacing-group { margin-bottom: 16px; }
+      .epx-spacing-group__header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .epx-spacing-group__label {
+        font-size: 10px; font-weight: 700; color: #666;
+        text-transform: uppercase; letter-spacing: 0.06em;
+      }
+      .epx-spacing-group__link {
+        background: none; border: none; cursor: pointer; color: #bbb;
+        font-size: 14px; padding: 2px 5px; border-radius: 4px; line-height: 1;
+        transition: color 0.15s;
+      }
+      .epx-spacing-group__link:hover { color: #555; }
+      .epx-spacing-group__link.is-linked { color: #2563eb; }
+
+      .epx-spacing-row {
+        display: flex; align-items: center; gap: 7px; margin-bottom: 5px;
+      }
+      .epx-spacing-row__side {
+        width: 18px; height: 18px; border: 1.5px solid #d0d0d0; border-radius: 3px;
+        flex-shrink: 0; background: #f5f5f5; display: flex; align-items: center;
+        justify-content: center; font-size: 8px; font-weight: 700; color: #888;
+        letter-spacing: 0;
+      }
+      .epx-spacing-row__slider {
+        flex: 1; height: 4px; cursor: pointer; accent-color: #2563eb;
+        -webkit-appearance: none; appearance: none;
+        background: linear-gradient(to right, #2563eb var(--pct,0%), #e0e0e0 var(--pct,0%));
+        border-radius: 2px; outline: none;
+      }
+      .epx-spacing-row__slider::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 14px; height: 14px;
+        background: #2563eb; border-radius: 50%; cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      }
+      .epx-spacing-row__slider::-moz-range-thumb {
+        width: 14px; height: 14px; background: #2563eb; border: none;
+        border-radius: 50%; cursor: pointer;
+      }
+      .epx-spacing-row__value {
+        font-size: 10px; color: #888; width: 22px; text-align: right;
+        font-family: monospace; flex-shrink: 0;
+      }
+
       .epx-json-array { display: flex; flex-direction: column; gap: 6px; }
       .epx-json-array__header { display: flex; align-items: center; justify-content: space-between; }
       .epx-json-array__count { font-size: 11px; color: #999; }
