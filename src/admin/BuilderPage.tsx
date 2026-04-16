@@ -92,7 +92,9 @@ const initialState: State = {
 
 export function BuilderPage() {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const pageId = new URLSearchParams(window.location.search).get("pageId") ?? "default";
+  const params = new URLSearchParams(window.location.search);
+  const pageId = params.get("pageId") ?? "default";
+  const backUrl = params.get("back") ?? null;
 
   // Load layout on mount
   useEffect(() => {
@@ -177,6 +179,15 @@ export function BuilderPage() {
       {/* Top Bar */}
       <header className="epx-topbar">
         <div className="epx-topbar__left">
+          {backUrl && (
+            <button
+              className="epx-btn epx-btn--ghost"
+              onClick={() => { window.location.href = backUrl; }}
+              type="button"
+            >
+              ← Back
+            </button>
+          )}
           <span className="epx-topbar__logo">⚡ EmPixel Builder</span>
           <span className="epx-topbar__page-id">Page: {pageId}</span>
         </div>
@@ -224,9 +235,11 @@ function BuilderStyles() {
   return (
     <style>{`
       .epx-builder {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
         display: flex;
         flex-direction: column;
-        height: 100vh;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: #f5f5f5;
         color: #111;
@@ -273,6 +286,8 @@ function BuilderStyles() {
       .epx-btn:disabled { opacity: 0.5; cursor: not-allowed; }
       .epx-btn--primary { background: #2563eb; color: #fff; }
       .epx-btn--primary:not(:disabled):hover { background: #1d4ed8; }
+      .epx-btn--ghost { background: transparent; color: #555; border-color: #d0d0d0; }
+      .epx-btn--ghost:hover { background: #f0f0f0; }
 
       .epx-icon-btn {
         width: 24px;
@@ -518,12 +533,16 @@ function BuilderStyles() {
       /* ── Loading / Error ── */
       .epx-builder--loading,
       .epx-builder--error {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 12px;
         color: #888;
+        background: #f5f5f5;
       }
       .epx-spinner {
         width: 32px;
