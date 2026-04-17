@@ -482,7 +482,7 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
         </div>
       </div>
 
-      <DragOverlay dropAnimation={null}>
+      <DragOverlay dropAnimation={null} zIndex={99999}>
         <DragGhost sectionsRef={sectionsRef} />
       </DragOverlay>
     </DndContext>
