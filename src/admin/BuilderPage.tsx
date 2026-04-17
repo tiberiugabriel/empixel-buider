@@ -783,14 +783,35 @@ function BuilderStyles() {
         outline: none; border-color: #2563eb; background: #fff;
       }
       .epx-field__textarea { resize: vertical; min-height: 72px; }
-      .epx-field__code {
-        width: 100%; padding: 8px 10px; border: 1px solid #d0d0d0; border-radius: 5px;
-        font-size: 12px; font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
-        background: #1e1e2e; color: #cdd6f4; box-sizing: border-box;
-        resize: vertical; min-height: 110px; line-height: 1.6; outline: none;
-        transition: border-color 0.15s;
+      /* ── Code editor ── */
+      .epx-code-editor {
+        border: 1px solid #2a2a3d; border-radius: 6px; overflow: hidden;
+        font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+        font-size: 12px; line-height: 1.7; background: #1e1e2e;
       }
-      .epx-field__code:focus { border-color: #2563eb; }
+      .epx-code-editor__header {
+        padding: 5px 10px; background: #13131f; border-bottom: 1px solid #2a2a3d;
+        display: flex; align-items: center; gap: 4px; font-size: 11px;
+      }
+      .epx-code-editor__selector-kw { color: #cba6f7; font-style: italic; }
+      .epx-code-editor__selector-eq { color: #6c7086; }
+      .epx-code-editor__selector-val { color: #89dceb; }
+      .epx-code-editor__body {
+        display: flex; min-height: 140px; max-height: 280px; overflow: hidden;
+      }
+      .epx-code-editor__line-nums {
+        padding: 8px 0; min-width: 36px; text-align: right;
+        background: #181825; color: #45475a; border-right: 1px solid #2a2a3d;
+        overflow: hidden; flex-shrink: 0; user-select: none;
+      }
+      .epx-code-editor__line-num { padding: 0 8px; height: calc(1.7 * 12px); box-sizing: content-box; }
+      .epx-code-editor__textarea {
+        flex: 1; padding: 8px 10px; border: none; outline: none; resize: none;
+        background: #1e1e2e; color: #cdd6f4; font-family: inherit; font-size: inherit;
+        line-height: inherit; overflow-y: auto; box-sizing: border-box;
+        caret-color: #f5c2e7;
+      }
+      .epx-code-editor__textarea::placeholder { color: #45475a; }
       .epx-field--toggle .epx-field__toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
       .epx-field__toggle-input { width: 16px; height: 16px; cursor: pointer; }
 

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { SectionBlock } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
@@ -166,15 +166,106 @@ type AdvancedConfig = {
   customCss?: string;
 };
 
+// ─── CodeEditor ───────────────────────────────────────────────────────────────
+
+function CodeEditor({
+  value,
+  onChange,
+  selector,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  selector: string;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumsRef = useRef<HTMLDivElement>(null);
+  const lineCount = value === "" ? 1 : value.split("\n").length;
+
+  // Sync line numbers scroll with textarea scroll
+  const handleScroll = () => {
+    if (lineNumsRef.current && textareaRef.current) {
+      lineNumsRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
+
+  // Tab key → insert 4 spaces (no focus jump)
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    const ta = textareaRef.current!;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const next = value.substring(0, start) + "    " + value.substring(end);
+    onChange(next);
+    // Restore caret after React re-render
+    requestAnimationFrame(() => {
+      ta.selectionStart = ta.selectionEnd = start + 4;
+    });
+  };
+
+  // Keep cursor position stable across onChange re-renders
+  const selStart = useRef(0);
+  const selEnd = useRef(0);
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.selectionStart = selStart.current;
+    ta.selectionEnd = selEnd.current;
+  });
+
+  const placeholder = `color: red;\nfont-size: 18px;`;
+
+  return (
+    <div className="epx-code-editor">
+      <div className="epx-code-editor__header">
+        <span className="epx-code-editor__selector-kw">selector</span>
+        <span className="epx-code-editor__selector-eq"> = </span>
+        <span className="epx-code-editor__selector-val">{selector}</span>
+      </div>
+      <div className="epx-code-editor__body">
+        <div ref={lineNumsRef} className="epx-code-editor__line-nums" aria-hidden="true">
+          {Array.from({ length: lineCount }, (_, i) => (
+            <div key={i} className="epx-code-editor__line-num">{i + 1}</div>
+          ))}
+        </div>
+        <textarea
+          ref={textareaRef}
+          className="epx-code-editor__textarea"
+          value={value}
+          placeholder={placeholder}
+          spellCheck={false}
+          onScroll={handleScroll}
+          onKeyDown={handleKeyDown}
+          onSelect={(e) => {
+            selStart.current = (e.target as HTMLTextAreaElement).selectionStart;
+            selEnd.current = (e.target as HTMLTextAreaElement).selectionEnd;
+          }}
+          onChange={(e) => {
+            selStart.current = e.target.selectionStart;
+            selEnd.current = e.target.selectionEnd;
+            onChange(e.target.value);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function AdvancedTab({
   value,
   onChange,
+  blockId,
 }: {
   value: AdvancedConfig;
   onChange: (v: AdvancedConfig) => void;
+  blockId: string;
 }) {
   const set = (key: keyof AdvancedConfig, val: unknown) =>
     onChange({ ...value, [key]: val });
+
+  const selector = value.cssId
+    ? `#${value.cssId}`
+    : `[data-epx-block="${blockId}"]`;
 
   return (
     <div className="epx-right-panel__fields">
@@ -231,13 +322,10 @@ function AdvancedTab({
       {/* Custom CSS */}
       <div className="epx-field">
         <label className="epx-field__label">Custom CSS</label>
-        <textarea
-          className="epx-field__code"
+        <CodeEditor
           value={value.customCss ?? ""}
-          placeholder={"color: red;\nfont-size: 18px;"}
-          rows={6}
-          spellCheck={false}
-          onChange={(e) => set("customCss", e.target.value)}
+          onChange={(v) => set("customCss", v)}
+          selector={selector}
         />
       </div>
     </div>
@@ -364,6 +452,7 @@ export function RightPanel({ block, onChange }: Props) {
         <AdvancedTab
           value={advanced}
           onChange={(val) => onChange({ advanced: val })}
+          blockId={block.id}
         />
       )}
     </aside>
