@@ -10,6 +10,36 @@ interface Props {
   onChange: (config: Record<string, any>) => void;
 }
 
+// ─── Tab icons (inline SVG) ───────────────────────────────────────────────────
+
+function IconFields() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="3" width="13" height="1.5" rx="0.75" fill="currentColor"/>
+      <rect x="1" y="6.75" width="13" height="1.5" rx="0.75" fill="currentColor"/>
+      <rect x="1" y="10.5" width="8" height="1.5" rx="0.75" fill="currentColor"/>
+    </svg>
+  );
+}
+
+function IconStyle() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.4"/>
+      <path d="M7.5 1.5C7.5 1.5 11.5 4.5 11.5 7.5C11.5 9.71 9.71 11.5 7.5 11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function IconAdvanced() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M7.5 9.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M7.5 1v1.5M7.5 12.5V14M1 7.5h1.5M12.5 7.5H14M2.93 2.93l1.06 1.06M11.01 11.01l1.06 1.06M2.93 12.07l1.06-1.06M11.01 3.99l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
 // ─── SpacingControl ────────────────────────────────────────────────────────────
 
 type SpacingKeys = "top" | "right" | "bottom" | "left";
@@ -126,10 +156,100 @@ const MISC_STYLE_FIELDS: FieldDef[] = [
   },
 ];
 
+// ─── Advanced Tab ─────────────────────────────────────────────────────────────
+
+type AdvancedConfig = {
+  position?: string;
+  zIndex?: number | string;
+  cssId?: string;
+  cssClasses?: string;
+  customCss?: string;
+};
+
+function AdvancedTab({
+  value,
+  onChange,
+}: {
+  value: AdvancedConfig;
+  onChange: (v: AdvancedConfig) => void;
+}) {
+  const set = (key: keyof AdvancedConfig, val: unknown) =>
+    onChange({ ...value, [key]: val });
+
+  return (
+    <div className="epx-right-panel__fields">
+      {/* Position */}
+      <div className="epx-field">
+        <label className="epx-field__label">Position</label>
+        <select
+          className="epx-field__select"
+          value={value.position ?? ""}
+          onChange={(e) => set("position", e.target.value)}
+        >
+          <option value="">Default</option>
+          <option value="absolute">Absolute</option>
+          <option value="fixed">Fixed</option>
+        </select>
+      </div>
+
+      {/* Z-Index */}
+      <div className="epx-field">
+        <label className="epx-field__label">Z-Index</label>
+        <input
+          type="number"
+          className="epx-field__input"
+          value={value.zIndex ?? ""}
+          placeholder="e.g. 10"
+          onChange={(e) => set("zIndex", e.target.value === "" ? undefined : Number(e.target.value))}
+        />
+      </div>
+
+      {/* CSS ID */}
+      <div className="epx-field">
+        <label className="epx-field__label">CSS ID</label>
+        <input
+          type="text"
+          className="epx-field__input"
+          value={value.cssId ?? ""}
+          placeholder="my-section"
+          onChange={(e) => set("cssId", e.target.value)}
+        />
+      </div>
+
+      {/* CSS Classes */}
+      <div className="epx-field">
+        <label className="epx-field__label">CSS Classes</label>
+        <input
+          type="text"
+          className="epx-field__input"
+          value={value.cssClasses ?? ""}
+          placeholder="class-a class-b"
+          onChange={(e) => set("cssClasses", e.target.value)}
+        />
+      </div>
+
+      {/* Custom CSS */}
+      <div className="epx-field">
+        <label className="epx-field__label">Custom CSS</label>
+        <textarea
+          className="epx-field__code"
+          value={value.customCss ?? ""}
+          placeholder={"color: red;\nfont-size: 18px;"}
+          rows={6}
+          spellCheck={false}
+          onChange={(e) => set("customCss", e.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
+type Tab = "fields" | "style" | "advanced";
+
 export function RightPanel({ block, onChange }: Props) {
-  const [activeTab, setActiveTab] = useState<"fields" | "style">("fields");
+  const [activeTab, setActiveTab] = useState<Tab>("fields");
 
   if (!block) {
     return (
@@ -146,6 +266,7 @@ export function RightPanel({ block, onChange }: Props) {
   if (!def) return null;
 
   const style = (block.config.style ?? {}) as Record<string, unknown>;
+  const advanced = (block.config.advanced ?? {}) as AdvancedConfig;
 
   const paddingValue: SpacingValue = {
     top: (style.paddingTop as number) ?? 0,
@@ -169,6 +290,12 @@ export function RightPanel({ block, onChange }: Props) {
     onChange({ style: next });
   };
 
+  const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
+    { id: "fields", icon: <IconFields />, title: "Fields" },
+    { id: "style", icon: <IconStyle />, title: "Style" },
+    { id: "advanced", icon: <IconAdvanced />, title: "Advanced" },
+  ];
+
   return (
     <aside className="epx-right-panel">
       <div className="epx-right-panel__header">
@@ -178,20 +305,17 @@ export function RightPanel({ block, onChange }: Props) {
       <p className="epx-right-panel__description">{def.description}</p>
 
       <div className="epx-right-panel__tabs">
-        <button
-          className={`epx-right-panel__tab${activeTab === "fields" ? " is-active" : ""}`}
-          onClick={() => setActiveTab("fields")}
-          type="button"
-        >
-          Fields
-        </button>
-        <button
-          className={`epx-right-panel__tab${activeTab === "style" ? " is-active" : ""}`}
-          onClick={() => setActiveTab("style")}
-          type="button"
-        >
-          Style
-        </button>
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`epx-right-panel__tab${activeTab === tab.id ? " is-active" : ""}`}
+            onClick={() => setActiveTab(tab.id)}
+            title={tab.title}
+            type="button"
+          >
+            {tab.icon}
+          </button>
+        ))}
       </div>
 
       {activeTab === "fields" && (
@@ -234,6 +358,13 @@ export function RightPanel({ block, onChange }: Props) {
             ))}
           </div>
         </div>
+      )}
+
+      {activeTab === "advanced" && (
+        <AdvancedTab
+          value={advanced}
+          onChange={(val) => onChange({ advanced: val })}
+        />
       )}
     </aside>
   );

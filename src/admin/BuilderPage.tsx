@@ -767,8 +767,8 @@ function BuilderStyles() {
       .epx-right-panel__title { font-size: 14px; font-weight: 700; margin: 0; }
       .epx-right-panel__description { font-size: 12px; color: #888; padding: 6px 14px 10px; margin: 0; border-bottom: 1px solid #f0f0f0; }
       .epx-right-panel__tabs { display: flex; border-bottom: 1px solid #e0e0e0; }
-      .epx-right-panel__tab { flex: 1; padding: 8px 0; border: none; background: none; font-size: 13px; font-weight: 500; color: #888; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; }
-      .epx-right-panel__tab:hover { color: #444; }
+      .epx-right-panel__tab { flex: 1; padding: 9px 0; border: none; background: none; color: #aaa; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; display: flex; align-items: center; justify-content: center; }
+      .epx-right-panel__tab:hover { color: #555; }
       .epx-right-panel__tab.is-active { color: #2563eb; border-bottom-color: #2563eb; }
       .epx-right-panel__fields { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
 
@@ -783,6 +783,14 @@ function BuilderStyles() {
         outline: none; border-color: #2563eb; background: #fff;
       }
       .epx-field__textarea { resize: vertical; min-height: 72px; }
+      .epx-field__code {
+        width: 100%; padding: 8px 10px; border: 1px solid #d0d0d0; border-radius: 5px;
+        font-size: 12px; font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+        background: #1e1e2e; color: #cdd6f4; box-sizing: border-box;
+        resize: vertical; min-height: 110px; line-height: 1.6; outline: none;
+        transition: border-color 0.15s;
+      }
+      .epx-field__code:focus { border-color: #2563eb; }
       .epx-field--toggle .epx-field__toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
       .epx-field__toggle-input { width: 16px; height: 16px; cursor: pointer; }
 
