@@ -11,6 +11,10 @@ import VideoSection from "./VideoSection.astro";
 import ColumnsSection from "./ColumnsSection.astro";
 import SpacerSection from "./SpacerSection.astro";
 import SectionContainer from "./SectionContainer.astro";
+import LayoutRenderer from "./LayoutRenderer.astro";
+
+export { getBuilderLayout } from "./db.js";
+export { LayoutRenderer };
 
 export const blockComponents: Record<string, unknown> = {
   hero: HeroSection,

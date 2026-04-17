@@ -1,0 +1,22 @@
+---
+import type { SectionBlock } from "../types.js";
+import BlockRenderer from "./BlockRenderer.astro";
+import SectionContainer from "./SectionContainer.astro";
+import ColumnsSection from "./ColumnsSection.astro";
+
+interface Props {
+  sections: SectionBlock[];
+}
+
+const { sections } = Astro.props;
+---
+
+{sections.map((block) => {
+  if (block.type === "section") {
+    return <SectionContainer value={block.config} children={block.children ?? []} />;
+  }
+  if (block.type === "columns") {
+    return <ColumnsSection value={block.config} slots={block.slots} />;
+  }
+  return <BlockRenderer block={block} />;
+})}
