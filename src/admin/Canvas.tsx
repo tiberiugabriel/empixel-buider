@@ -216,6 +216,7 @@ function SortableBlock({
         dragListeners={listeners}
         dragAttributes={attributes}
         onDelete={onRemove}
+        onSelect={onSelect}
         allowedBlockTypes="all"
       />
 
@@ -290,6 +291,7 @@ const ContainerBlock = memo(function ContainerBlock({
         dragListeners={listeners}
         dragAttributes={attributes}
         onDelete={() => onRemove(section.id)}
+        onSelect={() => onSelect(section.id)}
         allowedBlockTypes="all"
       />
 
@@ -375,6 +377,7 @@ const ColumnsBlock = memo(function ColumnsBlock({
         dragListeners={listeners}
         dragAttributes={attributes}
         onDelete={() => onRemove(section.id)}
+        onSelect={() => onSelect(section.id)}
         allowedBlockTypes="all"
       />
 

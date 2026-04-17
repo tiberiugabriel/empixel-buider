@@ -11,6 +11,7 @@ interface BlockOverlayProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dragAttributes: Record<string, any> | undefined;
   onDelete: () => void;
+  onSelect?: () => void;
   allowedBlockTypes?: "all" | "leaf-only";
 }
 
@@ -20,6 +21,7 @@ export function BlockOverlay({
   dragListeners,
   dragAttributes,
   onDelete,
+  onSelect,
   allowedBlockTypes = "all",
 }: BlockOverlayProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -91,7 +93,7 @@ export function BlockOverlay({
         {...dragListeners}
         {...dragAttributes}
         title="Drag to reorder"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
       >
         ⠿
       </div>
