@@ -206,7 +206,7 @@ function SortableBlock({
       ref={setNodeRef}
       style={wrapperStyle}
       className={`epx-block-preview${isSelected ? " is-selected" : ""}`}
-      onClick={onSelect}
+      onClick={(e) => { e.stopPropagation(); onSelect(); }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
