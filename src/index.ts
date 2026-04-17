@@ -12,7 +12,7 @@ export function empixelBuilder(): PluginDescriptor {
     adminPages: [
       {
         path: "/editor",
-        label: "Page Editor",
+        label: "EmPixel Builder",
         icon: "layout",
       },
     ],

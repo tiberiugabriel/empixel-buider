@@ -85,7 +85,7 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
       pages: [
         {
           path: "/editor",
-          label: "Page Editor",
+          label: "EmPixel Builder",
         },
       ],
     },
