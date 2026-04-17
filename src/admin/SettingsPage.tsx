@@ -34,6 +34,22 @@ export function SettingsPage() {
         body: JSON.stringify({ collection: slug, enabled: checked }),
       });
       if (!res.ok) throw new Error("Failed to save settings");
+
+      if (checked) {
+        await apiFetch(`/_emdash/api/schema/collections/${encodeURIComponent(slug)}/fields`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slug: "empixel_builder",
+            type: "boolean",
+            label: "EmPixel Builder",
+            widget: "empixel-builder:page-builder",
+          }),
+        }).catch(() => {
+          // field may already exist — ignore
+        });
+      }
+
       setEnabled((prev) => {
         const next = new Set(prev);
         checked ? next.add(slug) : next.delete(slug);

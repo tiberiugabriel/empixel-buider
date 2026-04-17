@@ -12,7 +12,8 @@ function getDb() {
   return _db;
 }
 
-export function getBuilderLayout(collection: string, entryId: string): SectionBlock[] | null {
+export function getBuilderLayout(collection: string, entryId: string, enabled?: boolean): SectionBlock[] | null {
+  if (enabled === false) return null;
   try {
     const row = getDb()
       .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")

@@ -154,6 +154,9 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
       pages: [
         { path: "/editor", label: "EmPixel Builder" },
       ],
+      fieldWidgets: [
+        { name: "page-builder", label: "EmPixel Builder", fieldTypes: ["boolean"] },
+      ],
     },
   });
 }

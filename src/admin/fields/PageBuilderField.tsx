@@ -11,80 +11,122 @@ interface Props {
   minimal?: boolean;
 }
 
-/** Extract the entry ID from the current admin URL.
- *  Pattern: /_emdash/admin/content/{collection}/{id}
- */
-function getEntryIdFromUrl(): string | null {
-  const match = window.location.pathname.match(/\/content\/[^/]+\/([^/?#]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+function getEntryContext(): { collection: string; id: string } | null {
+  const match = window.location.pathname.match(/\/content\/([^/]+)\/([^/?#]+)/);
+  return match ? { collection: match[1], id: decodeURIComponent(match[2]) } : null;
 }
 
-export function PageBuilderField({ minimal }: Props) {
+export function PageBuilderField({ value, onChange, minimal }: Props) {
   const [sectionCount, setSectionCount] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const entryId = getEntryIdFromUrl();
+  const ctx = getEntryContext();
+  const enabled = !!value;
 
   useEffect(() => {
-    if (!entryId) { setLoading(false); return; }
-    apiFetch(`/_emdash/api/plugins/empixel-builder/layout?pageId=${encodeURIComponent(entryId)}`)
+    if (!ctx || !enabled) { setSectionCount(null); return; }
+    apiFetch(
+      `/_emdash/api/plugins/empixel-builder/layout?pageId=${encodeURIComponent(ctx.id)}&collection=${encodeURIComponent(ctx.collection)}`
+    )
       .then((r) => r.json())
       .then(({ data }: { data?: { sections?: unknown[] } }) => {
         setSectionCount(data?.sections?.length ?? 0);
       })
-      .catch(() => setSectionCount(0))
-      .finally(() => setLoading(false));
-  }, [entryId]);
+      .catch(() => setSectionCount(0));
+  }, [ctx?.id, ctx?.collection, enabled]);
 
   const openBuilder = () => {
-    if (!entryId) return;
+    if (!ctx) return;
     const back = window.location.pathname + window.location.search;
     window.location.href =
       `/_emdash/admin/plugins/empixel-builder/editor` +
-      `?pageId=${encodeURIComponent(entryId)}` +
+      `?pageId=${encodeURIComponent(ctx.id)}` +
+      `&collection=${encodeURIComponent(ctx.collection)}` +
       `&back=${encodeURIComponent(back)}`;
   };
 
-  if (!entryId) {
-    return (
-      <div className="epx-fw-error">
-        Could not determine entry ID from URL.
-      </div>
-    );
+  if (!ctx) {
+    return <div className="epx-fw-error">Could not determine entry from URL.</div>;
   }
 
-  const countLabel = loading
-    ? "Loading…"
-    : sectionCount === 0
-    ? "No sections yet — start building"
-    : `${sectionCount} section${sectionCount !== 1 ? "s" : ""}`;
+  const countLabel =
+    sectionCount === null
+      ? ""
+      : sectionCount === 0
+      ? "No sections yet — start building"
+      : `${sectionCount} section${sectionCount !== 1 ? "s" : ""}`;
 
   return (
-    <div className={`epx-fw${minimal ? " epx-fw--minimal" : ""}`}>
+    <div className={`epx-fw${minimal ? " epx-fw--minimal" : ""}${enabled ? " is-enabled" : ""}`}>
       <div className="epx-fw__icon">⚡</div>
       <div className="epx-fw__body">
         <p className="epx-fw__title">EmPixel Builder</p>
-        <p className="epx-fw__count">{countLabel}</p>
+        {enabled && countLabel && <p className="epx-fw__count">{countLabel}</p>}
       </div>
-      <button className="epx-fw__btn" onClick={openBuilder} type="button">
-        Open Builder
-      </button>
+      <div className="epx-fw__actions">
+        <label className="epx-fw__toggle" title={enabled ? "Disable builder" : "Enable builder"}>
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => onChange(e.target.checked)}
+          />
+          <span className="epx-fw__toggle-track">
+            <span className="epx-fw__toggle-thumb" />
+          </span>
+        </label>
+        {enabled && (
+          <button className="epx-fw__btn" onClick={openBuilder} type="button">
+            Open Builder
+          </button>
+        )}
+      </div>
       <style>{`
         .epx-fw {
           display: flex;
           align-items: center;
           gap: 12px;
           padding: 14px 16px;
-          background: linear-gradient(135deg, #eff6ff 0%, #f0f4ff 100%);
-          border: 1.5px solid #bfdbfe;
+          background: #f8faff;
+          border: 1.5px solid #e2e8f0;
           border-radius: 10px;
+          transition: border-color 0.15s, background 0.15s;
+        }
+        .epx-fw.is-enabled {
+          background: linear-gradient(135deg, #eff6ff 0%, #f0f4ff 100%);
+          border-color: #bfdbfe;
         }
         .epx-fw--minimal { padding: 8px 12px; border-radius: 6px; }
-        .epx-fw__icon { font-size: 22px; flex-shrink: 0; }
+        .epx-fw__icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
         .epx-fw__body { flex: 1; min-width: 0; }
         .epx-fw__title { margin: 0 0 2px; font-size: 13px; font-weight: 700; color: #1e3a8a; }
         .epx-fw__count { margin: 0; font-size: 12px; color: #64748b; }
+        .epx-fw__actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .epx-fw__toggle { position: relative; display: inline-flex; cursor: pointer; }
+        .epx-fw__toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+        .epx-fw__toggle-track {
+          display: flex;
+          align-items: center;
+          width: 36px;
+          height: 20px;
+          border-radius: 10px;
+          background: #cbd5e1;
+          transition: background 0.2s;
+          padding: 2px;
+          box-sizing: border-box;
+        }
+        .epx-fw__toggle input:checked + .epx-fw__toggle-track { background: #2563eb; }
+        .epx-fw__toggle-thumb {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background: #fff;
+          transition: transform 0.2s;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+          flex-shrink: 0;
+        }
+        .epx-fw__toggle input:checked + .epx-fw__toggle-track .epx-fw__toggle-thumb {
+          transform: translateX(16px);
+        }
         .epx-fw__btn {
-          padding: 8px 20px;
+          padding: 7px 16px;
           background: #2563eb;
           color: #fff;
           border: none;
@@ -94,7 +136,6 @@ export function PageBuilderField({ minimal }: Props) {
           cursor: pointer;
           white-space: nowrap;
           transition: background 0.15s;
-          flex-shrink: 0;
         }
         .epx-fw__btn:hover { background: #1d4ed8; }
         .epx-fw-error { font-size: 13px; color: #ef4444; }

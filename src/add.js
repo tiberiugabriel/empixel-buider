@@ -130,7 +130,7 @@ function patchPageFile(filePath) {
   // 2. Add getBuilderLayout call before closing --- (after Astro.cache.set line)
   frontmatter = frontmatter.replace(
     /(Astro\.cache\.set\([^)]+\);?)/,
-    `$1\n\nconst builderLayout = getBuilderLayout("${collection}", ${entryVar}.data.id);`
+    `$1\n\nconst builderLayout = getBuilderLayout("${collection}", ${entryVar}.data.id, (${entryVar}.data as any).empixel_builder as boolean | undefined);`
   );
 
   // 3. Wrap the content inside <Base> with BuilderWrapper (slot pattern avoids Astro parser issues)
