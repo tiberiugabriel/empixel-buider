@@ -12,6 +12,8 @@ import { PREVIEW_COMPONENTS } from "./previews/index.js";
 import { BlockOverlay } from "./BlockOverlay.js";
 import { BLOCK_DEFINITIONS } from "./blockDefinitions.js";
 
+export const CANVAS_DROP_ID = "canvas-drop";
+
 // ─── Drag data types (exported for BuilderPage) ───────────────────────────────
 
 export type BlockDragData = {
@@ -89,9 +91,11 @@ export function Canvas({
   dropIndicatorId,
   onAddAfter,
 }: CanvasProps) {
+  const { setNodeRef: setCanvasRef } = useDroppable({ id: CANVAS_DROP_ID });
+
   if (sections.length === 0) {
     return (
-      <main className="epx-canvas epx-canvas--empty">
+      <main ref={setCanvasRef} className="epx-canvas epx-canvas--empty">
         <div className="epx-canvas__empty-state">
           <div className="epx-canvas__empty-icon">🏗️</div>
           <h3>Start building your page</h3>
@@ -102,7 +106,7 @@ export function Canvas({
   }
 
   return (
-    <main className="epx-canvas">
+    <main ref={setCanvasRef} className="epx-canvas">
       <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
         <div className="epx-canvas__list">
           {sections.map((section) => {

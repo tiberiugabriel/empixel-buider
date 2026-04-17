@@ -15,7 +15,7 @@ import type { SectionBlock, PageLayout, BlockType } from "../types.js";
 import { isContainerType } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { LeftPanel } from "./LeftPanel.js";
-import { Canvas, type BlockDragData, type EmptyZoneData } from "./Canvas.js";
+import { Canvas, CANVAS_DROP_ID, type BlockDragData, type EmptyZoneData } from "./Canvas.js";
 import { RightPanel } from "./RightPanel.js";
 import {
   findBlockById,
@@ -283,12 +283,25 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
 
       if (!over) return;
       const overData = over.data.current as EmptyZoneData | BlockDragData | undefined;
+
+      // Dropped on canvas background → append at end
+      if (over.id === CANVAS_DROP_ID) {
+        dispatch({ type: "ADD_BLOCK", block: newBlock });
+        return;
+      }
+      // Dropped on empty zone inside container
       if (overData?.kind === "empty-zone") {
         const ezd = overData as EmptyZoneData;
         dispatch({ type: "ADD_TO_CONTAINER", containerId: ezd.containerId, slotIndex: ezd.slotIndex ?? undefined, block: newBlock });
-      } else {
-        dispatch({ type: "INSERT_AFTER", afterId: String(over.id), block: newBlock });
+        return;
       }
+      // Dropped on a container block itself → add inside it
+      if ((overData as BlockDragData)?.isContainer) {
+        dispatch({ type: "ADD_TO_CONTAINER", containerId: String(over.id), block: newBlock });
+        return;
+      }
+      // Dropped on a specific block → insert after it
+      dispatch({ type: "INSERT_AFTER", afterId: String(over.id), block: newBlock });
       return;
     }
 
@@ -312,6 +325,14 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
     const activeSlotIndex = activeBlockData.slotIndex ?? null;
     const overContainerId = overBlockData?.containerId ?? null;
     const overSlotIndex = overBlockData?.slotIndex ?? null;
+
+    // Dropped directly on a container block → move inside it (append)
+    if (overBlockData?.isContainer && !activeBlockData.isContainer) {
+      const container = findBlockById(String(over.id), sections);
+      const targetIndex = container?.children?.length ?? 0;
+      dispatch({ type: "MOVE_BLOCK", sourceId: String(active.id), targetContainerId: String(over.id), targetSlotIndex: null, targetIndex });
+      return;
+    }
 
     // Same container (or both top-level) → reorder
     if (activeContainerId === overContainerId && activeSlotIndex === overSlotIndex) {
