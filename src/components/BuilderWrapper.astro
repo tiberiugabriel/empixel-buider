@@ -1,0 +1,12 @@
+---
+import type { SectionBlock } from "../types.js";
+import LayoutRenderer from "./LayoutRenderer.astro";
+
+interface Props {
+  sections: SectionBlock[] | null;
+}
+
+const { sections } = Astro.props;
+---
+
+{sections ? <LayoutRenderer sections={sections} /> : <slot />}

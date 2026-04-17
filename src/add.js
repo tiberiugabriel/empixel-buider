@@ -102,6 +102,10 @@ function patchPageFile(filePath) {
   if (!collMatch) return null;
   const collection = collMatch[1];
 
+  // Extract entry variable name from: const { entry: varName, ... } = await getEmDashEntry(...)
+  const entryVarMatch = src.match(/entry:\s*(\w+)/);
+  const entryVar = entryVarMatch ? entryVarMatch[1] : "page";
+
   // Parse frontmatter (between first --- and second ---)
   if (!src.startsWith("---")) return null;
   const fmClose = src.indexOf("\n---", 3);
@@ -119,29 +123,26 @@ function patchPageFile(filePath) {
   fmLines.splice(
     lastImport + 1,
     0,
-    `import { getBuilderLayout, LayoutRenderer } from "empixel-builder/astro";`
+    `import { getBuilderLayout, BuilderWrapper } from "empixel-builder/astro";`
   );
   frontmatter = fmLines.join("\n");
 
   // 2. Add getBuilderLayout call before closing --- (after Astro.cache.set line)
   frontmatter = frontmatter.replace(
     /(Astro\.cache\.set\([^)]+\);?)/,
-    `$1\n\nconst builderLayout = getBuilderLayout("${collection}", page.data.id);`
+    `$1\n\nconst builderLayout = getBuilderLayout("${collection}", ${entryVar}.data.id);`
   );
 
-  // 3. Wrap the content inside <Base> with builder conditional
-  // Match everything between > (end of <Base ...>) and </Base>
+  // 3. Wrap the content inside <Base> with BuilderWrapper (slot pattern avoids Astro parser issues)
   template = template.replace(
     /(<Base[^>]*>)([\s\S]*?)(<\/Base>)/,
     (_, open, inner, close) => {
       const indent = "\t";
       return (
         `${open}\n` +
-        `${indent}{builderLayout ? (\n` +
-        `${indent}${indent}<LayoutRenderer sections={builderLayout} />\n` +
-        `${indent}) : (\n` +
+        `${indent}<BuilderWrapper sections={builderLayout}>\n` +
         inner.replace(/^/gm, indent) +
-        `${indent})}\n` +
+        `${indent}</BuilderWrapper>\n` +
         close
       );
     }
