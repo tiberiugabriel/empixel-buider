@@ -214,7 +214,7 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
   sectionsRef.current = state.sections;
 
   // Drag state
-  const [activeDragLabel, setActiveDragLabel] = useState<string | null>(null);
+  const [activeDragDef, setActiveDragDef] = useState<{ icon: string; label: string } | null>(null);
   const [overBlockId, setOverBlockId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -233,10 +233,13 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
     const data = active.data.current as { kind: string; blockType?: BlockType } | undefined;
     if (data?.kind === "new-block" && data.blockType) {
       const def = getBlockDef(data.blockType);
-      setActiveDragLabel(def?.label ?? data.blockType);
+      if (def) setActiveDragDef({ icon: def.icon, label: def.label });
     } else {
       const block = findBlockById(String(active.id), sectionsRef.current);
-      setActiveDragLabel(block?.type ?? null);
+      if (block) {
+        const def = getBlockDef(block.type);
+        if (def) setActiveDragDef({ icon: def.icon, label: def.label });
+      }
     }
   }, []);
 
@@ -249,7 +252,7 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
   }, []);
 
   const handleDragEnd = useCallback(({ active, over }: DragEndEvent) => {
-    setActiveDragLabel(null);
+    setActiveDragDef(null);
     setOverBlockId(null);
 
     const sections = sectionsRef.current;
@@ -262,10 +265,7 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
       if (!def) return;
       const newBlock: SectionBlock = { id: crypto.randomUUID(), type: blockType, config: { ...def.defaultConfig } };
 
-      if (!over) {
-        dispatch({ type: "ADD_BLOCK", block: newBlock });
-        return;
-      }
+      if (!over) return;
       const overData = over.data.current as EmptyZoneData | BlockDragData | undefined;
       if (overData?.kind === "empty-zone") {
         const ezd = overData as EmptyZoneData;
@@ -466,9 +466,12 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
         </div>
       </div>
 
-      <DragOverlay>
-        {activeDragLabel ? (
-          <div className="epx-drag-overlay-ghost">{activeDragLabel}</div>
+      <DragOverlay dropAnimation={null}>
+        {activeDragDef ? (
+          <div className="epx-drag-overlay-ghost">
+            <span className="epx-drag-overlay-ghost__icon">{activeDragDef.icon}</span>
+            <span className="epx-drag-overlay-ghost__label">{activeDragDef.label}</span>
+          </div>
         ) : null}
       </DragOverlay>
     </DndContext>
@@ -748,10 +751,16 @@ function BuilderStyles() {
 
       /* ── Drag overlay ghost ── */
       .epx-drag-overlay-ghost {
-        padding: 6px 12px; background: rgba(20,20,20,0.82); color: #fff;
-        border-radius: 6px; font-size: 13px; font-weight: 500;
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 12px; background: #fff;
+        border: 1px solid #c7d2fe; border-radius: 6px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+        font-size: 13px; font-weight: 500; color: #222;
         pointer-events: none; white-space: nowrap;
+        transform: rotate(2deg);
       }
+      .epx-drag-overlay-ghost__icon { font-size: 16px; }
+      .epx-drag-overlay-ghost__label { color: #222; }
 
       /* ── Right panel ── */
       .epx-right-panel {

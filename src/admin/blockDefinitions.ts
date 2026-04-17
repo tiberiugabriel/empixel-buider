@@ -330,34 +330,6 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
   },
 
   {
-    type: "columns",
-    label: "Columns",
-    icon: "📐",
-    description: "Multi-column text layout",
-    defaultConfig: {
-      columns: "2",
-      theme: "light",
-      col1Content: "",
-      col2Content: "",
-    },
-    fields: [
-      {
-        key: "columns",
-        label: "Number of Columns",
-        type: "select",
-        options: [
-          { value: "2", label: "2 Columns" },
-          { value: "3", label: "3 Columns" },
-        ],
-      },
-      { key: "col1Content", label: "Column 1 Content", type: "textarea", placeholder: "Text for column 1..." },
-      { key: "col2Content", label: "Column 2 Content", type: "textarea", placeholder: "Text for column 2..." },
-      { key: "col3Content", label: "Column 3 Content (if 3 cols)", type: "textarea", placeholder: "Text for column 3..." },
-      THEME_FIELD,
-    ],
-  },
-
-  {
     type: "section",
     label: "Section Container",
     icon: "📦",
