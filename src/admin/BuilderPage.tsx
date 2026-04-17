@@ -5,6 +5,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDndContext,
   type DragStartEvent,
   type DragOverEvent,
   type DragEndEvent,
@@ -138,6 +139,33 @@ const initialState: State = {
   saveError: null,
 };
 
+// ─── DragGhost ────────────────────────────────────────────────────────────────
+// Reads from dnd-kit's own context to avoid React state timing issues
+
+function DragGhost({ sectionsRef }: { sectionsRef: React.RefObject<SectionBlock[]> }) {
+  const { active } = useDndContext();
+  if (!active) return null;
+
+  const data = active.data.current as { kind?: string; blockType?: BlockType } | undefined;
+  let def;
+
+  if (data?.kind === "new-block" && data.blockType) {
+    def = getBlockDef(data.blockType);
+  } else {
+    const block = findBlockById(String(active.id), sectionsRef.current ?? []);
+    if (block) def = getBlockDef(block.type);
+  }
+
+  if (!def) return null;
+
+  return (
+    <div className="epx-drag-overlay-ghost">
+      <span className="epx-drag-overlay-ghost__icon">{def.icon}</span>
+      <span className="epx-drag-overlay-ghost__label">{def.label}</span>
+    </div>
+  );
+}
+
 // ─── Page Selector ────────────────────────────────────────────────────────────
 
 const COLLECTIONS = [
@@ -214,7 +242,6 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
   sectionsRef.current = state.sections;
 
   // Drag state
-  const [activeDragDef, setActiveDragDef] = useState<{ icon: string; label: string } | null>(null);
   const [overBlockId, setOverBlockId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -229,18 +256,8 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
       .catch((err: unknown) => dispatch({ type: "LOAD_ERROR", error: String(err) }));
   }, [pageId]);
 
-  const handleDragStart = useCallback(({ active }: DragStartEvent) => {
-    const data = active.data.current as { kind: string; blockType?: BlockType } | undefined;
-    if (data?.kind === "new-block" && data.blockType) {
-      const def = getBlockDef(data.blockType);
-      if (def) setActiveDragDef({ icon: def.icon, label: def.label });
-    } else {
-      const block = findBlockById(String(active.id), sectionsRef.current);
-      if (block) {
-        const def = getBlockDef(block.type);
-        if (def) setActiveDragDef({ icon: def.icon, label: def.label });
-      }
-    }
+  const handleDragStart = useCallback((_: DragStartEvent) => {
+    // ghost is rendered via DragGhost which reads from useDndContext directly
   }, []);
 
   const handleDragOver = useCallback(({ active, over }: DragOverEvent) => {
@@ -252,7 +269,6 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
   }, []);
 
   const handleDragEnd = useCallback(({ active, over }: DragEndEvent) => {
-    setActiveDragDef(null);
     setOverBlockId(null);
 
     const sections = sectionsRef.current;
@@ -467,12 +483,7 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
       </div>
 
       <DragOverlay dropAnimation={null}>
-        {activeDragDef ? (
-          <div className="epx-drag-overlay-ghost">
-            <span className="epx-drag-overlay-ghost__icon">{activeDragDef.icon}</span>
-            <span className="epx-drag-overlay-ghost__label">{activeDragDef.label}</span>
-          </div>
-        ) : null}
+        <DragGhost sectionsRef={sectionsRef} />
       </DragOverlay>
     </DndContext>
   );
