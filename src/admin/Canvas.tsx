@@ -1,270 +1,37 @@
 import React, { memo, useState } from "react";
 import {
-  DndContext,
-  DragOverlay,
-  closestCorners,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  useDroppable,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
-import {
   SortableContext,
-  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  arrayMove,
   useSortable,
 } from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { SectionBlock, BlockType } from "../types.js";
 import { isContainerType } from "../types.js";
 import { PREVIEW_COMPONENTS } from "./previews/index.js";
+import { BlockOverlay } from "./BlockOverlay.js";
 import { BLOCK_DEFINITIONS } from "./blockDefinitions.js";
-import { findBlockById } from "./treeUtils.js";
 
-// ─── Drag data types ──────────────────────────────────────────────────────────
+// ─── Drag data types (exported for BuilderPage) ───────────────────────────────
 
-type BlockDragData = {
+export type BlockDragData = {
   kind: "block";
   containerId: string | null;
   slotIndex: number | null;
   isContainer: boolean;
 };
 
-type EmptyZoneData = {
+export type EmptyZoneData = {
   kind: "empty-zone";
   containerId: string;
   slotIndex: number | null;
 };
 
-// ─── Canvas Props ─────────────────────────────────────────────────────────────
+// ─── Leaf block defs (no containers) ─────────────────────────────────────────
 
-interface CanvasProps {
-  sections: SectionBlock[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onRemove: (id: string) => void;
-  onReorder: (sections: SectionBlock[]) => void;
-  onMoveBlock: (sourceId: string, targetContainerId: string | null, targetSlotIndex: number | null, targetIndex: number) => void;
-  onReorderInContainer: (containerId: string, slotIndex: number | null, newOrder: SectionBlock[]) => void;
-  onAddToContainer: (containerId: string, slotIndex: number | null, type: BlockType) => void;
-}
+const LEAF_BLOCK_DEFS = BLOCK_DEFINITIONS.filter((d) => !isContainerType(d.type));
 
-// ─── Canvas ───────────────────────────────────────────────────────────────────
-
-export function Canvas({
-  sections,
-  selectedId,
-  onSelect,
-  onRemove,
-  onReorder,
-  onMoveBlock,
-  onReorderInContainer,
-  onAddToContainer,
-}: CanvasProps) {
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveDragId(String(event.active.id));
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveDragId(null);
-    if (!over || active.id === over.id) return;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const activeData = active.data.current as BlockDragData | undefined;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const overRaw = over.data.current as any;
-
-    // Drop on an empty-zone droppable
-    if (overRaw?.kind === "empty-zone") {
-      const zone = overRaw as EmptyZoneData;
-      if (activeData?.isContainer) return; // no nesting containers
-      onMoveBlock(String(active.id), zone.containerId, zone.slotIndex, 0);
-      return;
-    }
-
-    const overData = overRaw as BlockDragData | undefined;
-
-    // Prevent containers from being dropped into other containers
-    if (activeData?.isContainer && overData?.containerId !== null) return;
-
-    // Dropping a leaf onto a container block itself → append to its children
-    if (overData?.isContainer && overData.containerId === null) {
-      const targetContainer = sections.find((s) => s.id === over.id);
-      if (!targetContainer) return;
-      const targetLen =
-        targetContainer.type === "columns"
-          ? (targetContainer.slots?.[0]?.length ?? 0)
-          : (targetContainer.children?.length ?? 0);
-      const slotIndex = targetContainer.type === "columns" ? 0 : null;
-      onMoveBlock(String(active.id), String(over.id), slotIndex, targetLen);
-      return;
-    }
-
-    const sourceContainerId = activeData?.containerId ?? null;
-    const sourceSlotIndex = activeData?.slotIndex ?? null;
-    const targetContainerId = overData?.containerId ?? null;
-    const targetSlotIndex = overData?.slotIndex ?? null;
-
-    const isSameLocation =
-      sourceContainerId === targetContainerId && sourceSlotIndex === targetSlotIndex;
-
-    if (isSameLocation) {
-      if (sourceContainerId === null) {
-        // Top-level reorder
-        const oldIdx = sections.findIndex((s) => s.id === active.id);
-        const newIdx = sections.findIndex((s) => s.id === over.id);
-        if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
-          onReorder(arrayMove(sections, oldIdx, newIdx));
-        }
-      } else {
-        // In-container reorder
-        const container = findBlockById(sourceContainerId, sections);
-        if (!container) return;
-        const items =
-          sourceSlotIndex === null
-            ? (container.children ?? [])
-            : (container.slots?.[sourceSlotIndex] ?? []);
-        const oldIdx = items.findIndex((s) => s.id === active.id);
-        const newIdx = items.findIndex((s) => s.id === over.id);
-        if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
-          onReorderInContainer(sourceContainerId, sourceSlotIndex, arrayMove(items, oldIdx, newIdx));
-        }
-      }
-    } else {
-      // Cross-container move
-      let targetItems: SectionBlock[];
-      if (targetContainerId === null) {
-        targetItems = sections;
-      } else {
-        const targetContainer = findBlockById(targetContainerId, sections);
-        targetItems =
-          targetSlotIndex === null
-            ? (targetContainer?.children ?? [])
-            : (targetContainer?.slots?.[targetSlotIndex] ?? []);
-      }
-      const targetIndex = targetItems.findIndex((s) => s.id === over.id);
-      onMoveBlock(
-        String(active.id),
-        targetContainerId,
-        targetSlotIndex,
-        targetIndex >= 0 ? targetIndex : targetItems.length
-      );
-    }
-  };
-
-  const activeBlock = activeDragId ? findBlockById(activeDragId, sections) : null;
-
-  if (sections.length === 0) {
-    return (
-      <main className="epx-canvas epx-canvas--empty">
-        <div className="epx-canvas__empty-state">
-          <div className="epx-canvas__empty-icon">🏗️</div>
-          <h3>Start building your page</h3>
-          <p>Click a block from the left panel to add it to your page</p>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <main className="epx-canvas">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-          <div className="epx-canvas__list">
-            {sections.map((section) => {
-              if (section.type === "section") {
-                return (
-                  <ContainerBlock
-                    key={section.id}
-                    section={section}
-                    selectedId={selectedId}
-                    onSelect={onSelect}
-                    onRemove={onRemove}
-                    onAddToContainer={onAddToContainer}
-                  />
-                );
-              }
-              if (section.type === "columns") {
-                return (
-                  <ColumnsBlock
-                    key={section.id}
-                    section={section}
-                    selectedId={selectedId}
-                    onSelect={onSelect}
-                    onRemove={onRemove}
-                    onAddToContainer={onAddToContainer}
-                  />
-                );
-              }
-              return (
-                <SortableBlock
-                  key={section.id}
-                  section={section}
-                  containerId={null}
-                  slotIndex={null}
-                  isSelected={section.id === selectedId}
-                  onSelect={() => onSelect(section.id)}
-                  onRemove={() => onRemove(section.id)}
-                />
-              );
-            })}
-          </div>
-        </SortableContext>
-
-        <DragOverlay>
-          {activeBlock ? (
-            <div
-              style={{
-                opacity: 0.85,
-                background: "#fff",
-                borderRadius: 8,
-                border: "2px solid #2563eb",
-                padding: "8px 12px",
-                fontSize: 13,
-                fontWeight: 600,
-                color: "#2563eb",
-                boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
-                cursor: "grabbing",
-              }}
-            >
-              {activeBlock.type}
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-    </main>
-  );
-}
-
-// ─── SortableBlock ─────────────────────────────────────────────────────────────
-
-interface SortableBlockProps {
-  section: SectionBlock;
-  containerId: string | null;
-  slotIndex: number | null;
-  isSelected: boolean;
-  onSelect: () => void;
-  onRemove: () => void;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Style helpers ────────────────────────────────────────────────────────────
 
 const BORDER_RADIUS_MAP: Record<string, string> = {
   none: "0", sm: "4px", md: "8px", lg: "16px", full: "9999px",
@@ -279,13 +46,10 @@ function resolveBlockStyle(style: Record<string, unknown> | undefined): {
   innerStyle: React.CSSProperties;
 } {
   if (!style) return { outerStyle: {}, innerStyle: {} };
-
   const num = (v: unknown) => (typeof v === "number" ? v : undefined);
-
   const outerStyle: React.CSSProperties = {};
   if (num(style.marginTop) !== undefined) outerStyle.marginTop = num(style.marginTop);
   if (num(style.marginBottom) !== undefined) outerStyle.marginBottom = num(style.marginBottom);
-
   const innerStyle: React.CSSProperties = {};
   if (num(style.paddingTop) !== undefined) innerStyle.paddingTop = num(style.paddingTop);
   if (num(style.paddingRight) !== undefined) innerStyle.paddingRight = num(style.paddingRight);
@@ -299,11 +63,109 @@ function resolveBlockStyle(style: Record<string, unknown> | undefined): {
     innerStyle.marginLeft = "auto";
     innerStyle.marginRight = "auto";
   }
-
   return { outerStyle, innerStyle };
 }
 
+// ─── Canvas Props ─────────────────────────────────────────────────────────────
+
+interface CanvasProps {
+  sections: SectionBlock[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onRemove: (id: string) => void;
+  onAddToContainer: (containerId: string, slotIndex: number | null, type: BlockType) => void;
+  dropIndicatorId: string | null;
+  onAddAfter: (afterId: string, type: BlockType) => void;
+}
+
+// ─── Canvas ───────────────────────────────────────────────────────────────────
+
+export function Canvas({
+  sections,
+  selectedId,
+  onSelect,
+  onRemove,
+  onAddToContainer,
+  dropIndicatorId,
+  onAddAfter,
+}: CanvasProps) {
+  if (sections.length === 0) {
+    return (
+      <main className="epx-canvas epx-canvas--empty">
+        <div className="epx-canvas__empty-state">
+          <div className="epx-canvas__empty-icon">🏗️</div>
+          <h3>Start building your page</h3>
+          <p>Click or drag a block from the left panel</p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="epx-canvas">
+      <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+        <div className="epx-canvas__list">
+          {sections.map((section) => {
+            if (section.type === "section") {
+              return (
+                <ContainerBlock
+                  key={section.id}
+                  section={section}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onRemove={onRemove}
+                  onAddToContainer={onAddToContainer}
+                  dropIndicatorId={dropIndicatorId}
+                  onAddAfter={onAddAfter}
+                />
+              );
+            }
+            if (section.type === "columns") {
+              return (
+                <ColumnsBlock
+                  key={section.id}
+                  section={section}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onRemove={onRemove}
+                  onAddToContainer={onAddToContainer}
+                  dropIndicatorId={dropIndicatorId}
+                  onAddAfter={onAddAfter}
+                />
+              );
+            }
+            return (
+              <SortableBlock
+                key={section.id}
+                section={section}
+                containerId={null}
+                slotIndex={null}
+                isSelected={section.id === selectedId}
+                onSelect={() => onSelect(section.id)}
+                onRemove={() => onRemove(section.id)}
+                isDropTarget={section.id === dropIndicatorId}
+                onAddAfter={(type) => onAddAfter(section.id, type)}
+              />
+            );
+          })}
+        </div>
+      </SortableContext>
+    </main>
+  );
+}
+
 // ─── SortableBlock ─────────────────────────────────────────────────────────────
+
+interface SortableBlockProps {
+  section: SectionBlock;
+  containerId: string | null;
+  slotIndex: number | null;
+  isSelected: boolean;
+  onSelect: () => void;
+  onRemove: () => void;
+  isDropTarget: boolean;
+  onAddAfter: (type: BlockType) => void;
+}
 
 function SortableBlock({
   section,
@@ -312,6 +174,8 @@ function SortableBlock({
   isSelected,
   onSelect,
   onRemove,
+  isDropTarget,
+  onAddAfter,
 }: SortableBlockProps) {
   const [hovered, setHovered] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -346,25 +210,15 @@ function SortableBlock({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div
-        className="epx-block-preview__handle"
-        style={{ opacity: hovered || isSelected ? 1 : 0 }}
-        {...attributes}
-        {...listeners}
-        title="Drag to reorder"
-        onClick={(e) => e.stopPropagation()}
-      >
-        ⠿
-      </div>
-      <button
-        className="epx-block-preview__delete"
-        style={{ opacity: hovered || isSelected ? 1 : 0 }}
-        onClick={(e) => { e.stopPropagation(); onRemove(); }}
-        title="Remove block"
-        type="button"
-      >
-        ×
-      </button>
+      <BlockOverlay
+        visible={hovered || isSelected}
+        onAdd={onAddAfter}
+        dragListeners={listeners}
+        dragAttributes={attributes}
+        onDelete={onRemove}
+        allowedBlockTypes="all"
+      />
+
       <div style={innerStyle}>
         {Preview ? (
           <Preview config={section.config} children={section.children} slots={section.slots} />
@@ -374,6 +228,8 @@ function SortableBlock({
           </div>
         )}
       </div>
+
+      {isDropTarget && <div className="epx-drop-indicator" />}
     </div>
   );
 }
@@ -386,6 +242,8 @@ interface ContainerBlockProps {
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
   onAddToContainer: (containerId: string, slotIndex: number | null, type: BlockType) => void;
+  dropIndicatorId: string | null;
+  onAddAfter: (afterId: string, type: BlockType) => void;
 }
 
 const ContainerBlock = memo(function ContainerBlock({
@@ -394,7 +252,10 @@ const ContainerBlock = memo(function ContainerBlock({
   onSelect,
   onRemove,
   onAddToContainer,
+  dropIndicatorId,
+  onAddAfter,
 }: ContainerBlockProps) {
+  const [hovered, setHovered] = useState(false);
   const isSelected = section.id === selectedId;
   const children = section.children ?? [];
 
@@ -411,35 +272,26 @@ const ContainerBlock = memo(function ContainerBlock({
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
+    opacity: isDragging ? 0.4 : 1,
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`epx-container-block${isSelected ? " is-selected" : ""}${isDragging ? " is-dragging" : ""}`}
+      className={`epx-container-block${isSelected ? " is-selected" : ""}`}
       onClick={(e) => { e.stopPropagation(); onSelect(section.id); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      <div className="epx-container-block__header">
-        <span
-          className="epx-container-block__handle"
-          {...attributes}
-          {...listeners}
-          title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          ⠿
-        </span>
-        <span className="epx-container-block__label">📦 Section Container</span>
-        <button
-          className="epx-container-block__delete"
-          onClick={(e) => { e.stopPropagation(); onRemove(section.id); }}
-          title="Remove section"
-          type="button"
-        >
-          ×
-        </button>
-      </div>
+      <BlockOverlay
+        visible={hovered || isSelected}
+        onAdd={(type) => onAddAfter(section.id, type)}
+        dragListeners={listeners}
+        dragAttributes={attributes}
+        onDelete={() => onRemove(section.id)}
+        allowedBlockTypes="all"
+      />
 
       <SortableContext items={children.map((c) => c.id)} strategy={verticalListSortingStrategy}>
         <div className="epx-container-block__children">
@@ -453,19 +305,25 @@ const ContainerBlock = memo(function ContainerBlock({
                 isSelected={child.id === selectedId}
                 onSelect={() => onSelect(child.id)}
                 onRemove={() => onRemove(child.id)}
+                isDropTarget={child.id === dropIndicatorId}
+                onAddAfter={(type) => onAddAfter(child.id, type)}
               />
             ))
           ) : (
-            <EmptyDropZone containerId={section.id} slotIndex={null} />
+            <EmptyDropZone
+              containerId={section.id}
+              slotIndex={null}
+              onAdd={(type) => onAddToContainer(section.id, null, type)}
+            />
           )}
         </div>
       </SortableContext>
 
-      <AddBlockButton
-        containerId={section.id}
-        slotIndex={null}
-        onAdd={onAddToContainer}
-      />
+      {children.length > 0 && (
+        <ContainerAddButton onAdd={(type) => onAddToContainer(section.id, null, type)} />
+      )}
+
+      {section.id === dropIndicatorId && <div className="epx-drop-indicator" />}
     </div>
   );
 });
@@ -478,7 +336,10 @@ const ColumnsBlock = memo(function ColumnsBlock({
   onSelect,
   onRemove,
   onAddToContainer,
+  dropIndicatorId,
+  onAddAfter,
 }: ContainerBlockProps) {
+  const [hovered, setHovered] = useState(false);
   const isSelected = section.id === selectedId;
   const numCols = parseInt(section.config.columns ?? "2", 10);
   const slots: SectionBlock[][] = section.slots ?? Array.from({ length: numCols }, () => []);
@@ -496,35 +357,26 @@ const ColumnsBlock = memo(function ColumnsBlock({
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
+    opacity: isDragging ? 0.4 : 1,
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`epx-columns-block${isSelected ? " is-selected" : ""}${isDragging ? " is-dragging" : ""}`}
+      className={`epx-columns-block${isSelected ? " is-selected" : ""}`}
       onClick={(e) => { e.stopPropagation(); onSelect(section.id); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      <div className="epx-columns-block__header">
-        <span
-          className="epx-columns-block__handle"
-          {...attributes}
-          {...listeners}
-          title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          ⠿
-        </span>
-        <span className="epx-columns-block__label">📐 Columns ({numCols})</span>
-        <button
-          className="epx-columns-block__delete"
-          onClick={(e) => { e.stopPropagation(); onRemove(section.id); }}
-          title="Remove columns"
-          type="button"
-        >
-          ×
-        </button>
-      </div>
+      <BlockOverlay
+        visible={hovered || isSelected}
+        onAdd={(type) => onAddAfter(section.id, type)}
+        dragListeners={listeners}
+        dragAttributes={attributes}
+        onDelete={() => onRemove(section.id)}
+        allowedBlockTypes="all"
+      />
 
       <div
         className="epx-columns-block__grid"
@@ -534,7 +386,6 @@ const ColumnsBlock = memo(function ColumnsBlock({
           const slotItems = slots[si] ?? [];
           return (
             <div key={si} className="epx-columns__slot">
-              <div className="epx-columns__slot-label">Col {si + 1}</div>
               <SortableContext
                 items={slotItems.map((c) => c.id)}
                 strategy={verticalListSortingStrategy}
@@ -549,21 +400,25 @@ const ColumnsBlock = memo(function ColumnsBlock({
                       isSelected={child.id === selectedId}
                       onSelect={() => onSelect(child.id)}
                       onRemove={() => onRemove(child.id)}
+                      isDropTarget={child.id === dropIndicatorId}
+                      onAddAfter={(type) => onAddAfter(child.id, type)}
                     />
                   ))
                 ) : (
-                  <EmptyDropZone containerId={section.id} slotIndex={si} />
+                  <EmptyDropZone
+                    containerId={section.id}
+                    slotIndex={si}
+                    onAdd={(type) => onAddToContainer(section.id, si, type)}
+                  />
                 )}
               </SortableContext>
-              <AddBlockButton
-                containerId={section.id}
-                slotIndex={si}
-                onAdd={onAddToContainer}
-              />
+              <ContainerAddButton onAdd={(type) => onAddToContainer(section.id, si, type)} />
             </div>
           );
         })}
       </div>
+
+      {section.id === dropIndicatorId && <div className="epx-drop-indicator" />}
     </div>
   );
 });
@@ -573,9 +428,11 @@ const ColumnsBlock = memo(function ColumnsBlock({
 function EmptyDropZone({
   containerId,
   slotIndex,
+  onAdd,
 }: {
   containerId: string;
   slotIndex: number | null;
+  onAdd: (type: BlockType) => void;
 }) {
   const id = `empty:${containerId}:${slotIndex ?? "c"}`;
   const { setNodeRef, isOver } = useDroppable({
@@ -584,62 +441,55 @@ function EmptyDropZone({
   });
 
   return (
-    <div ref={setNodeRef} className={`epx-container__empty-zone${isOver ? " is-over" : ""}`}>
-      Drop blocks here
+    <div
+      ref={setNodeRef}
+      className={`epx-container__empty-zone${isOver ? " is-over" : ""}`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <ContainerAddButton onAdd={onAdd} />
     </div>
   );
 }
 
-// ─── AddBlockButton ───────────────────────────────────────────────────────────
+// ─── ContainerAddButton ────────────────────────────────────────────────────────
 
-const LEAF_BLOCK_DEFS = BLOCK_DEFINITIONS.filter((d) => !isContainerType(d.type));
-
-function AddBlockButton({
-  containerId,
-  slotIndex,
-  onAdd,
-}: {
-  containerId: string;
-  slotIndex: number | null;
-  onAdd: (containerId: string, slotIndex: number | null, type: BlockType) => void;
-}) {
+function ContainerAddButton({ onAdd }: { onAdd: (type: BlockType) => void }) {
   const [open, setOpen] = useState(false);
 
-  if (!open) {
-    return (
-      <button
-        className="epx-add-block-btn"
-        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        type="button"
-      >
-        + Add Block
-      </button>
-    );
-  }
-
   return (
-    <div onClick={(e) => e.stopPropagation()}>
-      <div className="epx-add-block-picker">
-        <div className="epx-add-block-picker__title">Add Block</div>
-        {LEAF_BLOCK_DEFS.map((def) => (
+    <div className="epx-container-block__add-btn" onClick={(e) => e.stopPropagation()}>
+      {open ? (
+        <div className="epx-block-overlay__picker" style={{ position: "static", width: "100%" }}>
+          <div className="epx-block-overlay__picker-title">Add Block Inside</div>
+          {LEAF_BLOCK_DEFS.map((def) => (
+            <button
+              key={def.type}
+              className="epx-block-card"
+              onClick={() => { onAdd(def.type); setOpen(false); }}
+              type="button"
+            >
+              <span className="epx-block-card__icon">{def.icon}</span>
+              <span className="epx-block-card__label">{def.label}</span>
+            </button>
+          ))}
           <button
-            key={def.type}
-            className="epx-block-card"
-            onClick={() => { onAdd(containerId, slotIndex, def.type); setOpen(false); }}
+            style={{ marginTop: 4, padding: "4px 8px", background: "none", border: "1px solid #d0d0d0", borderRadius: 5, fontSize: 11, color: "#888", cursor: "pointer", width: "100%" }}
+            onClick={() => setOpen(false)}
             type="button"
           >
-            <span className="epx-block-card__icon">{def.icon}</span>
-            <span className="epx-block-card__label">{def.label}</span>
+            Cancel
           </button>
-        ))}
+        </div>
+      ) : (
         <button
-          style={{ marginTop: 4, padding: "5px 8px", background: "none", border: "1px solid #d0d0d0", borderRadius: 5, fontSize: 12, color: "#888", cursor: "pointer", width: "100%" }}
-          onClick={() => setOpen(false)}
+          className="epx-container__add-icon"
+          onClick={() => setOpen(true)}
           type="button"
+          title="Add block inside"
         >
-          Cancel
+          +
         </button>
-      </div>
+      )}
     </div>
   );
 }

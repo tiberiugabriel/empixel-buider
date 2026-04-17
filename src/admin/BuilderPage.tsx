@@ -1,10 +1,20 @@
-import React, { useCallback, useEffect, useReducer, useState } from "react";
+import React, { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { apiFetch, parseApiResponse } from "emdash/plugin-utils";
 import type { SectionBlock, PageLayout, BlockType } from "../types.js";
 import { isContainerType } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { LeftPanel } from "./LeftPanel.js";
-import { Canvas } from "./Canvas.js";
+import { Canvas, type BlockDragData, type EmptyZoneData } from "./Canvas.js";
 import { RightPanel } from "./RightPanel.js";
 import {
   findBlockById,
@@ -46,7 +56,8 @@ type Action =
   | { type: "SAVE_ERROR"; error: string }
   | { type: "ADD_TO_CONTAINER"; containerId: string; slotIndex?: number; block: SectionBlock }
   | { type: "MOVE_BLOCK"; sourceId: string; targetContainerId: string | null; targetSlotIndex: number | null; targetIndex: number }
-  | { type: "REORDER_IN_CONTAINER"; containerId: string; slotIndex: number | null; newOrder: SectionBlock[] };
+  | { type: "REORDER_IN_CONTAINER"; containerId: string; slotIndex: number | null; newOrder: SectionBlock[] }
+  | { type: "INSERT_AFTER"; afterId: string; block: SectionBlock };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -94,6 +105,24 @@ function reducer(state: State, action: Action): State {
     }
     case "REORDER_IN_CONTAINER":
       return { ...state, sections: reorderInContainer(action.containerId, action.slotIndex, action.newOrder, state.sections), isDirty: true };
+    case "INSERT_AFTER": {
+      const path = findPath(action.afterId, state.sections);
+      let next: SectionBlock[];
+      if (!path) {
+        next = [...state.sections, action.block];
+      } else if (path.level === "top") {
+        next = [...state.sections];
+        next.splice(path.index + 1, 0, action.block);
+      } else {
+        next = insertAtPath(action.block, {
+          level: "container",
+          containerId: path.containerId,
+          slotIndex: path.slotIndex,
+          index: path.index + 1,
+        }, state.sections);
+      }
+      return { ...state, sections: next, selectedId: action.block.id, isDirty: true };
+    }
     default:
       return state;
   }
@@ -180,6 +209,18 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
   const [state, dispatch] = useReducer(reducer, initialState);
   const backUrl = new URLSearchParams(window.location.search).get("back") ?? null;
 
+  // Keep a ref to sections to avoid stale closure in drag handlers
+  const sectionsRef = useRef(state.sections);
+  sectionsRef.current = state.sections;
+
+  // Drag state
+  const [activeDragLabel, setActiveDragLabel] = useState<string | null>(null);
+  const [overBlockId, setOverBlockId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
   useEffect(() => {
     dispatch({ type: "LOAD_START" });
     apiFetch(`/_emdash/api/plugins/empixel-builder/layout?pageId=${encodeURIComponent(pageId)}`)
@@ -187,6 +228,111 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
       .then(({ data }) => dispatch({ type: "LOAD_SUCCESS", sections: data?.sections ?? [] }))
       .catch((err: unknown) => dispatch({ type: "LOAD_ERROR", error: String(err) }));
   }, [pageId]);
+
+  const handleDragStart = useCallback(({ active }: DragStartEvent) => {
+    const data = active.data.current as { kind: string; blockType?: BlockType } | undefined;
+    if (data?.kind === "new-block" && data.blockType) {
+      const def = getBlockDef(data.blockType);
+      setActiveDragLabel(def?.label ?? data.blockType);
+    } else {
+      const block = findBlockById(String(active.id), sectionsRef.current);
+      setActiveDragLabel(block?.type ?? null);
+    }
+  }, []);
+
+  const handleDragOver = useCallback(({ active, over }: DragOverEvent) => {
+    const data = active.data.current as { kind: string } | undefined;
+    if (data?.kind === "new-block") {
+      const overData = over?.data.current as { kind: string } | undefined;
+      setOverBlockId(over && overData?.kind === "block" ? String(over.id) : null);
+    }
+  }, []);
+
+  const handleDragEnd = useCallback(({ active, over }: DragEndEvent) => {
+    setActiveDragLabel(null);
+    setOverBlockId(null);
+
+    const sections = sectionsRef.current;
+    const activeData = active.data.current as BlockDragData | { kind: "new-block"; blockType: BlockType } | undefined;
+
+    // ── New block dragged from sidebar ──
+    if (activeData?.kind === "new-block") {
+      const { blockType } = activeData as { kind: "new-block"; blockType: BlockType };
+      const def = getBlockDef(blockType);
+      if (!def) return;
+      const newBlock: SectionBlock = { id: crypto.randomUUID(), type: blockType, config: { ...def.defaultConfig } };
+
+      if (!over) {
+        dispatch({ type: "ADD_BLOCK", block: newBlock });
+        return;
+      }
+      const overData = over.data.current as EmptyZoneData | BlockDragData | undefined;
+      if (overData?.kind === "empty-zone") {
+        const ezd = overData as EmptyZoneData;
+        dispatch({ type: "ADD_TO_CONTAINER", containerId: ezd.containerId, slotIndex: ezd.slotIndex ?? undefined, block: newBlock });
+      } else {
+        dispatch({ type: "INSERT_AFTER", afterId: String(over.id), block: newBlock });
+      }
+      return;
+    }
+
+    // ── Canvas block reorder / move ──
+    if (activeData?.kind !== "block") return;
+    if (active.id === over?.id) return;
+    if (!over) return;
+
+    const overData = over.data.current as EmptyZoneData | BlockDragData | undefined;
+
+    // Dropped on empty zone → move to container slot
+    if (overData?.kind === "empty-zone") {
+      const ezd = overData as EmptyZoneData;
+      dispatch({ type: "MOVE_BLOCK", sourceId: String(active.id), targetContainerId: ezd.containerId, targetSlotIndex: ezd.slotIndex, targetIndex: 0 });
+      return;
+    }
+
+    const activeBlockData = activeData as BlockDragData;
+    const overBlockData = overData as BlockDragData | undefined;
+    const activeContainerId = activeBlockData.containerId;
+    const activeSlotIndex = activeBlockData.slotIndex ?? null;
+    const overContainerId = overBlockData?.containerId ?? null;
+    const overSlotIndex = overBlockData?.slotIndex ?? null;
+
+    // Same container (or both top-level) → reorder
+    if (activeContainerId === overContainerId && activeSlotIndex === overSlotIndex) {
+      if (activeContainerId === null) {
+        // Top-level reorder
+        const oldIdx = sections.findIndex((s) => s.id === active.id);
+        const newIdx = sections.findIndex((s) => s.id === over.id);
+        if (oldIdx !== -1 && newIdx !== -1) {
+          const next = [...sections];
+          const [removed] = next.splice(oldIdx, 1);
+          next.splice(newIdx, 0, removed);
+          dispatch({ type: "REORDER", sections: next });
+        }
+      } else {
+        // Reorder within container/slot
+        const container = findBlockById(activeContainerId, sections);
+        if (!container) return;
+        const items = activeSlotIndex !== null
+          ? (container.slots?.[activeSlotIndex] ?? [])
+          : (container.children ?? []);
+        const oldIdx = items.findIndex((s) => s.id === active.id);
+        const newIdx = items.findIndex((s) => s.id === over.id);
+        if (oldIdx !== -1 && newIdx !== -1) {
+          const next = [...items];
+          const [removed] = next.splice(oldIdx, 1);
+          next.splice(newIdx, 0, removed);
+          dispatch({ type: "REORDER_IN_CONTAINER", containerId: activeContainerId, slotIndex: activeSlotIndex, newOrder: next });
+        }
+      }
+      return;
+    }
+
+    // Different containers → move
+    const path = findPath(String(over.id), sections);
+    const targetIndex = path ? path.index : 0;
+    dispatch({ type: "MOVE_BLOCK", sourceId: String(active.id), targetContainerId: overContainerId, targetSlotIndex: overSlotIndex, targetIndex });
+  }, []);
 
   const addBlock = useCallback((type: BlockType) => {
     const def = getBlockDef(type);
@@ -214,24 +360,19 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
     dispatch({ type: "ADD_TO_CONTAINER", containerId, slotIndex: slotIndex ?? undefined, block });
   }, []);
 
+  const addAfterBlock = useCallback((afterId: string, type: BlockType) => {
+    const def = getBlockDef(type);
+    if (!def) return;
+    const block: SectionBlock = { id: crypto.randomUUID(), type, config: { ...def.defaultConfig } };
+    dispatch({ type: "INSERT_AFTER", afterId, block });
+  }, []);
+
   const updateBlock = useCallback((id: string, config: Record<string, unknown>) => {
     dispatch({ type: "UPDATE_BLOCK", id, config });
   }, []);
 
   const removeBlock = useCallback((id: string) => {
     dispatch({ type: "REMOVE_BLOCK", id });
-  }, []);
-
-  const reorder = useCallback((sections: SectionBlock[]) => {
-    dispatch({ type: "REORDER", sections });
-  }, []);
-
-  const moveBlock = useCallback((sourceId: string, targetContainerId: string | null, targetSlotIndex: number | null, targetIndex: number) => {
-    dispatch({ type: "MOVE_BLOCK", sourceId, targetContainerId, targetSlotIndex, targetIndex });
-  }, []);
-
-  const reorderInContainerBlocks = useCallback((containerId: string, slotIndex: number | null, newOrder: SectionBlock[]) => {
-    dispatch({ type: "REORDER_IN_CONTAINER", containerId, slotIndex, newOrder });
   }, []);
 
   const selectBlock = useCallback((id: string) => {
@@ -277,48 +418,60 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
   }
 
   return (
-    <div className="epx-builder">
-      <header className="epx-topbar">
-        <div className="epx-topbar__left">
-          <button className="epx-btn epx-btn--ghost" onClick={backUrl ? () => { window.location.href = backUrl; } : onBack} type="button">
-            ← Back
-          </button>
-          <span className="epx-topbar__logo">⚡ EmPixel Builder</span>
-          <span className="epx-topbar__page-id">{pageTitle}</span>
-        </div>
-        <div className="epx-topbar__center">
-          {state.isDirty && <span className="epx-topbar__unsaved">Unsaved changes</span>}
-          {state.saveError && <span className="epx-topbar__error">Error: {state.saveError}</span>}
-        </div>
-        <div className="epx-topbar__right">
-          <button
-            className="epx-btn epx-btn--primary"
-            onClick={save}
-            disabled={state.isSaving || !state.isDirty}
-          >
-            {state.isSaving ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </header>
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="epx-builder">
+        <header className="epx-topbar">
+          <div className="epx-topbar__left">
+            <button className="epx-btn epx-btn--ghost" onClick={backUrl ? () => { window.location.href = backUrl; } : onBack} type="button">
+              ← Back
+            </button>
+            <span className="epx-topbar__logo">⚡ EmPixel Builder</span>
+            <span className="epx-topbar__page-id">{pageTitle}</span>
+          </div>
+          <div className="epx-topbar__center">
+            {state.isDirty && <span className="epx-topbar__unsaved">Unsaved changes</span>}
+            {state.saveError && <span className="epx-topbar__error">Error: {state.saveError}</span>}
+          </div>
+          <div className="epx-topbar__right">
+            <button
+              className="epx-btn epx-btn--primary"
+              onClick={save}
+              disabled={state.isSaving || !state.isDirty}
+            >
+              {state.isSaving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </header>
 
-      <div className="epx-builder__panels">
-        <LeftPanel onAddBlock={addBlock} />
-        <Canvas
-          sections={state.sections}
-          selectedId={state.selectedId}
-          onSelect={selectBlock}
-          onRemove={removeBlock}
-          onReorder={reorder}
-          onMoveBlock={moveBlock}
-          onReorderInContainer={reorderInContainerBlocks}
-          onAddToContainer={addToContainerByType}
-        />
-        <RightPanel
-          block={selectedBlock}
-          onChange={(config) => selectedBlock && updateBlock(selectedBlock.id, config)}
-        />
+        <div className="epx-builder__panels">
+          <LeftPanel onAddBlock={addBlock} />
+          <Canvas
+            sections={state.sections}
+            selectedId={state.selectedId}
+            onSelect={selectBlock}
+            onRemove={removeBlock}
+            onAddToContainer={addToContainerByType}
+            dropIndicatorId={overBlockId}
+            onAddAfter={addAfterBlock}
+          />
+          <RightPanel
+            block={selectedBlock}
+            onChange={(config) => selectedBlock && updateBlock(selectedBlock.id, config)}
+          />
+        </div>
       </div>
-    </div>
+
+      <DragOverlay>
+        {activeDragLabel ? (
+          <div className="epx-drag-overlay-ghost">{activeDragLabel}</div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }
 
@@ -474,15 +627,6 @@ function BuilderStyles() {
       .epx-btn--ghost { background: transparent; color: #555; border-color: #d0d0d0; }
       .epx-btn--ghost:hover { background: #f0f0f0; }
 
-      .epx-icon-btn {
-        width: 24px; height: 24px; border: none; background: none; cursor: pointer;
-        border-radius: 4px; display: flex; align-items: center; justify-content: center;
-        font-size: 14px; padding: 0; color: #555;
-      }
-      .epx-icon-btn:hover:not(:disabled) { background: #e0e0e0; }
-      .epx-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-      .epx-icon-btn--danger:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
-
       .epx-left-panel {
         background: #fff; border-right: 1px solid #e0e0e0;
         overflow-y: auto; display: flex; flex-direction: column;
@@ -495,13 +639,14 @@ function BuilderStyles() {
       .epx-block-card {
         display: flex; align-items: center; gap: 8px; padding: 8px 10px;
         border: 1px solid transparent; border-radius: 6px; background: none;
-        cursor: pointer; text-align: left; width: 100%; font-size: 13px;
+        cursor: grab; text-align: left; width: 100%; font-size: 13px;
         transition: background 0.1s, border-color 0.1s;
       }
       .epx-block-card:hover { background: #f0f4ff; border-color: #c7d2fe; }
       .epx-block-card__icon { font-size: 16px; flex-shrink: 0; width: 22px; text-align: center; }
       .epx-block-card__label { font-weight: 500; color: #222; }
 
+      /* ── Canvas ── */
       .epx-canvas { overflow-y: auto; padding: 20px; background: #f5f5f5; }
       .epx-canvas--empty { display: flex; align-items: center; justify-content: center; }
       .epx-canvas__empty-state { text-align: center; color: #999; }
@@ -510,32 +655,105 @@ function BuilderStyles() {
       .epx-canvas__empty-state p { margin: 0; font-size: 13px; }
       .epx-canvas__list { display: flex; flex-direction: column; gap: 6px; }
 
+      /* ── Block preview (leaf blocks) ── */
       .epx-block-preview {
-        position: relative; border-radius: 8px; overflow: hidden;
-        border: 2px solid transparent; cursor: pointer;
-        transition: border-color 0.15s, box-shadow 0.15s;
+        position: relative; border-radius: 8px; overflow: visible;
+        border: 1px solid transparent; cursor: pointer;
+        transition: border-color 0.15s;
         background: #fff;
       }
-      .epx-block-preview:hover { border-color: #93c5fd; }
-      .epx-block-preview.is-selected { border-color: #2563eb; box-shadow: 0 0 0 3px #dbeafe; }
-      .epx-block-preview__handle {
-        position: absolute; top: 6px; left: 6px; z-index: 10;
-        background: rgba(255,255,255,0.9); border: 1px solid #e0e0e0;
-        border-radius: 4px; padding: 2px 5px; font-size: 13px; color: #888;
-        cursor: grab; user-select: none; line-height: 1;
-        transition: opacity 0.15s;
-      }
-      .epx-block-preview__handle:hover { color: #444; }
-      .epx-block-preview__delete {
-        position: absolute; top: 6px; right: 6px; z-index: 10;
-        background: rgba(255,255,255,0.9); border: 1px solid #e0e0e0;
-        border-radius: 4px; width: 22px; height: 22px; display: flex;
-        align-items: center; justify-content: center; font-size: 14px;
-        color: #888; cursor: pointer; line-height: 1; padding: 0;
-        transition: opacity 0.15s, background 0.15s, color 0.15s;
-      }
-      .epx-block-preview__delete:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+      .epx-block-preview.is-selected { border-color: #86efac; }
 
+      /* ── BlockOverlay ── */
+      .epx-block-overlay {
+        position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+        z-index: 20; display: flex; align-items: center; gap: 2px;
+        background: rgba(20,20,20,0.82); border-radius: 6px; padding: 3px 4px;
+        opacity: 0; pointer-events: none; transition: opacity 0.15s;
+        white-space: nowrap;
+      }
+      .epx-block-overlay.is-visible { opacity: 1; pointer-events: auto; }
+      .epx-block-overlay__btn {
+        background: none; border: none; color: #fff; cursor: pointer;
+        width: 26px; height: 26px; border-radius: 4px; font-size: 15px;
+        display: flex; align-items: center; justify-content: center; padding: 0;
+        transition: background 0.1s;
+      }
+      .epx-block-overlay__btn:hover { background: rgba(255,255,255,0.15); }
+      .epx-block-overlay__btn--delete:hover { background: rgba(220,38,38,0.8); }
+      .epx-block-overlay__handle {
+        color: #ccc; cursor: grab; user-select: none;
+        width: 26px; height: 26px; border-radius: 4px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 15px; transition: background 0.1s, color 0.1s;
+      }
+      .epx-block-overlay__handle:hover { background: rgba(255,255,255,0.15); color: #fff; }
+      .epx-block-overlay__picker {
+        position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+        background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.14); z-index: 30;
+        display: flex; flex-direction: column; gap: 2px; min-width: 160px;
+      }
+      .epx-block-overlay__picker-title {
+        font-size: 10px; color: #888; font-weight: 700; text-transform: uppercase;
+        padding: 0 8px 6px; letter-spacing: 0.05em;
+      }
+
+      /* ── Container block (section) ── */
+      .epx-container-block {
+        border: 1px solid #e5e7eb; border-radius: 8px; background: transparent;
+        position: relative; cursor: pointer; transition: border-color 0.15s;
+        overflow: visible;
+      }
+      .epx-container-block.is-selected { border-color: #86efac; }
+      .epx-container-block__children {
+        padding: 6px; display: flex; flex-direction: column; gap: 4px; min-height: 48px;
+      }
+      .epx-container-block__add-btn {
+        display: flex; align-items: center; justify-content: center;
+        padding: 6px 0;
+      }
+      .epx-container__add-icon {
+        width: 26px; height: 26px; border-radius: 50%;
+        background: #f3f4f6; color: #888; font-size: 17px; border: none;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+        transition: background 0.1s, color 0.1s;
+      }
+      .epx-container__add-icon:hover { background: #e5e7eb; color: #444; }
+      .epx-container__empty-zone {
+        display: flex; align-items: center; justify-content: center; min-height: 56px;
+        border-radius: 6px; transition: background 0.15s;
+      }
+      .epx-container__empty-zone.is-over { background: rgba(134,239,172,0.12); }
+
+      /* ── Columns block ── */
+      .epx-columns-block {
+        border: 1px solid #e5e7eb; border-radius: 8px; background: transparent;
+        position: relative; cursor: pointer; transition: border-color 0.15s;
+        overflow: visible;
+      }
+      .epx-columns-block.is-selected { border-color: #86efac; }
+      .epx-columns-block__grid { padding: 6px; display: grid; gap: 6px; }
+      .epx-columns__slot {
+        border: 1px dashed #e5e7eb; border-radius: 6px; padding: 4px;
+        display: flex; flex-direction: column; gap: 4px; min-height: 48px;
+      }
+
+      /* ── Drop indicator ── */
+      .epx-drop-indicator {
+        position: absolute; bottom: -3px; left: 0; right: 0;
+        height: 2px; background: #86efac; border-radius: 1px; z-index: 30;
+        pointer-events: none;
+      }
+
+      /* ── Drag overlay ghost ── */
+      .epx-drag-overlay-ghost {
+        padding: 6px 12px; background: rgba(20,20,20,0.82); color: #fff;
+        border-radius: 6px; font-size: 13px; font-weight: 500;
+        pointer-events: none; white-space: nowrap;
+      }
+
+      /* ── Right panel ── */
       .epx-right-panel {
         background: #fff; border-left: 1px solid #e0e0e0;
         overflow-y: auto; display: flex; flex-direction: column;
@@ -634,77 +852,14 @@ function BuilderStyles() {
       }
       .epx-btn-add:hover { background: #dbeafe; }
 
-      .epx-container-block {
-        border: 2px dashed #93c5fd; border-radius: 8px; background: #f0f7ff;
-        position: relative; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+      .epx-icon-btn {
+        width: 24px; height: 24px; border: none; background: none; cursor: pointer;
+        border-radius: 4px; display: flex; align-items: center; justify-content: center;
+        font-size: 14px; padding: 0; color: #555;
       }
-      .epx-container-block:hover { border-color: #60a5fa; }
-      .epx-container-block.is-selected { border-color: #2563eb; box-shadow: 0 0 0 3px #dbeafe; }
-      .epx-container-block.is-dragging { opacity: 0.4; }
-      .epx-container-block__header {
-        display: flex; align-items: center; gap: 6px; padding: 6px 8px;
-        font-size: 11px; font-weight: 700; color: #60a5fa; text-transform: uppercase; letter-spacing: 0.05em;
-        border-bottom: 1px dashed #bfdbfe;
-      }
-      .epx-container-block__handle {
-        cursor: grab; user-select: none; padding: 2px 4px; border-radius: 3px; color: #93c5fd;
-      }
-      .epx-container-block__handle:hover { background: rgba(147,197,253,0.2); }
-      .epx-container-block__label { flex: 1; }
-      .epx-container-block__delete {
-        background: none; border: none; cursor: pointer; color: #93c5fd; font-size: 16px; padding: 0 2px; line-height: 1;
-        border-radius: 4px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;
-      }
-      .epx-container-block__delete:hover { background: #fee2e2; color: #dc2626; }
-      .epx-container-block__children { padding: 6px; display: flex; flex-direction: column; gap: 4px; min-height: 40px; }
-      .epx-container__empty-zone {
-        border: 1px dashed #bfdbfe; border-radius: 6px; padding: 16px;
-        text-align: center; font-size: 11px; color: #93c5fd; background: rgba(219,234,254,0.3);
-        transition: background 0.15s, border-color 0.15s;
-      }
-      .epx-container__empty-zone.is-over { background: #dbeafe; border-color: #3b82f6; color: #2563eb; }
-
-      .epx-columns-block {
-        border: 2px dashed #a78bfa; border-radius: 8px; background: #faf5ff;
-        position: relative; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
-      }
-      .epx-columns-block:hover { border-color: #7c3aed; }
-      .epx-columns-block.is-selected { border-color: #7c3aed; box-shadow: 0 0 0 3px #ede9fe; }
-      .epx-columns-block.is-dragging { opacity: 0.4; }
-      .epx-columns-block__header {
-        display: flex; align-items: center; gap: 6px; padding: 6px 8px;
-        font-size: 11px; font-weight: 700; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.05em;
-        border-bottom: 1px dashed #ddd6fe;
-      }
-      .epx-columns-block__handle { cursor: grab; user-select: none; padding: 2px 4px; border-radius: 3px; color: #a78bfa; }
-      .epx-columns-block__handle:hover { background: rgba(167,139,250,0.2); }
-      .epx-columns-block__label { flex: 1; }
-      .epx-columns-block__delete {
-        background: none; border: none; cursor: pointer; color: #a78bfa; font-size: 16px; padding: 0 2px; line-height: 1;
-        border-radius: 4px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;
-      }
-      .epx-columns-block__delete:hover { background: #fee2e2; color: #dc2626; }
-      .epx-columns-block__grid { padding: 6px; display: grid; gap: 6px; }
-      .epx-columns__slot {
-        border: 1px dashed #ddd6fe; border-radius: 6px; padding: 6px;
-        display: flex; flex-direction: column; gap: 4px; min-height: 40px; background: rgba(237,233,254,0.3);
-      }
-      .epx-columns__slot-label {
-        font-size: 10px; font-weight: 600; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 0 4px;
-      }
-
-      .epx-add-block-btn {
-        margin-top: 4px; padding: 5px 10px; border: 1px dashed #93c5fd; border-radius: 5px;
-        background: transparent; color: #60a5fa; font-size: 11px; font-weight: 600;
-        cursor: pointer; text-align: center; width: 100%; transition: background 0.1s;
-      }
-      .epx-add-block-btn:hover { background: #eff6ff; }
-      .epx-add-block-picker {
-        background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.12); margin-top: 4px;
-        display: flex; flex-direction: column; gap: 2px;
-      }
-      .epx-add-block-picker__title { font-size: 10px; color: #888; font-weight: 700; text-transform: uppercase; padding: 0 8px 6px; letter-spacing: 0.05em; }
+      .epx-icon-btn:hover:not(:disabled) { background: #e0e0e0; }
+      .epx-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+      .epx-icon-btn--danger:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
 
       .epx-builder--loading, .epx-builder--error {
         position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column;
