@@ -1,13 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { apiFetch, parseApiResponse } from "emdash/plugin-utils";
 
-const LAYOUT_FIELD = {
-  slug: "layout",
-  type: "json",
-  label: "Builder Layout",
-  widget: "hidden",
-};
-
 type Collection = { slug: string; label: string };
 
 export function SettingsPage() {
@@ -34,30 +27,13 @@ export function SettingsPage() {
 
   async function handleToggle(slug: string, checked: boolean) {
     setToggling((prev) => new Set(prev).add(slug));
-
     try {
-      if (checked) {
-        const fieldRes = await apiFetch(
-          `/_emdash/api/schema/collections/${encodeURIComponent(slug)}/fields`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(LAYOUT_FIELD),
-          }
-        );
-        // 409 = field already exists, treat as OK
-        if (!fieldRes.ok && fieldRes.status !== 409) {
-          throw new Error(`Schema error ${fieldRes.status}: ${await fieldRes.text()}`);
-        }
-      }
-
       const res = await apiFetch("/_emdash/api/plugins/empixel-builder/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collection: slug, enabled: checked }),
       });
       if (!res.ok) throw new Error("Failed to save settings");
-
       setEnabled((prev) => {
         const next = new Set(prev);
         checked ? next.add(slug) : next.delete(slug);
@@ -80,7 +56,7 @@ export function SettingsPage() {
         <span className="epx-topbar__logo">⚡ EmPixel Builder — Settings</span>
         <p className="epx-settings__subtitle">
           Enable the builder on a content type to allow visual page editing.
-          A hidden <code>layout</code> field will be added to the collection schema.
+          Layouts are stored in a dedicated table and do not affect the collection schema.
         </p>
       </div>
 
@@ -131,12 +107,6 @@ export function SettingsPage() {
           color: #888;
           font-size: 14px;
           margin: 6px 0 0;
-        }
-        .epx-settings__subtitle code {
-          font-family: monospace;
-          background: #f0f0f0;
-          padding: 1px 4px;
-          border-radius: 3px;
         }
         .epx-settings__body {
           padding: 32px 40px;

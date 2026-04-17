@@ -15,7 +15,8 @@
     "emdash": ">=0.4.0",
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0",
-    "astro": ">=6.0.0"
+    "astro": ">=6.0.0",
+    "better-sqlite3": ">=9.0.0"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

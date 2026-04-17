@@ -1,15 +1,36 @@
 import { definePlugin } from "emdash";
 import type { PluginContext } from "emdash";
+import { createRequire } from "node:module";
+import { join } from "node:path";
 import type { SectionBlock } from "./types.js";
 
-const LAYOUT_FIELD = "layout";
 const KV_ENABLED = "settings:enabledCollections";
+const _require = createRequire(import.meta.url);
+
+let _db: any = null;
+
+function getDb() {
+  if (_db) return _db;
+  const Database = _require("better-sqlite3");
+  _db = new Database(join(process.cwd(), "data.db"));
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS empixel_builder_layouts (
+      collection TEXT NOT NULL,
+      entry_id   TEXT NOT NULL,
+      sections   TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT DEFAULT (current_timestamp),
+      updated_at TEXT DEFAULT (current_timestamp),
+      PRIMARY KEY (collection, entry_id)
+    )
+  `);
+  return _db;
+}
 
 export function createPlugin(_options: Record<string, unknown> = {}) {
   return definePlugin({
     id: "empixel-builder",
     version: "0.1.0",
-    capabilities: ["read:content", "write:content"],
+    capabilities: ["read:content"],
     routes: {
       // GET  ?pageId=&collection=  → load layout
       // POST { pageId, collection, sections } → save layout
@@ -27,9 +48,10 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
                 { status: 400, headers: { "Content-Type": "application/json" } }
               );
             }
-            const entry = await ctx.content!.get(collection, pageId);
-            const sections = entry?.data?.[LAYOUT_FIELD] ?? null;
-            return { data: sections ? { sections, updatedAt: entry?.updatedAt } : null };
+            const row = getDb()
+              .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
+              .get(collection, pageId) as { sections: string } | undefined;
+            return { data: row ? { sections: JSON.parse(row.sections) } : null };
           }
 
           if (method === "POST") {
@@ -41,8 +63,15 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
                 { status: 400, headers: { "Content-Type": "application/json" } }
               );
             }
-            // ctx.content is ContentAccessWithWrite when write:content capability is declared
-            await (ctx.content as any).update(collection, pageId, { [LAYOUT_FIELD]: sections });
+            getDb()
+              .prepare(`
+                INSERT INTO empixel_builder_layouts (collection, entry_id, sections, updated_at)
+                VALUES (?, ?, ?, current_timestamp)
+                ON CONFLICT(collection, entry_id) DO UPDATE SET
+                  sections = excluded.sections,
+                  updated_at = current_timestamp
+              `)
+              .run(collection, pageId, JSON.stringify(sections));
             return { success: true };
           }
 
@@ -104,7 +133,22 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
         },
       },
     },
-    hooks: {},
+    hooks: {
+      "content:afterDelete": {
+        handler: async (event: any) => {
+          try {
+            const entryId = event.id ?? event.entry?.id;
+            if (event.collection && entryId) {
+              getDb()
+                .prepare("DELETE FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
+                .run(event.collection, entryId);
+            }
+          } catch {
+            // ignore cleanup errors
+          }
+        },
+      },
+    },
     admin: {
       entry: "empixel-builder/admin",
       pages: [
