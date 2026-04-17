@@ -168,18 +168,29 @@ function DragGhost({ sectionsRef }: { sectionsRef: React.RefObject<SectionBlock[
 
 // ─── Page Selector ────────────────────────────────────────────────────────────
 
-const COLLECTIONS = [
-  { slug: "pages", label: "Pages" },
-  { slug: "posts", label: "Posts" },
-];
+type CollectionTab = { slug: string; label: string };
 
-function PageSelector({ onSelect }: { onSelect: (id: string, title: string) => void }) {
-  const [collection, setCollection] = useState("pages");
+function PageSelector({ onSelect }: { onSelect: (id: string, title: string, collection: string) => void }) {
+  const [collections, setCollections] = useState<CollectionTab[]>([]);
+  const [collection, setCollection] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Load enabled collections from plugin
   useEffect(() => {
+    apiFetch("/_emdash/api/plugins/empixel-builder/collections")
+      .then((res) => parseApiResponse<{ data: string[] }>(res, "Failed to load collections"))
+      .then(({ data }) => {
+        const tabs = (data ?? []).map((slug) => ({ slug, label: slug.charAt(0).toUpperCase() + slug.slice(1) }));
+        setCollections(tabs);
+        if (tabs.length > 0) setCollection(tabs[0].slug);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!collection) return;
     setLoading(true);
     setError(null);
     apiFetch(`/_emdash/api/plugins/empixel-builder/entries?collection=${collection}`)
@@ -194,31 +205,38 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string) => v
       <div className="epx-selector__header">
         <span className="epx-topbar__logo">⚡ EmPixel Builder</span>
         <p className="epx-selector__subtitle">Select a page or post to edit its layout</p>
-        <div className="epx-selector__tabs">
-          {COLLECTIONS.map((c) => (
-            <button
-              key={c.slug}
-              className={`epx-selector__tab${collection === c.slug ? " is-active" : ""}`}
-              onClick={() => setCollection(c.slug)}
-              type="button"
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
+        {collections.length > 0 && (
+          <div className="epx-selector__tabs">
+            {collections.map((c) => (
+              <button
+                key={c.slug}
+                className={`epx-selector__tab${collection === c.slug ? " is-active" : ""}`}
+                onClick={() => setCollection(c.slug)}
+                type="button"
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="epx-selector__body">
-        {loading && <div className="epx-selector__loading"><div className="epx-spinner" />Loading…</div>}
-        {error && <p className="epx-error">Error: {error}</p>}
-        {!loading && !error && entries.length === 0 && (
+        {collections.length === 0 && (
+          <p className="epx-selector__empty">
+            No collections enabled. Go to <a href="/_emdash/admin/plugins/empixel-builder/settings">Settings</a> to enable the builder on a collection.
+          </p>
+        )}
+        {collections.length > 0 && loading && <div className="epx-selector__loading"><div className="epx-spinner" />Loading…</div>}
+        {collections.length > 0 && error && <p className="epx-error">Error: {error}</p>}
+        {collections.length > 0 && !loading && !error && entries.length === 0 && (
           <p className="epx-selector__empty">No entries found in "{collection}".</p>
         )}
-        {!loading && !error && entries.map((entry) => (
+        {collections.length > 0 && !loading && !error && entries.map((entry) => (
           <button
             key={entry.id}
             className="epx-selector__entry"
-            onClick={() => onSelect(entry.id, entry.title)}
+            onClick={() => onSelect(entry.id, entry.title, collection)}
             type="button"
           >
             <span className="epx-selector__entry-title">{entry.title}</span>
@@ -233,7 +251,7 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string) => v
 
 // ─── Builder ──────────────────────────────────────────────────────────────────
 
-function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: string; onBack: () => void }) {
+function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pageTitle: string; collection: string; onBack: () => void }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const backUrl = new URLSearchParams(window.location.search).get("back") ?? null;
 
@@ -250,7 +268,7 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
 
   useEffect(() => {
     dispatch({ type: "LOAD_START" });
-    apiFetch(`/_emdash/api/plugins/empixel-builder/layout?pageId=${encodeURIComponent(pageId)}`)
+    apiFetch(`/_emdash/api/plugins/empixel-builder/layout?pageId=${encodeURIComponent(pageId)}&collection=${encodeURIComponent(collection)}`)
       .then((res) => parseApiResponse<{ data: PageLayout | null }>(res, "Failed to load layout"))
       .then(({ data }) => dispatch({ type: "LOAD_SUCCESS", sections: data?.sections ?? [] }))
       .catch((err: unknown) => dispatch({ type: "LOAD_ERROR", error: String(err) }));
@@ -422,7 +440,7 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
       const res = await apiFetch("/_emdash/api/plugins/empixel-builder/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId, sections: state.sections }),
+        body: JSON.stringify({ pageId, collection, sections: state.sections }),
       });
       if (!res.ok) {
         dispatch({ type: "SAVE_ERROR", error: await res.text() || "Save failed" });
@@ -515,9 +533,10 @@ function Builder({ pageId, pageTitle, onBack }: { pageId: string; pageTitle: str
 export function BuilderPage() {
   const params = new URLSearchParams(window.location.search);
   const initialPageId = params.get("pageId");
+  const initialCollection = params.get("collection");
 
-  const [selected, setSelected] = useState<{ id: string; title: string } | null>(
-    initialPageId ? { id: initialPageId, title: initialPageId } : null
+  const [selected, setSelected] = useState<{ id: string; title: string; collection: string } | null>(
+    initialPageId && initialCollection ? { id: initialPageId, title: initialPageId, collection: initialCollection } : null
   );
 
   return (
@@ -526,10 +545,11 @@ export function BuilderPage() {
         <Builder
           pageId={selected.id}
           pageTitle={selected.title}
+          collection={selected.collection}
           onBack={() => setSelected(null)}
         />
       ) : (
-        <PageSelector onSelect={(id, title) => setSelected({ id, title })} />
+        <PageSelector onSelect={(id, title, collection) => setSelected({ id, title, collection })} />
       )}
       <BuilderStyles />
     </>
