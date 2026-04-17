@@ -7,6 +7,8 @@ import { createRequire } from "node:module";
 const CONFIG_FILE = "astro.config.mjs";
 const _require = createRequire(import.meta.url);
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function findConfig() {
   let dir = process.cwd();
   for (let i = 0; i < 5; i++) {
@@ -64,12 +66,92 @@ function createTable(dbPath) {
     `);
     db.close();
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
 
-// ── Register plugin in astro.config.mjs ──────────────────────────────────────
+// ── Page file patching ────────────────────────────────────────────────────────
+
+/** Recursively find all [slug].astro files under a directory */
+function findSlugFiles(dir, results = []) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      findSlugFiles(full, results);
+    } else if (entry.name === "[slug].astro") {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+/**
+ * Patch a single [slug].astro file to add builder rendering.
+ * Only modifies files that contain getEmDashEntry and don't already have empixel-builder.
+ * Returns the collection name if patched, null otherwise.
+ */
+function patchPageFile(filePath) {
+  let src = fs.readFileSync(filePath, "utf-8");
+
+  if (src.includes("empixel-builder/astro")) return null; // already patched
+  if (!src.includes("getEmDashEntry")) return null;        // not an EmDash page
+
+  // Extract collection name from getEmDashEntry("collection", ...)
+  const collMatch = src.match(/getEmDashEntry\(["'](\w+)["']/);
+  if (!collMatch) return null;
+  const collection = collMatch[1];
+
+  // Parse frontmatter (between first --- and second ---)
+  if (!src.startsWith("---")) return null;
+  const fmClose = src.indexOf("\n---", 3);
+  if (fmClose === -1) return null;
+
+  let frontmatter = src.slice(3, fmClose);       // content inside ---
+  let template = src.slice(fmClose + 4);          // everything after closing ---
+
+  // 1. Add builder import after last existing import line
+  const fmLines = frontmatter.split("\n");
+  let lastImport = -1;
+  for (let i = 0; i < fmLines.length; i++) {
+    if (fmLines[i].trimStart().startsWith("import ")) lastImport = i;
+  }
+  fmLines.splice(
+    lastImport + 1,
+    0,
+    `import { getBuilderLayout, LayoutRenderer } from "empixel-builder/astro";`
+  );
+  frontmatter = fmLines.join("\n");
+
+  // 2. Add getBuilderLayout call before closing --- (after Astro.cache.set line)
+  frontmatter = frontmatter.replace(
+    /(Astro\.cache\.set\([^)]+\);?)/,
+    `$1\n\nconst builderLayout = getBuilderLayout("${collection}", page.data.id);`
+  );
+
+  // 3. Wrap the content inside <Base> with builder conditional
+  // Match everything between > (end of <Base ...>) and </Base>
+  template = template.replace(
+    /(<Base[^>]*>)([\s\S]*?)(<\/Base>)/,
+    (_, open, inner, close) => {
+      const indent = "\t";
+      return (
+        `${open}\n` +
+        `${indent}{builderLayout ? (\n` +
+        `${indent}${indent}<LayoutRenderer sections={builderLayout} />\n` +
+        `${indent}) : (\n` +
+        inner.replace(/^/gm, indent) +
+        `${indent})}\n` +
+        close
+      );
+    }
+  );
+
+  fs.writeFileSync(filePath, `---${frontmatter}\n---${template}`, "utf-8");
+  return collection;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 const configPath = findConfig();
 
@@ -78,10 +160,13 @@ if (!configPath) {
   process.exit(1);
 }
 
+const projectDir = path.dirname(configPath);
+
+// 1. Register plugin in astro.config.mjs
 let src = fs.readFileSync(configPath, "utf-8");
 
 if (alreadyRegistered(src)) {
-  console.log("empixel-builder is already registered in astro.config.mjs.");
+  console.log("✓ empixel-builder already registered in astro.config.mjs");
 } else {
   if (!src.includes("plugins:")) {
     console.error(
@@ -90,27 +175,41 @@ if (alreadyRegistered(src)) {
     );
     process.exit(1);
   }
-
   src = addImport(src);
   src = addPlugin(src);
   fs.writeFileSync(configPath, src, "utf-8");
-  console.log(`\n✓ empixel-builder added to ${configPath}`);
+  console.log(`✓ empixel-builder added to astro.config.mjs`);
 }
 
-// ── Create empixel_builder_layouts table in data.db ──────────────────────────
-
-const dbPath = path.join(path.dirname(configPath), "data.db");
+// 2. Create empixel_builder_layouts table in data.db
+const dbPath = path.join(projectDir, "data.db");
 
 if (!fs.existsSync(dbPath)) {
   console.log("⚠  data.db not found — run `npx emdash dev` first to initialize the database,");
-  console.log("   then run `npx empixel-builder add` again to create the layouts table.\n");
-  console.log("The table will also be created automatically on first server start.\n");
+  console.log("   then run `npx empixel-builder add` again to create the layouts table.");
+  console.log("   The table will also be created automatically on first server start.\n");
 } else {
   const ok = createTable(dbPath);
-  if (ok) {
-    console.log("✓ empixel_builder_layouts table ready in data.db");
-  } else {
-    console.log("⚠  Could not create table in data.db (will be created automatically on first start).");
+  console.log(ok
+    ? "✓ empixel_builder_layouts table ready in data.db"
+    : "⚠  Could not create table in data.db (will be created automatically on first start)."
+  );
+}
+
+// 3. Patch [slug].astro page files
+const pagesDir = path.join(projectDir, "src", "pages");
+if (fs.existsSync(pagesDir)) {
+  const slugFiles = findSlugFiles(pagesDir);
+  let patched = 0;
+  for (const file of slugFiles) {
+    const collection = patchPageFile(file);
+    if (collection) {
+      console.log(`✓ Patched ${path.relative(projectDir, file)} (collection: ${collection})`);
+      patched++;
+    }
+  }
+  if (patched === 0 && slugFiles.length > 0) {
+    console.log("✓ Page files already up to date");
   }
 }
 
