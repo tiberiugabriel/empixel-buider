@@ -109,7 +109,6 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
       entry: "empixel-builder/admin",
       pages: [
         { path: "/editor", label: "EmPixel Builder" },
-        { path: "/settings", label: "Settings" },
       ],
     },
   });

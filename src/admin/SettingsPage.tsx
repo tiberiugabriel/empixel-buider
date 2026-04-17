@@ -8,86 +8,69 @@ const LAYOUT_FIELD = {
   widget: "hidden",
 };
 
-type Status = "idle" | "loading" | "saving" | "error";
+type Collection = { slug: string; label: string };
 
 export function SettingsPage() {
-  const [enabled, setEnabled] = useState<string[]>([]);
-  const [newSlug, setNewSlug] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [message, setMessage] = useState<string | null>(null);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [enabled, setEnabled] = useState<Set<string>>(new Set());
+  const [toggling, setToggling] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setStatus("loading");
-    apiFetch("/_emdash/api/plugins/empixel-builder/collections")
-      .then((res) => parseApiResponse<{ data: string[] }>(res, "Failed to load collections"))
-      .then(({ data }) => {
-        setEnabled(data ?? []);
-        setStatus("idle");
+    Promise.all([
+      apiFetch("/_emdash/api/schema/collections")
+        .then((r) => parseApiResponse<{ items: Collection[] }>(r, "Failed to load collections")),
+      apiFetch("/_emdash/api/plugins/empixel-builder/collections")
+        .then((r) => parseApiResponse<{ data: string[] }>(r, "Failed to load enabled")),
+    ])
+      .then(([{ items }, { data }]) => {
+        setCollections(items ?? []);
+        setEnabled(new Set(data ?? []));
       })
-      .catch((err: unknown) => {
-        setMessage(String(err));
-        setStatus("error");
-      });
+      .catch((err: unknown) => setError(String(err)))
+      .finally(() => setLoading(false));
   }, []);
 
-  async function handleEnable(e: React.FormEvent) {
-    e.preventDefault();
-    const slug = newSlug.trim().toLowerCase();
-    if (!slug || enabled.includes(slug)) return;
-
-    setStatus("saving");
-    setMessage(null);
+  async function handleToggle(slug: string, checked: boolean) {
+    setToggling((prev) => new Set(prev).add(slug));
 
     try {
-      // Add the layout field to the collection via schema API
-      const fieldRes = await apiFetch(
-        `/_emdash/api/schema/collections/${encodeURIComponent(slug)}/fields`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(LAYOUT_FIELD),
+      if (checked) {
+        const fieldRes = await apiFetch(
+          `/_emdash/api/schema/collections/${encodeURIComponent(slug)}/fields`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(LAYOUT_FIELD),
+          }
+        );
+        // 409 = field already exists, treat as OK
+        if (!fieldRes.ok && fieldRes.status !== 409) {
+          throw new Error(`Schema error ${fieldRes.status}: ${await fieldRes.text()}`);
         }
-      );
-      // 409 Conflict = field already exists, that's OK
-      if (!fieldRes.ok && fieldRes.status !== 409) {
-        const text = await fieldRes.text();
-        throw new Error(`Schema API error: ${text}`);
       }
 
-      // Save enabled state in plugin kv
-      const settingsRes = await apiFetch("/_emdash/api/plugins/empixel-builder/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collection: slug, enabled: true }),
-      });
-      if (!settingsRes.ok) throw new Error("Failed to save settings");
-
-      setEnabled((prev) => [...prev, slug]);
-      setNewSlug("");
-      setMessage(`Builder enabled for "${slug}".`);
-      setStatus("idle");
-    } catch (err: unknown) {
-      setMessage(String(err));
-      setStatus("error");
-    }
-  }
-
-  async function handleDisable(slug: string) {
-    setStatus("saving");
-    setMessage(null);
-    try {
       const res = await apiFetch("/_emdash/api/plugins/empixel-builder/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collection: slug, enabled: false }),
+        body: JSON.stringify({ collection: slug, enabled: checked }),
       });
       if (!res.ok) throw new Error("Failed to save settings");
-      setEnabled((prev) => prev.filter((c) => c !== slug));
-      setMessage(`Builder disabled for "${slug}". The layout field and data are preserved.`);
-      setStatus("idle");
+
+      setEnabled((prev) => {
+        const next = new Set(prev);
+        checked ? next.add(slug) : next.delete(slug);
+        return next;
+      });
     } catch (err: unknown) {
-      setMessage(String(err));
-      setStatus("error");
+      setError(String(err));
+    } finally {
+      setToggling((prev) => {
+        const next = new Set(prev);
+        next.delete(slug);
+        return next;
+      });
     }
   }
 
@@ -96,62 +79,40 @@ export function SettingsPage() {
       <div className="epx-settings__header">
         <span className="epx-topbar__logo">⚡ EmPixel Builder — Settings</span>
         <p className="epx-settings__subtitle">
-          Enable the builder for a collection to add a <code>layout</code> field and allow visual editing.
+          Enable the builder on a content type to allow visual page editing.
+          A hidden <code>layout</code> field will be added to the collection schema.
         </p>
       </div>
 
       <div className="epx-settings__body">
-        <section className="epx-settings__section">
-          <h2 className="epx-settings__section-title">Enabled Collections</h2>
-          {status === "loading" && (
-            <div className="epx-selector__loading"><div className="epx-spinner" />Loading…</div>
-          )}
-          {enabled.length === 0 && status !== "loading" && (
-            <p className="epx-selector__empty">No collections enabled yet.</p>
-          )}
-          {enabled.map((slug) => (
-            <div key={slug} className="epx-settings__row">
-              <span className="epx-settings__collection-slug">{slug}</span>
-              <button
-                className="epx-btn epx-btn--ghost epx-btn--sm"
-                onClick={() => handleDisable(slug)}
-                disabled={status === "saving"}
-                type="button"
-              >
-                Disable
-              </button>
-            </div>
-          ))}
-        </section>
+        {loading && <div className="epx-selector__loading"><div className="epx-spinner" />Loading…</div>}
+        {error && <p className="epx-settings__message epx-settings__message--error">{error}</p>}
 
-        <section className="epx-settings__section">
-          <h2 className="epx-settings__section-title">Enable Builder for a Collection</h2>
-          <form className="epx-settings__form" onSubmit={handleEnable}>
-            <input
-              className="epx-field__input"
-              type="text"
-              placeholder="Collection slug (e.g. pages)"
-              value={newSlug}
-              onChange={(e) => setNewSlug(e.target.value)}
-              disabled={status === "saving"}
-            />
-            <button
-              className="epx-btn epx-btn--primary"
-              type="submit"
-              disabled={status === "saving" || !newSlug.trim()}
-            >
-              {status === "saving" ? "Enabling…" : "Enable"}
-            </button>
-          </form>
-          <p className="epx-settings__hint">
-            This adds a hidden <code>layout</code> JSON field to the collection schema.
-          </p>
-        </section>
-
-        {message && (
-          <p className={`epx-settings__message${status === "error" ? " epx-settings__message--error" : ""}`}>
-            {message}
-          </p>
+        {!loading && !error && (
+          <section className="epx-settings__section">
+            <h2 className="epx-settings__section-title">Content Types</h2>
+            {collections.length === 0 && (
+              <p className="epx-selector__empty">No content types found.</p>
+            )}
+            {collections.map(({ slug, label }) => {
+              const isEnabled = enabled.has(slug);
+              const isBusy = toggling.has(slug);
+              return (
+                <label key={slug} className={`epx-settings__row${isBusy ? " is-busy" : ""}`}>
+                  <input
+                    className="epx-settings__checkbox"
+                    type="checkbox"
+                    checked={isEnabled}
+                    disabled={isBusy}
+                    onChange={(e) => handleToggle(slug, e.target.checked)}
+                  />
+                  <span className="epx-settings__col-label">{label}</span>
+                  <span className="epx-settings__col-slug">{slug}</span>
+                  {isBusy && <div className="epx-spinner epx-spinner--sm" />}
+                </label>
+              );
+            })}
+          </section>
         )}
       </div>
 
@@ -171,63 +132,67 @@ export function SettingsPage() {
           font-size: 14px;
           margin: 6px 0 0;
         }
+        .epx-settings__subtitle code {
+          font-family: monospace;
+          background: #f0f0f0;
+          padding: 1px 4px;
+          border-radius: 3px;
+        }
         .epx-settings__body {
           padding: 32px 40px;
           max-width: 600px;
-          display: flex;
-          flex-direction: column;
-          gap: 32px;
         }
         .epx-settings__section {
           background: #fff;
           border: 1px solid #e0e0e0;
           border-radius: 8px;
-          padding: 20px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
+          overflow: hidden;
         }
         .epx-settings__section-title {
-          font-size: 13px;
+          font-size: 11px;
           font-weight: 700;
-          color: #444;
-          margin: 0 0 4px;
+          color: #888;
+          margin: 0;
+          padding: 12px 16px;
           text-transform: uppercase;
-          letter-spacing: 0.05em;
+          letter-spacing: 0.06em;
+          border-bottom: 1px solid #f0f0f0;
         }
         .epx-settings__row {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 8px 12px;
-          background: #f8f8f8;
-          border: 1px solid #e8e8e8;
-          border-radius: 6px;
+          gap: 12px;
+          padding: 12px 16px;
+          border-bottom: 1px solid #f5f5f5;
+          cursor: pointer;
+          transition: background 0.1s;
         }
-        .epx-settings__collection-slug {
+        .epx-settings__row:last-child { border-bottom: none; }
+        .epx-settings__row:hover { background: #fafafa; }
+        .epx-settings__row.is-busy { opacity: 0.6; cursor: wait; }
+        .epx-settings__checkbox {
+          width: 16px;
+          height: 16px;
+          cursor: pointer;
+          accent-color: #2563eb;
+          flex-shrink: 0;
+        }
+        .epx-settings__col-label {
           font-size: 14px;
           font-weight: 500;
-          font-family: monospace;
-          color: #222;
-        }
-        .epx-btn--sm { padding: 4px 12px; font-size: 13px; }
-        .epx-settings__form {
-          display: flex;
-          gap: 8px;
-        }
-        .epx-settings__form .epx-field__input {
+          color: #111;
           flex: 1;
         }
-        .epx-settings__hint {
+        .epx-settings__col-slug {
           font-size: 12px;
-          color: #999;
-          margin: 0;
-        }
-        .epx-settings__hint code {
+          color: #aaa;
           font-family: monospace;
-          background: #f0f0f0;
-          padding: 1px 4px;
-          border-radius: 3px;
+        }
+        .epx-spinner--sm {
+          width: 14px;
+          height: 14px;
+          border-width: 2px;
+          flex-shrink: 0;
         }
         .epx-settings__message {
           font-size: 13px;
@@ -236,6 +201,7 @@ export function SettingsPage() {
           background: #f0fdf4;
           border: 1px solid #bbf7d0;
           border-radius: 6px;
+          margin-bottom: 16px;
         }
         .epx-settings__message--error {
           color: #ef4444;

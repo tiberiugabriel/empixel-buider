@@ -203,7 +203,10 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
   return (
     <div className="epx-selector">
       <div className="epx-selector__header">
-        <span className="epx-topbar__logo">⚡ EmPixel Builder</span>
+        <div className="epx-selector__header-top">
+          <span className="epx-topbar__logo">⚡ EmPixel Builder</span>
+          <a className="epx-selector__settings-link" href="/_emdash/admin/plugins/empixel-builder/settings">⚙ Settings</a>
+        </div>
         <p className="epx-selector__subtitle">Select a page or post to edit its layout</p>
         {collections.length > 0 && (
           <div className="epx-selector__tabs">
@@ -572,6 +575,20 @@ function BuilderStyles() {
         border-bottom: 1px solid #e0e0e0;
         padding: 32px 40px 0;
       }
+      .epx-selector__header-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .epx-selector__settings-link {
+        font-size: 13px;
+        color: #888;
+        text-decoration: none;
+        padding: 4px 8px;
+        border-radius: 5px;
+        transition: background 0.1s, color 0.1s;
+      }
+      .epx-selector__settings-link:hover { background: #f0f0f0; color: #444; }
       .epx-selector__subtitle {
         color: #888;
         font-size: 14px;
