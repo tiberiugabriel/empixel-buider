@@ -1,6 +1,10 @@
 # empixel-builder
 
-Page builder plugin for [EmDash](https://emdash.dev) — drag-and-drop sections with custom styles, saved as JSON.
+> **Work in progress** — this plugin is in active development and may contain bugs. Contributions are welcome!
+
+> **Native plugin only** — empixel-builder uses a custom React admin page and relies on Node.js APIs (SQLite via `better-sqlite3`). It cannot be used in Cloudflare Workers or other edge/serverless environments.
+
+Page builder plugin for [EmDash](https://github.com/emdash-cms/emdash) — drag-and-drop sections with custom styles, saved as JSON.
 
 ## Installation
 
@@ -51,3 +55,7 @@ Open the editor, build your page layout with drag-and-drop sections, and save. T
 - `astro` >= 6.0.0
 - `react` >= 19.0.0
 - `better-sqlite3` >= 9.0.0 (included with EmDash)
+
+---
+
+_This plugin was built with the help of [Claude AI](https://claude.ai)._
