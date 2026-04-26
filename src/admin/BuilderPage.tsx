@@ -606,7 +606,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
           </div>
         </header>
 
-        <div className="epx-builder__panels" style={{ gridTemplateColumns: `${leftWidth}px 4px 1fr 4px ${rightWidth}px` }}>
+        <div className="epx-builder__panels" style={{ gridTemplateColumns: selectedBlock ? `${leftWidth}px 4px 1fr 4px ${rightWidth}px` : `${leftWidth}px 4px 1fr` }}>
           <LeftPanel onAddBlock={addBlock} />
           <div className="epx-resize-handle" onMouseDown={handleLeftResizeStart} />
           <Canvas
@@ -618,11 +618,15 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
             dropIndicatorId={overBlockId}
             onAddAfter={addAfterBlock}
           />
-          <div className="epx-resize-handle" onMouseDown={handleRightResizeStart} />
-          <RightPanel
-            block={selectedBlock}
-            onChange={(config) => selectedBlock && updateBlock(selectedBlock.id, config)}
-          />
+          {selectedBlock && (
+            <>
+              <div className="epx-resize-handle" onMouseDown={handleRightResizeStart} />
+              <RightPanel
+                block={selectedBlock}
+                onChange={(config) => updateBlock(selectedBlock.id, config)}
+              />
+            </>
+          )}
         </div>
       </div>
 
@@ -847,10 +851,14 @@ function BuilderStyles() {
         background: var(--epx-surface);
         overflow-y: auto; display: flex; flex-direction: column;
       }
-      .epx-left-panel__header { padding: 14px 12px 8px; border-bottom: 1px solid var(--epx-border-subtle); }
-      .epx-left-panel__title { font-size: 13px; font-weight: 700; margin: 0; }
-      .epx-left-panel__hint { font-size: 11px; color: var(--epx-text-faint); margin: 2px 0 0; }
+      .epx-left-panel__tabs { display: flex; border-bottom: 1px solid var(--epx-border); }
+      .epx-left-panel__tab { flex: 1; padding: 9px 0; border: none; background: none; color: var(--epx-text-faint); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; display: flex; align-items: center; justify-content: center; }
+      .epx-left-panel__tab:hover { color: var(--epx-text-mid); }
+      .epx-left-panel__tab.is-active { color: var(--epx-accent); border-bottom-color: var(--epx-accent); }
+      .epx-left-panel__header { padding: 8px 12px 6px; border-bottom: 1px solid var(--epx-border-subtle); }
+      .epx-left-panel__hint { font-size: 11px; color: var(--epx-text-faint); margin: 0; }
       .epx-left-panel__list { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+      .epx-left-panel__empty { flex: 1; }
 
       .epx-block-card {
         display: flex; align-items: center; gap: 8px; padding: 8px 10px;
