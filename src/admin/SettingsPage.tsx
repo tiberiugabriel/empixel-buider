@@ -111,16 +111,18 @@ export function SettingsPage() {
       <style>{`
         .epx-settings {
           min-height: 100vh;
-          background: #f5f5f5;
+          background: var(--epx-bg);
+          color: var(--epx-text);
+          color-scheme: light dark;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
         .epx-settings__header {
-          background: #fff;
-          border-bottom: 1px solid #e0e0e0;
+          background: var(--epx-surface);
+          border-bottom: 1px solid var(--epx-border);
           padding: 32px 40px 24px;
         }
         .epx-settings__subtitle {
-          color: #888;
+          color: var(--epx-text-muted);
           font-size: 14px;
           margin: 6px 0 0;
         }
@@ -129,49 +131,49 @@ export function SettingsPage() {
           max-width: 600px;
         }
         .epx-settings__section {
-          background: #fff;
-          border: 1px solid #e0e0e0;
+          background: var(--epx-surface);
+          border: 1px solid var(--epx-border);
           border-radius: 8px;
           overflow: hidden;
         }
         .epx-settings__section-title {
           font-size: 11px;
           font-weight: 700;
-          color: #888;
+          color: var(--epx-text-muted);
           margin: 0;
           padding: 12px 16px;
           text-transform: uppercase;
           letter-spacing: 0.06em;
-          border-bottom: 1px solid #f0f0f0;
+          border-bottom: 1px solid var(--epx-border-subtle);
         }
         .epx-settings__row {
           display: flex;
           align-items: center;
           gap: 12px;
           padding: 12px 16px;
-          border-bottom: 1px solid #f5f5f5;
+          border-bottom: 1px solid var(--epx-border-subtle);
           cursor: pointer;
           transition: background 0.1s;
         }
         .epx-settings__row:last-child { border-bottom: none; }
-        .epx-settings__row:hover { background: #fafafa; }
+        .epx-settings__row:hover { background: var(--epx-hover-bg); }
         .epx-settings__row.is-busy { opacity: 0.6; cursor: wait; }
         .epx-settings__checkbox {
           width: 16px;
           height: 16px;
           cursor: pointer;
-          accent-color: #2563eb;
+          accent-color: var(--epx-accent);
           flex-shrink: 0;
         }
         .epx-settings__col-label {
           font-size: 14px;
           font-weight: 500;
-          color: #111;
+          color: var(--epx-text);
           flex: 1;
         }
         .epx-settings__col-slug {
           font-size: 12px;
-          color: #aaa;
+          color: var(--epx-text-faint);
           font-family: monospace;
         }
         .epx-spinner--sm {
@@ -184,15 +186,15 @@ export function SettingsPage() {
           font-size: 13px;
           color: #22c55e;
           padding: 10px 14px;
-          background: #f0fdf4;
-          border: 1px solid #bbf7d0;
+          background: light-dark(#f0fdf4, #0d1f0d);
+          border: 1px solid light-dark(#bbf7d0, #1a3a1a);
           border-radius: 6px;
           margin-bottom: 16px;
         }
         .epx-settings__message--error {
           color: #ef4444;
-          background: #fef2f2;
-          border-color: #fecaca;
+          background: light-dark(#fef2f2, #1f0d0d);
+          border-color: light-dark(#fecaca, #3b1010);
         }
       `}</style>
     </div>
