@@ -327,6 +327,44 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
   // Drag state
   const [overBlockId, setOverBlockId] = useState<string | null>(null);
 
+  // Panel resize
+  const [leftWidth, setLeftWidth] = useState(220);
+  const [rightWidth, setRightWidth] = useState(280);
+
+  const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = leftWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => setLeftWidth(Math.max(160, Math.min(420, startWidth + (ev.clientX - startX))));
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [leftWidth]);
+
+  const handleRightResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = rightWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => setRightWidth(Math.max(200, Math.min(520, startWidth - (ev.clientX - startX))));
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [rightWidth]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -568,8 +606,9 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
           </div>
         </header>
 
-        <div className="epx-builder__panels">
+        <div className="epx-builder__panels" style={{ gridTemplateColumns: `${leftWidth}px 4px 1fr 4px ${rightWidth}px` }}>
           <LeftPanel onAddBlock={addBlock} />
+          <div className="epx-resize-handle" onMouseDown={handleLeftResizeStart} />
           <Canvas
             sections={state.sections}
             selectedId={state.selectedId}
@@ -579,6 +618,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
             dropIndicatorId={overBlockId}
             onAddAfter={addAfterBlock}
           />
+          <div className="epx-resize-handle" onMouseDown={handleRightResizeStart} />
           <RightPanel
             block={selectedBlock}
             onChange={(config) => selectedBlock && updateBlock(selectedBlock.id, config)}
@@ -768,9 +808,24 @@ function BuilderStyles() {
 
       .epx-builder__panels {
         display: grid;
-        grid-template-columns: 220px 1fr 280px;
         flex: 1;
         overflow: hidden;
+      }
+
+      .epx-resize-handle {
+        background: var(--epx-border);
+        cursor: col-resize;
+        transition: background 0.15s;
+        position: relative;
+        z-index: 10;
+      }
+      .epx-resize-handle::after {
+        content: '';
+        position: absolute;
+        inset: 0 -3px;
+      }
+      .epx-resize-handle:hover {
+        background: var(--epx-accent);
       }
 
       .epx-btn {
@@ -789,7 +844,7 @@ function BuilderStyles() {
       .epx-btn--ghost:hover { background: var(--epx-hover-bg); }
 
       .epx-left-panel {
-        background: var(--epx-surface); border-right: 1px solid var(--epx-border);
+        background: var(--epx-surface);
         overflow-y: auto; display: flex; flex-direction: column;
       }
       .epx-left-panel__header { padding: 14px 12px 8px; border-bottom: 1px solid var(--epx-border-subtle); }
@@ -922,7 +977,7 @@ function BuilderStyles() {
 
       /* ── Right panel ── */
       .epx-right-panel {
-        background: var(--epx-surface); border-left: 1px solid var(--epx-border);
+        background: var(--epx-surface);
         overflow-y: auto; display: flex; flex-direction: column;
       }
       .epx-right-panel--empty { align-items: center; justify-content: center; }
