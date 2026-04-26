@@ -1,5 +1,7 @@
 # empixel-builder
 
+[![npm](https://img.shields.io/npm/v/empixel-builder)](https://www.npmjs.com/package/empixel-builder)
+
 > **Work in progress** — this plugin is in active development and may contain bugs. Contributions are welcome!
 
 > **Native plugin only** — empixel-builder uses a custom React admin page and relies on Node.js APIs (SQLite via `better-sqlite3`). It cannot be used in Cloudflare Workers or other edge/serverless environments.
