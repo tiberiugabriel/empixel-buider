@@ -7,12 +7,22 @@ import type { SectionBlock } from "./types.js";
 const KV_ENABLED = "settings:enabledCollections";
 const _require = createRequire(import.meta.url);
 
-let _db: any = null;
+interface SqliteStatement {
+  get(...args: unknown[]): unknown;
+  run(...args: unknown[]): void;
+}
 
-function getDb() {
+interface SqliteDb {
+  exec(sql: string): void;
+  prepare(sql: string): SqliteStatement;
+}
+
+let _db: SqliteDb | null = null;
+
+function getDb(): SqliteDb {
   if (_db) return _db;
   const Database = _require("better-sqlite3");
-  _db = new Database(join(process.cwd(), "data.db"));
+  _db = new Database(join(process.cwd(), "data.db")) as SqliteDb;
   _db.exec(`
     CREATE TABLE IF NOT EXISTS empixel_builder_layouts (
       collection TEXT NOT NULL,
@@ -26,7 +36,7 @@ function getDb() {
   return _db;
 }
 
-export function createPlugin(_options: Record<string, unknown> = {}) {
+export function createPlugin() {
   return definePlugin({
     id: "empixel-builder",
     version: "0.1.0",
@@ -124,7 +134,7 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
           }
 
           const result = await ctx.content.list(collection, { limit });
-          const items = result.items.map((entry: any) => ({
+          const items = result.items.map((entry: { id: string; data?: { title?: string } }) => ({
             id: entry.id,
             title: entry.data?.title ?? entry.id,
           }));
@@ -135,7 +145,7 @@ export function createPlugin(_options: Record<string, unknown> = {}) {
     },
     hooks: {
       "content:afterDelete": {
-        handler: async (event: any) => {
+        handler: async (event: { id?: string; entry?: { id: string }; collection?: string }) => {
           try {
             const entryId = event.id ?? event.entry?.id;
             if (event.collection && entryId) {

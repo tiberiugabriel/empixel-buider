@@ -6,14 +6,16 @@ const THEMES: Record<string, React.CSSProperties> = {
   accent: { background: "#eff6ff", color: "#1e40af" },
 };
 
-export const TestimonialsPreview = memo(function TestimonialsPreview({ config }: { config: Record<string, any> }) {
-  const theme = THEMES[config.theme] ?? THEMES.light;
-  const items: any[] = Array.isArray(config.items) ? config.items : [];
+interface Testimonial { quote?: string; author?: string; role?: string; company?: string }
+
+export const TestimonialsPreview = memo(function TestimonialsPreview({ config }: { config: Record<string, unknown> }) {
+  const theme = THEMES[config.theme as string] ?? THEMES.light;
+  const items: Testimonial[] = Array.isArray(config.items) ? (config.items as Testimonial[]) : [];
   const first = items[0];
 
   return (
     <div style={{ ...theme, padding: "14px" }}>
-      {config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, textAlign: "center" }}>{config.headline}</div>}
+      {config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, textAlign: "center" }}>{config.headline as React.ReactNode}</div>}
       {first ? (
         <div style={{ background: "rgba(0,0,0,0.04)", borderRadius: 6, padding: "10px 12px" }}>
           <div style={{ fontSize: 11, fontStyle: "italic", opacity: 0.8, marginBottom: 6 }}>"{first.quote?.slice(0, 80)}"</div>

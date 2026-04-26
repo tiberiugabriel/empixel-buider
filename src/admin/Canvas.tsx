@@ -124,6 +124,20 @@ export function Canvas({
                 />
               );
             }
+            if (section.type === "columns") {
+              return (
+                <ColumnsBlock
+                  key={section.id}
+                  section={section}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onRemove={onRemove}
+                  onAddToContainer={onAddToContainer}
+                  dropIndicatorId={dropIndicatorId}
+                  onAddAfter={onAddAfter}
+                />
+              );
+            }
             return (
               <SortableBlock
                 key={section.id}

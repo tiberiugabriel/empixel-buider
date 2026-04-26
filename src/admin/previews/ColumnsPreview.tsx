@@ -7,9 +7,9 @@ const THEMES: Record<string, React.CSSProperties> = {
   accent: { background: "#eff6ff", color: "#1e40af" },
 };
 
-export const ColumnsPreview = memo(function ColumnsPreview({ config, slots }: { config: Record<string, any>; slots?: SectionBlock[][] }) {
-  const theme = THEMES[config.theme] ?? THEMES.light;
-  const numCols = parseInt(config.columns ?? "2", 10);
+export const ColumnsPreview = memo(function ColumnsPreview({ config, slots }: { config: Record<string, unknown>; slots?: SectionBlock[][] }) {
+  const theme = THEMES[config.theme as string] ?? THEMES.light;
+  const numCols = parseInt((config.columns as string) ?? "2", 10);
 
   return (
     <div style={{ ...theme, padding: "14px" }}>

@@ -15,7 +15,7 @@ import { SectionPreview } from "./SectionPreview.js";
 import { SpacerPreview } from "./SpacerPreview.js";
 
 export interface PreviewProps {
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   children?: SectionBlock[];
   slots?: SectionBlock[][];
 }

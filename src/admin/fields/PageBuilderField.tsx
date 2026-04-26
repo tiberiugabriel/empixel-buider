@@ -22,6 +22,7 @@ export function PageBuilderField({ value, onChange, minimal }: Props) {
   const enabled = !!value;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!ctx || !enabled) { setSectionCount(null); return; }
     apiFetch(
       `/_emdash/api/plugins/empixel-builder/layout?pageId=${encodeURIComponent(ctx.id)}&collection=${encodeURIComponent(ctx.collection)}`
@@ -31,6 +32,7 @@ export function PageBuilderField({ value, onChange, minimal }: Props) {
         setSectionCount(data?.sections?.length ?? 0);
       })
       .catch(() => setSectionCount(0));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.id, ctx?.collection, enabled]);
 
   const openBuilder = () => {

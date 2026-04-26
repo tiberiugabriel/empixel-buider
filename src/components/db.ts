@@ -2,13 +2,21 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { SectionBlock } from "../types.js";
 
-const _require = createRequire(import.meta.url);
-let _db: any = null;
+interface SqliteStatement {
+  get(...args: unknown[]): unknown;
+}
 
-function getDb() {
+interface SqliteDb {
+  prepare(sql: string): SqliteStatement;
+}
+
+const _require = createRequire(import.meta.url);
+let _db: SqliteDb | null = null;
+
+function getDb(): SqliteDb {
   if (_db) return _db;
   const Database = _require("better-sqlite3");
-  _db = new Database(join(process.cwd(), "data.db"), { readonly: true });
+  _db = new Database(join(process.cwd(), "data.db"), { readonly: true }) as SqliteDb;
   return _db;
 }
 

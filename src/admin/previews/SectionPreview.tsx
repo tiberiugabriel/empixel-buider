@@ -9,8 +9,8 @@ const BG_STYLES: Record<string, React.CSSProperties> = {
   accent: { background: "#eff6ff", color: "#1e40af" },
 };
 
-export const SectionPreview = memo(function SectionPreview({ config, children }: { config: Record<string, any>; children?: SectionBlock[] }) {
-  const bg = BG_STYLES[config.background ?? "white"] ?? BG_STYLES.white;
+export const SectionPreview = memo(function SectionPreview({ config, children }: { config: Record<string, unknown>; children?: SectionBlock[] }) {
+  const bg = BG_STYLES[(config.background as string) ?? "white"] ?? BG_STYLES.white;
   const count = children?.length ?? 0;
 
   return (

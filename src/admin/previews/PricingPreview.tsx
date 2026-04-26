@@ -6,13 +6,15 @@ const THEMES: Record<string, React.CSSProperties> = {
   accent: { background: "#eff6ff", color: "#1e40af" },
 };
 
-export const PricingPreview = memo(function PricingPreview({ config }: { config: Record<string, any> }) {
-  const theme = THEMES[config.theme] ?? THEMES.light;
-  const tiers: any[] = Array.isArray(config.tiers) ? config.tiers.slice(0, 3) : [];
+interface PricingTier { name?: string; price?: string; period?: string; highlighted?: boolean }
+
+export const PricingPreview = memo(function PricingPreview({ config }: { config: Record<string, unknown> }) {
+  const theme = THEMES[config.theme as string] ?? THEMES.light;
+  const tiers: PricingTier[] = Array.isArray(config.tiers) ? (config.tiers as PricingTier[]).slice(0, 3) : [];
 
   return (
     <div style={{ ...theme, padding: "14px" }}>
-      {config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, textAlign: "center" }}>{config.headline}</div>}
+      {config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, textAlign: "center" }}>{config.headline as React.ReactNode}</div>}
       <div style={{ display: "flex", gap: 6 }}>
         {tiers.length > 0 ? tiers.map((tier, i) => (
           <div key={i} style={{ flex: 1, border: tier.highlighted ? "2px solid #2563eb" : "1px solid #e0e0e0", borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>

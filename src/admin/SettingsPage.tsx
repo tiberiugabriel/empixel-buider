@@ -52,7 +52,7 @@ export function SettingsPage() {
 
       setEnabled((prev) => {
         const next = new Set(prev);
-        checked ? next.add(slug) : next.delete(slug);
+        if (checked) next.add(slug); else next.delete(slug);
         return next;
       });
     } catch (err: unknown) {

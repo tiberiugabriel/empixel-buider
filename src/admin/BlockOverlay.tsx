@@ -26,9 +26,10 @@ export function BlockOverlay({
 }: BlockOverlayProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const isPickerOpen = pickerOpen && visible;
 
   useEffect(() => {
-    if (!pickerOpen) return;
+    if (!isPickerOpen) return;
     const handler = (e: MouseEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setPickerOpen(false);
@@ -36,12 +37,7 @@ export function BlockOverlay({
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [pickerOpen]);
-
-  // Close picker when overlay hides
-  useEffect(() => {
-    if (!visible) setPickerOpen(false);
-  }, [visible]);
+  }, [isPickerOpen]);
 
   const defs = BLOCK_DEFINITIONS.filter((d) =>
     allowedBlockTypes === "leaf-only" ? !isContainerType(d.type) : true
@@ -66,7 +62,7 @@ export function BlockOverlay({
           +
         </button>
 
-        {pickerOpen && (
+        {isPickerOpen && (
           <div className="epx-block-overlay__picker">
             <div className="epx-block-overlay__picker-title">Add Block</div>
             {defs.map((def) => (

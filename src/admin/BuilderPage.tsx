@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -142,7 +142,7 @@ const initialState: State = {
 // ─── DragGhost ────────────────────────────────────────────────────────────────
 // Reads from dnd-kit's own context to avoid React state timing issues
 
-function DragGhost({ sectionsRef }: { sectionsRef: React.RefObject<SectionBlock[]> }) {
+function DragGhost({ sections }: { sections: SectionBlock[] }) {
   const { active } = useDndContext();
   if (!active) return null;
 
@@ -152,7 +152,7 @@ function DragGhost({ sectionsRef }: { sectionsRef: React.RefObject<SectionBlock[
   if (data?.kind === "new-block" && data.blockType) {
     def = getBlockDef(data.blockType);
   } else {
-    const block = findBlockById(String(active.id), sectionsRef.current ?? []);
+    const block = findBlockById(String(active.id), sections);
     if (block) def = getBlockDef(block.type);
   }
 
@@ -191,6 +191,7 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
 
   useEffect(() => {
     if (!collection) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
     apiFetch(`/_emdash/api/plugins/empixel-builder/entries?collection=${collection}`)
@@ -260,7 +261,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
 
   // Keep a ref to sections to avoid stale closure in drag handlers
   const sectionsRef = useRef(state.sections);
-  sectionsRef.current = state.sections;
+  useLayoutEffect(() => { sectionsRef.current = state.sections; });
 
   // Drag state
   const [overBlockId, setOverBlockId] = useState<string | null>(null);
@@ -275,7 +276,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       .then((res) => parseApiResponse<{ data: PageLayout | null }>(res, "Failed to load layout"))
       .then(({ data }) => dispatch({ type: "LOAD_SUCCESS", sections: data?.sections ?? [] }))
       .catch((err: unknown) => dispatch({ type: "LOAD_ERROR", error: String(err) }));
-  }, [pageId]);
+  }, [pageId, collection]);
 
   const handleDragStart = useCallback((_: DragStartEvent) => {
     // ghost is rendered via DragGhost which reads from useDndContext directly
@@ -453,7 +454,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     } catch (err) {
       dispatch({ type: "SAVE_ERROR", error: String(err) });
     }
-  }, [pageId, state.sections]);
+  }, [pageId, collection, state.sections]);
 
   const selectedBlock = state.selectedId ? findBlockById(state.selectedId, state.sections) : null;
 
@@ -525,7 +526,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       </div>
 
       <DragOverlay dropAnimation={null} zIndex={99999}>
-        <DragGhost sectionsRef={sectionsRef} />
+        <DragGhost sections={state.sections} />
       </DragOverlay>
     </DndContext>
   );
