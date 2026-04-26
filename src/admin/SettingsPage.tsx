@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { apiFetch, parseApiResponse } from "emdash/plugin-utils";
+import { epxVars } from "./epxVars.js";
 
 type Collection = { slug: string; label: string };
 
@@ -109,6 +110,8 @@ export function SettingsPage() {
       </div>
 
       <style>{`
+        ${epxVars}
+
         .epx-settings {
           min-height: 100vh;
           background: var(--epx-bg);
@@ -119,16 +122,19 @@ export function SettingsPage() {
         .epx-settings__header {
           background: var(--epx-surface);
           border-bottom: 1px solid var(--epx-border);
-          padding: 32px 40px 24px;
+          padding: 32px 40px 0;
         }
         .epx-settings__subtitle {
           color: var(--epx-text-muted);
           font-size: 14px;
-          margin: 6px 0 0;
+          margin: 6px 0 20px;
         }
         .epx-settings__body {
-          padding: 32px 40px;
-          max-width: 600px;
+          padding: 24px 40px;
+          max-width: 720px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
         }
         .epx-settings__section {
           background: var(--epx-surface);
@@ -186,15 +192,23 @@ export function SettingsPage() {
           font-size: 13px;
           color: #22c55e;
           padding: 10px 14px;
-          background: light-dark(#f0fdf4, #0d1f0d);
-          border: 1px solid light-dark(#bbf7d0, #1a3a1a);
+          background: #f0fdf4;
+          border: 1px solid #bbf7d0;
           border-radius: 6px;
           margin-bottom: 16px;
         }
         .epx-settings__message--error {
           color: #ef4444;
-          background: light-dark(#fef2f2, #1f0d0d);
-          border-color: light-dark(#fecaca, #3b1010);
+          background: #fef2f2;
+          border-color: #fecaca;
+        }
+        [data-mode="dark"] .epx-settings__message {
+          background: #0d1f0d;
+          border-color: #1a3a1a;
+        }
+        [data-mode="dark"] .epx-settings__message--error {
+          background: #1f0d0d;
+          border-color: #3b1010;
         }
       `}</style>
     </div>

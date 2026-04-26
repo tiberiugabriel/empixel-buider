@@ -11,6 +11,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { apiFetch, parseApiResponse } from "emdash/plugin-utils";
+import { epxVars } from "./epxVars.js";
 import type { SectionBlock, PageLayout, BlockType } from "../types.js";
 import { isContainerType } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
@@ -138,6 +139,66 @@ const initialState: State = {
   error: null,
   saveError: null,
 };
+
+// ─── ThemeToggle ─────────────────────────────────────────────────────────────
+
+const EMDASH_THEME_KEY = "emdash-theme";
+type Theme = "light" | "dark" | "system";
+const THEME_ORDER: Theme[] = ["system", "light", "dark"];
+
+function getSystemTheme(): "light" | "dark" {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+const SunIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 256 256" fill="currentColor">
+    <path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z" />
+  </svg>
+);
+
+const MoonIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 256 256" fill="currentColor">
+    <path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z" />
+  </svg>
+);
+
+const MonitorIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 256 256" fill="currentColor">
+    <path d="M208,40H48A24,24,0,0,0,24,64V176a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V64A24,24,0,0,0,208,40Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V64a8,8,0,0,1,8-8H208a8,8,0,0,1,8,8Zm-48,48a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,224Z" />
+  </svg>
+);
+
+function ThemeToggle() {
+  const [theme, setThemeState] = useState<Theme>(() =>
+    (localStorage.getItem(EMDASH_THEME_KEY) as Theme | null) ?? "system"
+  );
+
+  const apply = (next: Theme) => {
+    const resolved = next === "system" ? getSystemTheme() : next;
+    localStorage.setItem(EMDASH_THEME_KEY, next);
+    document.documentElement.setAttribute("data-mode", resolved);
+    setThemeState(next);
+  };
+
+  const cycle = () => {
+    const next = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];
+    apply(next);
+  };
+
+  const label = theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System";
+
+  return (
+    <button
+      className="epx-theme-toggle"
+      onClick={cycle}
+      title={`Theme: ${label}`}
+      aria-label={`Toggle theme (current: ${label})`}
+      type="button"
+    >
+      {theme === "light" ? <SunIcon /> : theme === "dark" ? <MoonIcon /> : <MonitorIcon />}
+    </button>
+  );
+}
 
 // ─── DragGhost ────────────────────────────────────────────────────────────────
 // Reads from dnd-kit's own context to avoid React state timing issues
@@ -489,7 +550,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
             <button className="epx-btn epx-btn--ghost" onClick={backUrl ? () => { window.location.href = backUrl; } : onBack} type="button">
               ← Back
             </button>
-            <span className="epx-topbar__logo">⚡ EmPixel Builder</span>
+            <ThemeToggle />
             <span className="epx-topbar__page-id">{pageTitle}</span>
           </div>
           <div className="epx-topbar__center">
@@ -565,33 +626,8 @@ export function BuilderPage() {
 function BuilderStyles() {
   return (
     <style>{`
-      /* ── Theme variables (light-dark() uses color-scheme set by emdash admin) ── */
-      :root {
-        --epx-bg:               light-dark(#f5f5f5, #111111);
-        --epx-surface:          light-dark(#ffffff, #1c1c1c);
-        --epx-surface-2:        light-dark(#f8f8f8, #242424);
-        --epx-border:           light-dark(#e0e0e0, #2d2d2d);
-        --epx-border-subtle:    light-dark(#f0f0f0, #222222);
-        --epx-border-card:      light-dark(#e5e7eb, #2a2a2a);
-        --epx-text:             light-dark(#111111, #f0f0f0);
-        --epx-text-strong:      light-dark(#222222, #e0e0e0);
-        --epx-text-2:           light-dark(#444444, #aaaaaa);
-        --epx-text-mid:         light-dark(#555555, #999999);
-        --epx-text-muted:       light-dark(#888888, #707070);
-        --epx-text-faint:       light-dark(#aaaaaa, #555555);
-        --epx-input-bg:         light-dark(#fafafa, #161616);
-        --epx-input-border:     light-dark(#d0d0d0, #383838);
-        --epx-hover-bg:         light-dark(#f0f0f0, #252525);
-        --epx-card-hover-bg:    light-dark(#f0f4ff, #1a1f3a);
-        --epx-icon-bg:          light-dark(#f3f4f6, #2a2a2a);
-        --epx-accent:           #2563eb;
-        --epx-accent-hover:     #1d4ed8;
-        --epx-accent-light:     #93c5fd;
-        --epx-accent-bg:        light-dark(#eff6ff, #0c1a30);
-        --epx-accent-bg-hover:  light-dark(#dbeafe, #1e3a5f);
-        --epx-selected:         #86efac;
-        --epx-spinner-track:    light-dark(#e0e0e0, #333333);
-      }
+      /* ── Theme variables ── */
+      ${epxVars}
 
       /* ── Selector ── */
       .epx-selector {
@@ -708,6 +744,27 @@ function BuilderStyles() {
       .epx-topbar__unsaved { font-size: 13px; color: #f59e0b; }
       .epx-topbar__error { font-size: 13px; color: #ef4444; }
       .epx-topbar__right { display: flex; gap: 8px; }
+
+      .epx-theme-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        background: none;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--epx-text-muted);
+        transition: background 0.1s, color 0.1s, border-color 0.1s;
+        flex-shrink: 0;
+      }
+      .epx-theme-toggle:hover {
+        background: var(--epx-hover-bg);
+        border-color: var(--epx-border);
+        color: var(--epx-text);
+      }
 
       .epx-builder__panels {
         display: grid;
@@ -998,7 +1055,8 @@ function BuilderStyles() {
       }
       .epx-icon-btn:hover:not(:disabled) { background: var(--epx-border); }
       .epx-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-      .epx-icon-btn--danger:hover:not(:disabled) { background: light-dark(#fee2e2, #3b0f0f); color: #dc2626; }
+      .epx-icon-btn--danger:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
+      [data-mode="dark"] .epx-icon-btn--danger:hover:not(:disabled) { background: #3b0f0f; }
 
       .epx-builder--loading, .epx-builder--error {
         position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column;
