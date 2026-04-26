@@ -1,6 +1,6 @@
 {
   "name": "empixel-builder",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Professional page builder for EmDash and Astro",
   "author": "Tiberiu Gabriel",
   "license": "GPL-3.0",
@@ -20,6 +20,7 @@
   "files": [
     "dist",
     "src/components",
+    "src/types.ts",
     "README.md",
     "LICENSE"
   ],
