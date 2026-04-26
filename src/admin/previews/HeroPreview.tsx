@@ -8,27 +8,29 @@ const THEMES: Record<string, React.CSSProperties> = {
 
 export const HeroPreview = memo(function HeroPreview({ config }: { config: Record<string, unknown> }) {
   const theme = THEMES[config.theme as string] ?? THEMES.light;
-  const headline = (config.headline as React.ReactNode) || <span style={{ fontStyle: "italic", color: "#bbb" }}>Headline...</span>;
-  const subheadline = config.subheadline as React.ReactNode | undefined;
+  const headline = config.headline ? String(config.headline) : null;
+  const subheadline = config.subheadline ? String(config.subheadline) : null;
 
   return (
     <div style={{ ...theme, padding: "24px 20px", textAlign: config.layout === "left" ? "left" : "center", minHeight: 80 }}>
-      {config.backgroundImageUrl && (
+      {!!config.backgroundImageUrl && (
         <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${config.backgroundImageUrl as string})`, backgroundSize: "cover", opacity: 0.15 }} />
       )}
       <div style={{ position: "relative" }}>
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6, lineHeight: 1.3 }}>{headline}</div>
-        {subheadline && <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 10 }}>{subheadline}</div>}
-        {(config.ctaLabel || config.ctaSecondaryLabel) && (
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6, lineHeight: 1.3 }}>
+          {headline ?? <span style={{ fontStyle: "italic", color: "#bbb" }}>Headline...</span>}
+        </div>
+        {!!subheadline && <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 10 }}>{subheadline}</div>}
+        {!!(config.ctaLabel || config.ctaSecondaryLabel) && (
           <div style={{ display: "flex", gap: 8, justifyContent: config.layout === "left" ? "flex-start" : "center", flexWrap: "wrap" }}>
-            {config.ctaLabel && (
+            {!!config.ctaLabel && (
               <span style={{ background: "#2563eb", color: "#fff", padding: "4px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
-                {config.ctaLabel as React.ReactNode}
+                {String(config.ctaLabel)}
               </span>
             )}
-            {config.ctaSecondaryLabel && (
+            {!!config.ctaSecondaryLabel && (
               <span style={{ border: "1px solid #2563eb", color: "#2563eb", padding: "4px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
-                {config.ctaSecondaryLabel as React.ReactNode}
+                {String(config.ctaSecondaryLabel)}
               </span>
             )}
           </div>

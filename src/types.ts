@@ -12,10 +12,11 @@ export type BlockType =
   | "gallery"
   | "video"
   | "spacer"
+  | "columns"
   | "section";
 
 /** Block types that can contain other blocks */
-export const CONTAINER_TYPES: BlockType[] = ["section"];
+export const CONTAINER_TYPES: BlockType[] = ["section", "columns"];
 
 export function isContainerType(type: BlockType): boolean {
   return CONTAINER_TYPES.includes(type);

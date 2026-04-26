@@ -17,13 +17,13 @@ export const FeaturesGridPreview = memo(function FeaturesGridPreview({ config }:
 
   return (
     <div style={{ ...theme, padding: "16px 14px" }}>
-      {config.headline && <div style={{ fontSize: 14, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>{config.headline as React.ReactNode}</div>}
+      {!!config.headline && <div style={{ fontSize: 14, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>{String(config.headline)}</div>}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 8 }}>
         {items.map((item, i) => (
           <div key={i} style={{ background: "rgba(0,0,0,0.04)", borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
             <div style={{ fontSize: 16, marginBottom: 4 }}>{item.icon || "⭐"}</div>
             <div style={{ fontSize: 11, fontWeight: 600 }}>{item.title || <span style={{ fontStyle: "italic", color: "#bbb" }}>Title</span>}</div>
-            {item.body && <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>{item.body.slice(0, 40)}</div>}
+            {!!item.body && <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>{item.body.slice(0, 40)}</div>}
           </div>
         ))}
       </div>

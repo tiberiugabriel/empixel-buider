@@ -14,7 +14,7 @@ export const FaqPreview = memo(function FaqPreview({ config }: { config: Record<
 
   return (
     <div style={{ ...theme, padding: "14px" }}>
-      {config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{config.headline as React.ReactNode}</div>}
+      {!!config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{String(config.headline)}</div>}
       {items.length > 0 ? items.map((item, i) => (
         <div key={i} style={{ borderBottom: "1px solid rgba(0,0,0,0.08)", padding: "6px 0", fontSize: 11 }}>
           <div style={{ fontWeight: 600 }}>{item.question}</div>

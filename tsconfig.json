@@ -6,9 +6,10 @@
     "strict": true,
     "jsx": "react-jsx",
     "jsxImportSource": "react",
-    "types": ["astro/client"],
     "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/components"]
 }

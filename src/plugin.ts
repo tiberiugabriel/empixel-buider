@@ -1,5 +1,10 @@
 import { definePlugin } from "emdash";
 import type { PluginContext } from "emdash";
+
+interface RouteCtx extends PluginContext {
+  request: Request;
+  input?: unknown;
+}
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { SectionBlock } from "./types.js";
@@ -45,7 +50,7 @@ export function createPlugin() {
       // GET  ?pageId=&collection=  → load layout
       // POST { pageId, collection, sections } → save layout
       layout: {
-        handler: async (ctx) => {
+        handler: async (ctx: RouteCtx) => {
           const method = ctx.request.method;
           const url = new URL(ctx.request.url);
 
@@ -91,7 +96,7 @@ export function createPlugin() {
 
       // GET → returns list of collections with builder enabled
       collections: {
-        handler: async (ctx: PluginContext) => {
+        handler: async (ctx: RouteCtx) => {
           const enabled = await ctx.kv.get<string[]>(KV_ENABLED) ?? [];
           return { data: enabled };
         },
@@ -99,7 +104,7 @@ export function createPlugin() {
 
       // POST { collection, enabled } → toggle builder on/off for a collection
       settings: {
-        handler: async (ctx: PluginContext) => {
+        handler: async (ctx: RouteCtx) => {
           if (ctx.request.method !== "POST") {
             return new Response("Method Not Allowed", { status: 405 });
           }
@@ -121,7 +126,7 @@ export function createPlugin() {
 
       // GET ?collection=pages&limit=50 → list entries for page selector
       entries: {
-        handler: async (ctx: PluginContext) => {
+        handler: async (ctx: RouteCtx) => {
           const url = new URL(ctx.request.url);
           const collection = url.searchParams.get("collection") ?? "pages";
           const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10), 200);

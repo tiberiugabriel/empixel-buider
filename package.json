@@ -24,7 +24,8 @@
     "@dnd-kit/utilities": "^3.2.2"
   },
   "scripts": {
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "build": "tsc --noEmit"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

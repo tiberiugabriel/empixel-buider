@@ -10,6 +10,6 @@ export const pages: Record<string, React.ComponentType> = {
 
 export const widgets: Record<string, React.ComponentType> = {};
 
-export const fields: Record<string, React.ComponentType> = {
-  "page-builder": PageBuilderField,
+export const fields: Record<string, React.ComponentType<Record<string, unknown>>> = {
+  "page-builder": PageBuilderField as unknown as React.ComponentType<Record<string, unknown>>,
 };

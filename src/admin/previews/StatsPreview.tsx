@@ -16,7 +16,7 @@ export const StatsPreview = memo(function StatsPreview({ config }: { config: Rec
 
   return (
     <div style={{ ...theme, padding: "14px" }}>
-      {config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, textAlign: "center" }}>{config.headline as React.ReactNode}</div>}
+      {!!config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, textAlign: "center" }}>{String(config.headline)}</div>}
       <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
         {items.map((item, i) => (
           <div key={i} style={{ textAlign: "center", minWidth: 60 }}>

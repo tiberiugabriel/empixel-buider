@@ -20,9 +20,9 @@ export const ImageTextPreview = memo(function ImageTextPreview({ config }: { con
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
-          {(config.headline as React.ReactNode) || <span style={{ fontStyle: "italic", color: "#bbb" }}>Headline...</span>}
+          {config.headline ? String(config.headline) : <span style={{ fontStyle: "italic", color: "#bbb" }}>Headline...</span>}
         </div>
-        {config.body && <div style={{ fontSize: 11, opacity: 0.7 }}>{(config.body as string).slice(0, 80)}</div>}
+        {!!config.body && <div style={{ fontSize: 11, opacity: 0.7 }}>{String(config.body).slice(0, 80)}</div>}
       </div>
     </div>
   );

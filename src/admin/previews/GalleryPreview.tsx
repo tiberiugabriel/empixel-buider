@@ -15,7 +15,7 @@ export const GalleryPreview = memo(function GalleryPreview({ config }: { config:
 
   return (
     <div style={{ ...theme, padding: "14px" }}>
-      {config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, textAlign: "center" }}>{config.headline as React.ReactNode}</div>}
+      {!!config.headline && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, textAlign: "center" }}>{String(config.headline)}</div>}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 4 }}>
         {images.length > 0 ? images.map((img, i) => (
           <div key={i} style={{ aspectRatio: "1", borderRadius: 4, overflow: "hidden", background: "#e5e7eb" }}>
