@@ -1,14 +1,41 @@
 {
   "name": "empixel-builder",
   "version": "0.1.0",
+  "description": "Professional page builder for EmDash and Astro",
+  "author": "Tiberiu Gabriel",
+  "license": "GPL-3.0",
   "type": "module",
-  "bin": {
-    "empixel-builder": "./src/add.js"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tiberiugabriel/empixel-builder.git"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "empixel-builder": "./dist/add.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src/components",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
-    ".": "./src/index.ts",
-    "./plugin": "./src/plugin.ts",
-    "./admin": "./src/admin/index.tsx",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
+    "./admin": {
+      "types": "./dist/admin/index.d.ts",
+      "import": "./dist/admin/index.js"
+    },
     "./astro": "./src/components/index.ts"
   },
   "peerDependencies": {
@@ -25,7 +52,8 @@
   },
   "scripts": {
     "lint": "eslint src/",
-    "build": "tsc --noEmit"
+    "build": "tsc",
+    "prepublishOnly": "npm run lint && npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
