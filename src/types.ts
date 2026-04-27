@@ -11,12 +11,13 @@ export type BlockType =
   | "pricing"
   | "gallery"
   | "video"
-  | "spacer"
   | "columns"
-  | "section";
+  | "section"
+  | "spacer"
+  | "container";
 
 /** Block types that can contain other blocks */
-export const CONTAINER_TYPES: BlockType[] = ["section", "columns"];
+export const CONTAINER_TYPES: BlockType[] = ["container", "columns"];
 
 export function isContainerType(type: BlockType): boolean {
   return CONTAINER_TYPES.includes(type);
@@ -29,7 +30,7 @@ export interface SectionBlock {
   type: BlockType;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   config: Record<string, any>;
-  /** Children blocks — for type === "section" */
+  /** Children blocks — for type === "container" */
   children?: SectionBlock[];
   /** Slotted children — for type === "columns" (slots[0] = col1, slots[1] = col2, ...) */
   slots?: SectionBlock[][];

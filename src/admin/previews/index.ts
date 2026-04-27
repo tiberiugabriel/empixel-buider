@@ -34,4 +34,5 @@ export const PREVIEW_COMPONENTS: Record<BlockType, React.ComponentType<PreviewPr
   columns: ColumnsPreview as React.ComponentType<PreviewProps>,
   section: SectionPreview as React.ComponentType<PreviewProps>,
   spacer: SpacerPreview as React.ComponentType<PreviewProps>,
+  container: SectionPreview as React.ComponentType<PreviewProps>,
 };

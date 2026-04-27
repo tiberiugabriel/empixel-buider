@@ -6,7 +6,7 @@ export const SPACING_UNITS = ["px", "%", "em", "rem", "vw", "vh", "pt", "cm", "m
 export type SpacingUnit = (typeof SPACING_UNITS)[number];
 export type SpacingKeys = "top" | "right" | "bottom" | "left";
 
-export interface SideValue { num: number; unit: string; }
+export interface SideValue { num: number; unit: string; raw?: string; }
 export type SpacingValue = Partial<Record<SpacingKeys, SideValue>>;
 
 const SIDE_LABELS: Record<SpacingKeys, string> = { top: "T", right: "R", bottom: "B", left: "L" };
@@ -17,7 +17,9 @@ export function parseSide(raw: unknown): SideValue {
   if (typeof raw === "number") return { num: raw, unit: "px" };
   if (typeof raw === "string") {
     const t = raw.trim();
-    if (t === "auto" || t === "") return { num: 0, unit: "auto" };
+    if (t === "auto") return { num: 0, unit: "auto" };
+    if (t === "") return { num: 0, unit: "px" };
+    if (t.startsWith("@@")) return { num: 0, unit: "custom", raw: t.slice(2) };
     const sorted = [...SPACING_UNITS].filter(u => u !== "auto").sort((a, b) => b.length - a.length);
     for (const unit of sorted) {
       if (t.endsWith(unit)) {
@@ -27,12 +29,25 @@ export function parseSide(raw: unknown): SideValue {
     }
     const n = parseFloat(t);
     if (!isNaN(n)) return { num: n, unit: "px" };
+    return { num: 0, unit: "custom", raw: t };
   }
   return { num: 0, unit: "px" };
 }
 
 export function serializeSide(sv: SideValue): string {
-  return sv.unit === "auto" ? "auto" : `${sv.num}${sv.unit}`;
+  if (sv.unit === "auto") return "auto";
+  if (sv.unit === "custom") return `@@${sv.raw ?? ""}`;
+  return `${sv.num}${sv.unit}`;
+}
+
+// ─── Pen icon ────────────────────────────────────────────────────────────────
+
+function IconPen() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8.5 1.5a1.414 1.414 0 0 1 2 2L4 10H2v-2L8.5 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
 }
 
 // ─── Reset icon ──────────────────────────────────────────────────────────────
@@ -73,6 +88,11 @@ function UnitDropdown({ unit, onSelect, onClose, anchorRef }: {
           onMouseDown={(e) => { e.preventDefault(); onSelect(u); onClose(); }}
         >{u}</button>
       ))}
+      <div className="epx-unit-dropdown__sep" />
+      <button type="button"
+        className={`epx-unit-dropdown__item epx-unit-dropdown__item--pen${unit === "custom" ? " is-active" : ""}`}
+        onMouseDown={(e) => { e.preventDefault(); onSelect("custom"); onClose(); }}
+      ><IconPen /></button>
     </div>
   );
 }
@@ -90,7 +110,7 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon }: {
   const unitBtnRef = useRef<HTMLButtonElement>(null);
 
   const handleScrubDown = (e: React.MouseEvent) => {
-    if (value.unit === "auto") return;
+    if (value.unit === "auto" || value.unit === "custom") return;
     e.preventDefault();
     const startX = e.clientX;
     const startNum = value.num;
@@ -119,28 +139,38 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon }: {
       >
         {icon ?? labelOverride ?? sideKey}
       </span>
-      <input
-        type="number"
-        className="epx-side-input__num"
-        value={value.unit === "auto" ? "" : value.num}
-        placeholder={value.unit === "auto" ? "auto" : "0"}
-        disabled={value.unit === "auto"}
-        min={0}
-        step={1}
-        onChange={(e) => {
-          const n = parseFloat(e.target.value);
-          onChange({ ...value, num: isNaN(n) ? 0 : n });
-        }}
-      />
+      {value.unit === "custom" ? (
+        <input
+          type="text"
+          className="epx-side-input__num epx-side-input__num--custom"
+          value={value.raw ?? ""}
+          placeholder="custom"
+          onChange={(e) => onChange({ ...value, raw: e.target.value })}
+        />
+      ) : (
+        <input
+          type="number"
+          className="epx-side-input__num"
+          value={value.unit === "auto" ? "" : value.num}
+          placeholder={value.unit === "auto" ? "auto" : "0"}
+          disabled={value.unit === "auto"}
+          min={0}
+          step={1}
+          onChange={(e) => {
+            const n = parseFloat(e.target.value);
+            onChange({ ...value, num: isNaN(n) ? 0 : n });
+          }}
+        />
+      )}
       <div className="epx-side-input__unit-wrap">
         <button ref={unitBtnRef} type="button"
-          className="epx-side-input__unit-btn"
+          className={`epx-side-input__unit-btn${value.unit === "custom" ? " epx-side-input__unit-btn--icon" : ""}`}
           onClick={() => setUnitOpen(o => !o)}
-        >{value.unit}</button>
+        >{value.unit === "custom" ? <IconPen /> : value.unit}</button>
         {unitOpen && (
           <UnitDropdown
             unit={value.unit}
-            onSelect={(u) => onChange({ ...value, unit: u, num: u === "auto" ? 0 : value.num })}
+            onSelect={(u) => onChange({ ...value, unit: u, num: u === "auto" || u === "custom" ? 0 : value.num, raw: u === "custom" ? "" : undefined })}
             onClose={() => setUnitOpen(false)}
             anchorRef={unitBtnRef as React.RefObject<HTMLButtonElement>}
           />
@@ -152,11 +182,12 @@ export function SideInput({ sideKey, value, onChange, labelOverride, icon }: {
 
 // ─── SpacingControl ───────────────────────────────────────────────────────────
 
-export function SpacingControl({ label, value, onChange, sides }: {
+export function SpacingControl({ label, value, onChange, sides, forceExpanded }: {
   label: string;
   value: SpacingValue;
   onChange: (v: SpacingValue) => void;
   sides: SpacingKeys[];
+  forceExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -164,7 +195,10 @@ export function SpacingControl({ label, value, onChange, sides }: {
   const collapsedValue: SideValue = value[firstSide] ?? { num: 0, unit: "px" };
   const allVals = sides.map(s => value[s] ?? { num: 0, unit: "px" });
   const isMixed = !allVals.every(v => v.num === allVals[0].num && v.unit === allVals[0].unit);
-  const isDirty = sides.some(s => (value[s]?.num ?? 0) !== 0);
+  const isDirty = sides.some(s => {
+    const sv = value[s];
+    return (sv?.num ?? 0) !== 0 || (sv?.unit !== undefined && sv.unit !== "px");
+  });
 
   const handleCollapsedChange = (sv: SideValue) => {
     const next: SpacingValue = { ...value };
@@ -180,7 +214,7 @@ export function SpacingControl({ label, value, onChange, sides }: {
 
   return (
     <div className="epx-spacing-ctrl">
-      {!expanded ? (
+      {!expanded && !forceExpanded ? (
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">
             {isMixed ? (
@@ -207,7 +241,9 @@ export function SpacingControl({ label, value, onChange, sides }: {
                   <IconReset />
                 </button>
               )}
-              <button type="button" className="epx-spacing-ctrl__caret" onClick={() => setExpanded(false)}>▴</button>
+              {!forceExpanded && (
+                <button type="button" className="epx-spacing-ctrl__caret" onClick={() => setExpanded(false)}>▴</button>
+              )}
             </div>
           </div>
           <div className={`epx-spacing-ctrl__grid epx-spacing-ctrl__grid--${sides.length <= 2 ? "col1" : "col2"}`}>

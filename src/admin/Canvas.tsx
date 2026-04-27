@@ -43,20 +43,28 @@ const MAX_WIDTH_MAP: Record<string, string> = {
   sm: "640px", md: "768px", lg: "1140px", full: "100%",
 };
 
+function css(v: unknown): string | number | undefined {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v !== "") return v.startsWith("@@") ? v.slice(2) || undefined : v;
+  return undefined;
+}
+
 function resolveBlockStyle(style: Record<string, unknown> | undefined): {
   outerStyle: React.CSSProperties;
   innerStyle: React.CSSProperties;
 } {
   if (!style) return { outerStyle: {}, innerStyle: {} };
-  const css = (v: unknown): string | number | undefined => {
-    if (typeof v === "number") return v;
-    if (typeof v === "string" && v !== "") return v;
-    return undefined;
-  };
   const outerStyle: React.CSSProperties = {};
-  if (css(style.marginTop) !== undefined) outerStyle.marginTop = css(style.marginTop) as string | number;
+  if (css(style.marginTop) !== undefined)    outerStyle.marginTop    = css(style.marginTop)    as string | number;
+  if (css(style.marginRight) !== undefined)  outerStyle.marginRight  = css(style.marginRight)  as string | number;
   if (css(style.marginBottom) !== undefined) outerStyle.marginBottom = css(style.marginBottom) as string | number;
+  if (css(style.marginLeft) !== undefined)   outerStyle.marginLeft   = css(style.marginLeft)   as string | number;
   const innerStyle: React.CSSProperties = {};
+  if (css(style.width) !== undefined)     innerStyle.width     = css(style.width)     as string;
+  if (css(style.minWidth) !== undefined)  innerStyle.minWidth  = css(style.minWidth)  as string;
+  if (css(style.height) !== undefined)    innerStyle.height    = css(style.height)    as string;
+  if (css(style.minHeight) !== undefined) innerStyle.minHeight = css(style.minHeight) as string;
+  if (css(style.maxHeight) !== undefined) innerStyle.maxHeight = css(style.maxHeight) as string;
   if (css(style.paddingTop) !== undefined) innerStyle.paddingTop = css(style.paddingTop) as string | number;
   if (css(style.paddingRight) !== undefined) innerStyle.paddingRight = css(style.paddingRight) as string | number;
   if (css(style.paddingBottom) !== undefined) innerStyle.paddingBottom = css(style.paddingBottom) as string | number;
@@ -86,10 +94,15 @@ function resolveBlockStyle(style: Record<string, unknown> | undefined): {
       innerStyle.borderColor = color;
     }
   }
-  if (style.maxWidth && MAX_WIDTH_MAP[style.maxWidth as string]) {
-    innerStyle.maxWidth = MAX_WIDTH_MAP[style.maxWidth as string];
-    innerStyle.marginLeft = "auto";
-    innerStyle.marginRight = "auto";
+  if (style.maxWidth) {
+    const mw = style.maxWidth as string;
+    if (MAX_WIDTH_MAP[mw]) {
+      innerStyle.maxWidth = MAX_WIDTH_MAP[mw];
+      innerStyle.marginLeft = "auto";
+      innerStyle.marginRight = "auto";
+    } else if (css(mw) !== undefined) {
+      innerStyle.maxWidth = css(mw) as string;
+    }
   }
   return { outerStyle, innerStyle };
 }
@@ -123,7 +136,6 @@ export function Canvas({
     return (
       <main ref={setCanvasRef} className="epx-canvas epx-canvas--empty">
         <div className="epx-canvas__empty-state">
-          <div className="epx-canvas__empty-icon">🏗️</div>
           <h3>Start building your page</h3>
           <p>Click or drag a block from the left panel</p>
         </div>
@@ -136,7 +148,7 @@ export function Canvas({
       <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
         <div className="epx-canvas__list">
           {sections.map((section) => {
-            if (section.type === "section") {
+            if (section.type === "container") {
               return (
                 <ContainerBlock
                   key={section.id}
@@ -222,6 +234,14 @@ function SortableBlock({
     section.config.style as Record<string, unknown> | undefined
   );
 
+  const adv = (section.config.advanced ?? {}) as Record<string, unknown>;
+  if (adv.position) outerStyle.position = adv.position as React.CSSProperties["position"];
+  if (adv.top)    outerStyle.top    = css(adv.top)    as string;
+  if (adv.right)  outerStyle.right  = css(adv.right)  as string;
+  if (adv.bottom) outerStyle.bottom = css(adv.bottom) as string;
+  if (adv.left)   outerStyle.left   = css(adv.left)   as string;
+  if (adv.zIndex !== undefined && adv.zIndex !== "") outerStyle.zIndex = Number(adv.zIndex);
+
   const wrapperStyle: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -265,7 +285,7 @@ function SortableBlock({
   );
 }
 
-// ─── ContainerBlock (section) ─────────────────────────────────────────────────
+// ─── ContainerBlock ───────────────────────────────────────────────────────────
 
 interface ContainerBlockProps {
   section: SectionBlock;

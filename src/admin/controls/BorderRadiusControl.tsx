@@ -81,7 +81,10 @@ export function BorderRadiusControl({ value, onChange }: {
   const collapsedValue: SideValue = value.topLeft ?? { num: 0, unit: "px" };
   const allVals = CORNERS.map(c => value[c] ?? { num: 0, unit: "px" });
   const isMixed = !allVals.every(v => v.num === allVals[0].num && v.unit === allVals[0].unit);
-  const isDirty = CORNERS.some(c => (value[c]?.num ?? 0) !== 0);
+  const isDirty = CORNERS.some(c => {
+    const sv = value[c];
+    return (sv?.num ?? 0) !== 0 || (sv?.unit !== undefined && sv.unit !== "px");
+  });
 
   const handleCollapsedChange = (sv: SideValue) => {
     const next: RadiusValue = {};

@@ -83,16 +83,19 @@ export function LeftPanel({ onAddBlock }: Props) {
       </div>
 
       {activeTab === "blocks" && (
-        <>
-          <div className="epx-left-panel__header">
-            <p className="epx-left-panel__hint">Click to add · Drag to position</p>
-          </div>
-          <div className="epx-left-panel__list">
-            {BLOCK_DEFINITIONS.map((def) => (
-              <DraggableBlockCard key={def.type} def={def} onAddBlock={onAddBlock} />
-            ))}
-          </div>
-        </>
+        <div className="epx-left-panel__list">
+          {(["core", "general"] as const).map((cat) => {
+            const defs = BLOCK_DEFINITIONS.filter((d) => d.category === cat);
+            return (
+              <div key={cat} className="epx-block-group">
+                <span className="epx-block-group__label">{cat === "core" ? "Core" : "General"}</span>
+                {defs.map((def) => (
+                  <DraggableBlockCard key={def.type} def={def} onAddBlock={onAddBlock} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {activeTab === "page" && (

@@ -1,6 +1,6 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { SideInput, parseSide, serializeSide, IconReset, type SideValue } from "./SpacingControl.js";
-import { ColorPicker } from "./ColorPicker.js";
+import { ColorPicker, getColorDisplay, type ColorFormat } from "./ColorPicker.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ export function parseBorder(style: Record<string, unknown>): BorderConfig {
       bottom: parseSide(style.borderBottomWidth),
       left:   parseSide(style.borderLeftWidth),
     },
-    style: typeof style.borderStyle === "string" ? style.borderStyle : "solid",
+    style: typeof style.borderStyle === "string" ? style.borderStyle : "none",
     color: typeof style.borderColor === "string" ? style.borderColor : "#000000",
     alpha: typeof style.borderAlpha === "number"  ? style.borderAlpha  : 1,
   };
@@ -59,11 +59,23 @@ export function serializeBorder(cfg: BorderConfig): Record<string, unknown> {
 
 // ─── Style mini-dropdown ──────────────────────────────────────────────────────
 
-function StyleDropdown({ value, onChange, onClose }: {
+function StyleDropdown({ value, onChange, onClose, anchorRef }: {
   value: string; onChange: (s: string) => void; onClose: () => void;
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (!panelRef.current?.contains(e.target as Node) &&
+          !anchorRef.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [onClose, anchorRef]);
+
   return (
-    <div className="epx-unit-dropdown">
+    <div ref={panelRef} className="epx-unit-dropdown">
       {BORDER_STYLES.map(s => (
         <button key={s} type="button"
           className={`epx-unit-dropdown__item${s === value ? " is-active" : ""}`}
@@ -86,6 +98,7 @@ function BorderStyleRow({ borderStyle, color, alpha, onStyleChange, onColorChang
   const [styleOpen, setStyleOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
   const [colorPos, setColorPos] = useState({ top: 0, left: 0 });
+  const [colorFormat, setColorFormat] = useState<ColorFormat>("HEX");
   const styleBtnRef = useRef<HTMLButtonElement>(null);
   const swatchRef = useRef<HTMLButtonElement>(null);
 
@@ -99,15 +112,20 @@ function BorderStyleRow({ borderStyle, color, alpha, onStyleChange, onColorChang
 
   return (
     <div className="epx-border-style-row">
-      <span className="epx-side-input__label">Style</span>
-      <div className="epx-side-input__unit-wrap" style={{ borderLeft: "1px solid var(--epx-border-subtle)" }}>
-        <button ref={styleBtnRef} type="button"
-          className="epx-side-input__unit-btn epx-border-style-btn"
-          onClick={() => setStyleOpen(o => !o)}
-        >{borderStyle}</button>
-        {styleOpen && (
-          <StyleDropdown value={borderStyle} onChange={onStyleChange} onClose={() => setStyleOpen(false)} />
-        )}
+      <div className="epx-border-style-cell">
+        <span className="epx-side-input__label epx-side-input__label--row">Style</span>
+        <div className="epx-side-input__unit-wrap" style={{ flex: 1, position: "relative" }}>
+          <button ref={styleBtnRef} type="button"
+            className="epx-field-row__select-btn epx-border-style-btn"
+            onClick={() => setStyleOpen(o => !o)}
+          >
+            <span>{borderStyle}</span>
+            <span className="epx-field-row__select-caret">▾</span>
+          </button>
+          {styleOpen && (
+            <StyleDropdown value={borderStyle} onChange={onStyleChange} onClose={() => setStyleOpen(false)} anchorRef={styleBtnRef} />
+          )}
+        </div>
       </div>
       <div className="epx-border-color-cell">
         <button ref={swatchRef} type="button"
@@ -115,7 +133,7 @@ function BorderStyleRow({ borderStyle, color, alpha, onStyleChange, onColorChang
           style={{ background: color, opacity: alpha }}
           onClick={openColor}
         />
-        <span className="epx-border-color-hex">{color.toUpperCase()}</span>
+        <span className="epx-border-color-hex">{getColorDisplay(color, colorFormat)}</span>
         {colorOpen && (
           <ColorPicker
             value={color}
@@ -123,6 +141,8 @@ function BorderStyleRow({ borderStyle, color, alpha, onStyleChange, onColorChang
             onChange={onColorChange}
             onClose={() => setColorOpen(false)}
             position={colorPos}
+            format={colorFormat}
+            onFormatChange={setColorFormat}
           />
         )}
       </div>
@@ -138,7 +158,13 @@ export function BorderControl({ value, onChange }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const mixed = !sidesEqual(value.widths);
-  const isDirty = SIDES.some(s => (value.widths[s]?.num ?? 0) !== 0);
+  const isDirty = SIDES.some(s => {
+    const sv = value.widths[s];
+    return (sv?.num ?? 0) !== 0 || (sv?.unit !== undefined && sv.unit !== "px");
+  })
+    || value.style !== "none"
+    || value.color.toLowerCase() !== "#000000"
+    || value.alpha !== 1;
   const collapsed = value.widths.top ?? { num: 0, unit: "px" };
 
   const handleCollapsedChange = (sv: SideValue) => {
@@ -150,7 +176,7 @@ export function BorderControl({ value, onChange }: {
   const handleReset = () => {
     const next: BorderWidths = {};
     SIDES.forEach(s => { next[s] = { num: 0, unit: "px" }; });
-    onChange({ ...value, widths: next });
+    onChange({ widths: next, style: "none", color: "#000000", alpha: 1 });
   };
 
   return (

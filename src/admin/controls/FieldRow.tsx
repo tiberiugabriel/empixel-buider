@@ -1,0 +1,218 @@
+import React, { useEffect, useRef, useState } from "react";
+import { SideInput, IconReset, type SideValue } from "./SpacingControl.js";
+
+// ─── FieldGroup ───────────────────────────────────────────────────────────────
+
+export function FieldGroup({ children, isDirty, onReset }: {
+  children: React.ReactNode;
+  isDirty?: boolean;
+  onReset?: () => void;
+}) {
+  return (
+    <div className="epx-spacing-ctrl__row">
+      <div className="epx-field-group">{children}</div>
+      {isDirty && onReset && (
+        <button type="button" className="epx-reset-btn" onClick={onReset} title="Reset">
+          <IconReset />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── DimensionRow ─────────────────────────────────────────────────────────────
+
+export function DimensionRow({ label, value, onChange }: {
+  label: string;
+  value: SideValue;
+  onChange: (v: SideValue) => void;
+}) {
+  return <SideInput sideKey="" labelOverride={label} value={value} onChange={onChange} />;
+}
+
+// ─── NumberRow ────────────────────────────────────────────────────────────────
+
+export function NumberRow({ label, value, onChange }: {
+  label: string;
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+}) {
+  const handleScrubDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startNum = value ?? 0;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => {
+      onChange(Math.round(startNum + (ev.clientX - startX) / 2));
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div className="epx-side-input">
+      <span
+        className="epx-side-input__label epx-side-input__label--row epx-side-input__label--scrub"
+        style={{ cursor: "ew-resize" }}
+        onMouseDown={handleScrubDown}
+        title="Drag to adjust"
+      >{label}</span>
+      <input
+        type="number"
+        className="epx-side-input__num"
+        value={value ?? ""}
+        placeholder="0"
+        step={1}
+        onChange={(e) => {
+          const n = parseInt(e.target.value, 10);
+          onChange(isNaN(n) ? undefined : n);
+        }}
+      />
+    </div>
+  );
+}
+
+// ─── SelectDropdown ───────────────────────────────────────────────────────────
+
+function SelectDropdown({ value, options, onSelect, onClose, anchorRef }: {
+  value: string;
+  options: { value: string; label: string }[];
+  onSelect: (v: string) => void;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLDivElement>;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (!panelRef.current?.contains(e.target as Node) &&
+          !anchorRef.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [onClose, anchorRef]);
+
+  return (
+    <div ref={panelRef} className="epx-unit-dropdown">
+      {options.map((opt) => (
+        <button key={opt.value} type="button"
+          className={`epx-unit-dropdown__item${opt.value === value ? " is-active" : ""}`}
+          onMouseDown={(e) => { e.preventDefault(); onSelect(opt.value); onClose(); }}
+        >{opt.label}</button>
+      ))}
+    </div>
+  );
+}
+
+// ─── SelectRow ────────────────────────────────────────────────────────────────
+
+export function SelectRow({ label, value, onChange, options }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const display = options.find(o => o.value === value)?.label ?? (value || "—");
+
+  return (
+    <div className="epx-side-input">
+      <span className="epx-side-input__label epx-side-input__label--row">{label}</span>
+      <div ref={wrapRef} className="epx-field-row__select-wrap">
+        <button type="button" className="epx-field-row__select-btn" onClick={() => setOpen(o => !o)}>
+          <span>{display}</span>
+          <span className="epx-field-row__select-caret">▾</span>
+        </button>
+        {open && (
+          <SelectDropdown
+            value={value}
+            options={options}
+            onSelect={(v) => { onChange(v); setOpen(false); }}
+            onClose={() => setOpen(false)}
+            anchorRef={wrapRef as React.RefObject<HTMLDivElement>}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── TextRow ──────────────────────────────────────────────────────────────────
+
+export function TextRow({ label, value, onChange, placeholder }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="epx-side-input">
+      <span className="epx-side-input__label epx-side-input__label--row">{label}</span>
+      <input
+        type="text"
+        className="epx-side-input__num"
+        value={value}
+        placeholder={placeholder ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+// ─── DimensionControl ─────────────────────────────────────────────────────────
+
+const EMPTY: SideValue = { num: 0, unit: "px" };
+const isEmpty = (sv: SideValue) => sv.num === 0 && sv.unit === "px";
+
+export function DimensionControl({ label, values, onChange, onReset }: {
+  label: string;
+  values: { fix: SideValue; min: SideValue; max: SideValue };
+  onChange: (key: "fix" | "min" | "max", v: SideValue) => void;
+  onReset: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isDirty = !isEmpty(values.fix) || !isEmpty(values.min) || !isEmpty(values.max);
+
+  return (
+    <div className="epx-spacing-ctrl">
+      {!expanded ? (
+        <div className="epx-spacing-ctrl__row">
+          <div className="epx-spacing-ctrl__collapsed">
+            <SideInput sideKey="" labelOverride={label} value={values.fix} onChange={(v) => onChange("fix", v)} />
+            <button type="button" className="epx-spacing-ctrl__caret" onClick={() => setExpanded(true)}>▾</button>
+          </div>
+          {isDirty && (
+            <button type="button" className="epx-reset-btn" onClick={onReset} title="Reset">
+              <IconReset />
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="epx-spacing-ctrl__expanded">
+          <div className="epx-spacing-ctrl__exp-header">
+            <span className="epx-spacing-ctrl__label">{label}</span>
+            <div className="epx-spacing-ctrl__exp-actions">
+              {isDirty && (
+                <button type="button" className="epx-reset-btn" onClick={onReset} title="Reset">
+                  <IconReset />
+                </button>
+              )}
+              <button type="button" className="epx-spacing-ctrl__caret" onClick={() => setExpanded(false)}>▴</button>
+            </div>
+          </div>
+          <SideInput sideKey="" labelOverride="Fix" value={values.fix} onChange={(v) => onChange("fix", v)} />
+          <SideInput sideKey="" labelOverride="Min" value={values.min} onChange={(v) => onChange("min", v)} />
+          <SideInput sideKey="" labelOverride="Max" value={values.max} onChange={(v) => onChange("max", v)} />
+        </div>
+      )}
+    </div>
+  );
+}

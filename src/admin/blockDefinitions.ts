@@ -20,6 +20,7 @@ export interface BlockDef {
   label: string;
   icon: string;
   description: string;
+  category: "core" | "general";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   defaultConfig: Record<string, any>;
   fields: FieldDef[];
@@ -42,129 +43,11 @@ const THEME_FIELD: FieldDef = {
 
 export const BLOCK_DEFINITIONS: BlockDef[] = [
   {
-    type: "hero",
-    label: "Hero Section",
-    icon: "🦸",
-    description: "Full-width hero with headline, subheadline, and CTA buttons",
-    defaultConfig: {
-      headline: "Your Headline Here",
-      layout: "center",
-      theme: "light",
-    },
-    fields: [
-      { key: "headline", label: "Headline", type: "text", required: true, placeholder: "Your big headline..." },
-      { key: "subheadline", label: "Subheadline", type: "textarea", placeholder: "Supporting text..." },
-      { key: "ctaLabel", label: "Primary CTA Label", type: "text", placeholder: "Get Started" },
-      { key: "ctaUrl", label: "Primary CTA URL", type: "url", placeholder: "https://..." },
-      { key: "ctaSecondaryLabel", label: "Secondary CTA Label", type: "text", placeholder: "Learn More" },
-      { key: "ctaSecondaryUrl", label: "Secondary CTA URL", type: "url", placeholder: "https://..." },
-      { key: "backgroundImageUrl", label: "Background Image URL", type: "url", placeholder: "https://..." },
-      {
-        key: "layout",
-        label: "Layout",
-        type: "select",
-        options: [
-          { value: "center", label: "Centered" },
-          { value: "left", label: "Left Aligned" },
-          { value: "split", label: "Split (image + text)" },
-        ],
-      },
-      THEME_FIELD,
-    ],
-  },
-
-  {
-    type: "features-grid",
-    label: "Features Grid",
-    icon: "✨",
-    description: "Grid of feature cards with icon, title, and description",
-    defaultConfig: {
-      columns: "3",
-      theme: "light",
-      items: [],
-    },
-    fields: [
-      { key: "headline", label: "Section Headline", type: "text", placeholder: "Why Choose Us" },
-      { key: "subheadline", label: "Section Subheadline", type: "textarea", placeholder: "Supporting text..." },
-      {
-        key: "columns",
-        label: "Columns",
-        type: "select",
-        options: [
-          { value: "2", label: "2 Columns" },
-          { value: "3", label: "3 Columns" },
-          { value: "4", label: "4 Columns" },
-        ],
-      },
-      {
-        key: "items",
-        label: "Features",
-        type: "json-array",
-        itemFields: [
-          { key: "icon", label: "Icon (emoji or URL)", type: "text", placeholder: "⚡" },
-          { key: "title", label: "Title", type: "text", placeholder: "Feature name" },
-          { key: "body", label: "Description", type: "textarea", placeholder: "Short description..." },
-        ],
-      },
-      THEME_FIELD,
-    ],
-  },
-
-  {
-    type: "image-text",
-    label: "Image + Text",
-    icon: "🖼️",
-    description: "Side-by-side image and text content",
-    defaultConfig: {
-      layout: "image-left",
-      theme: "light",
-    },
-    fields: [
-      { key: "imageUrl", label: "Image URL", type: "url", required: true, placeholder: "https://..." },
-      { key: "imageAlt", label: "Image Alt Text", type: "text", placeholder: "Descriptive alt text" },
-      { key: "headline", label: "Headline", type: "text", required: true, placeholder: "Section headline" },
-      { key: "body", label: "Body Text", type: "textarea", placeholder: "Paragraph text..." },
-      { key: "ctaLabel", label: "CTA Label", type: "text", placeholder: "Learn More" },
-      { key: "ctaUrl", label: "CTA URL", type: "url", placeholder: "https://..." },
-      {
-        key: "layout",
-        label: "Image Position",
-        type: "select",
-        options: [
-          { value: "image-left", label: "Image Left" },
-          { value: "image-right", label: "Image Right" },
-        ],
-      },
-      THEME_FIELD,
-    ],
-  },
-
-  {
-    type: "cta",
-    label: "CTA Section",
-    icon: "📣",
-    description: "Centered call-to-action with headline and buttons",
-    defaultConfig: {
-      ctaLabel: "Get Started",
-      ctaUrl: "#",
-      theme: "accent",
-    },
-    fields: [
-      { key: "headline", label: "Headline", type: "text", required: true, placeholder: "Ready to get started?" },
-      { key: "body", label: "Body Text", type: "textarea", placeholder: "Supporting text..." },
-      { key: "ctaLabel", label: "Primary CTA Label", type: "text", required: true, placeholder: "Get Started" },
-      { key: "ctaUrl", label: "Primary CTA URL", type: "url", required: true, placeholder: "https://..." },
-      { key: "ctaSecondaryLabel", label: "Secondary CTA Label", type: "text", placeholder: "Learn More" },
-      { key: "ctaSecondaryUrl", label: "Secondary CTA URL", type: "url", placeholder: "https://..." },
-      THEME_FIELD,
-    ],
-  },
-
-  {
     type: "testimonials",
     label: "Testimonials",
     icon: "💬",
     description: "Customer testimonials and reviews",
+    category: "general",
     defaultConfig: {
       layout: "grid",
       theme: "light",
@@ -198,34 +81,11 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
   },
 
   {
-    type: "stats",
-    label: "Stats Section",
-    icon: "📊",
-    description: "Large numbers and metrics with labels",
-    defaultConfig: {
-      theme: "light",
-      items: [],
-    },
-    fields: [
-      { key: "headline", label: "Section Headline", type: "text", placeholder: "Our Numbers" },
-      {
-        key: "items",
-        label: "Stats",
-        type: "json-array",
-        itemFields: [
-          { key: "value", label: "Value", type: "text", placeholder: "10k+" },
-          { key: "label", label: "Label", type: "text", placeholder: "Happy Customers" },
-        ],
-      },
-      THEME_FIELD,
-    ],
-  },
-
-  {
     type: "faq",
     label: "FAQ Section",
     icon: "❓",
     description: "Frequently asked questions with accordion",
+    category: "general",
     defaultConfig: {
       theme: "light",
       items: [],
@@ -251,6 +111,7 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     label: "Pricing Table",
     icon: "💰",
     description: "Pricing tiers with feature lists",
+    category: "general",
     defaultConfig: {
       theme: "light",
       tiers: [],
@@ -278,62 +139,11 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
   },
 
   {
-    type: "gallery",
-    label: "Gallery",
-    icon: "🖼️",
-    description: "Image grid gallery",
-    defaultConfig: {
-      columns: "3",
-      theme: "light",
-      images: [],
-    },
-    fields: [
-      { key: "headline", label: "Section Headline", type: "text", placeholder: "Our Gallery" },
-      {
-        key: "columns",
-        label: "Columns",
-        type: "select",
-        options: [
-          { value: "2", label: "2 Columns" },
-          { value: "3", label: "3 Columns" },
-          { value: "4", label: "4 Columns" },
-        ],
-      },
-      {
-        key: "images",
-        label: "Images",
-        type: "json-array",
-        itemFields: [
-          { key: "url", label: "Image URL", type: "url", placeholder: "https://..." },
-          { key: "alt", label: "Alt Text", type: "text", placeholder: "Descriptive alt text" },
-          { key: "caption", label: "Caption (optional)", type: "text", placeholder: "Image caption" },
-        ],
-      },
-      THEME_FIELD,
-    ],
-  },
-
-  {
-    type: "video",
-    label: "Video Section",
-    icon: "▶️",
-    description: "Embedded video (YouTube or Vimeo)",
-    defaultConfig: {
-      theme: "light",
-    },
-    fields: [
-      { key: "url", label: "Video URL", type: "url", required: true, placeholder: "https://youtube.com/watch?v=..." },
-      { key: "caption", label: "Caption", type: "text", placeholder: "Optional caption below video" },
-      { key: "autoplay", label: "Autoplay (muted)", type: "toggle" },
-      THEME_FIELD,
-    ],
-  },
-
-  {
-    type: "section",
-    label: "Section Container",
+    type: "container",
+    label: "Container",
     icon: "📦",
     description: "Wrapper block that can contain other blocks",
+    category: "core",
     defaultConfig: {
       background: "white",
       paddingTop: "lg",
@@ -386,6 +196,7 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     label: "Spacer",
     icon: "↕️",
     description: "Vertical spacing or divider line",
+    category: "core",
     defaultConfig: {
       height: "md",
       showDivider: false,

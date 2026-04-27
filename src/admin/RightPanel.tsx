@@ -3,9 +3,10 @@ import type { SectionBlock } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
 import type { FieldDef } from "./blockDefinitions.js";
-import { SpacingControl, parseSide, serializeSide, type SpacingValue, type SideValue } from "./controls/SpacingControl.js";
+import { SpacingControl, parseSide, serializeSide, type SpacingValue, type SideValue, type SpacingKeys } from "./controls/SpacingControl.js";
 import { BorderRadiusControl, parseRadius, serializeRadius, type RadiusValue } from "./controls/BorderRadiusControl.js";
 import { BorderControl, parseBorder, serializeBorder, type BorderConfig } from "./controls/BorderControl.js";
+import { FieldGroup, SelectRow, TextRow, NumberRow, DimensionControl } from "./controls/FieldRow.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -58,23 +59,16 @@ const MISC_STYLE_FIELDS: FieldDef[] = [
       { value: "accent", label: "Accent Blue" },
     ],
   },
-  {
-    key: "maxWidth",
-    label: "Max Width",
-    type: "select",
-    options: [
-      { value: "sm", label: "Small (640px)" },
-      { value: "md", label: "Medium (768px)" },
-      { value: "lg", label: "Large (1140px)" },
-      { value: "full", label: "Full width" },
-    ],
-  },
 ];
 
 // ─── Advanced Tab ─────────────────────────────────────────────────────────────
 
 type AdvancedConfig = {
   position?: string;
+  top?: string;
+  right?: string;
+  bottom?: string;
+  left?: string;
   zIndex?: number | string;
   cssId?: string;
   cssClasses?: string;
@@ -94,6 +88,13 @@ function CodeEditor({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumsRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+  const copySelector = () => {
+    navigator.clipboard.writeText(selector).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
   const lineCount = value === "" ? 1 : value.split("\n").length;
 
   // Sync line numbers scroll with textarea scroll
@@ -133,9 +134,18 @@ function CodeEditor({
   return (
     <div className="epx-code-editor">
       <div className="epx-code-editor__header">
-        <span className="epx-code-editor__selector-kw">selector</span>
-        <span className="epx-code-editor__selector-eq"> = </span>
-        <span className="epx-code-editor__selector-val">{selector}</span>
+        <button type="button" className="epx-code-editor__copy-btn" onClick={copySelector} title="Copy selector">
+          {copied ? (
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          ) : (
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="4" y="1" width="7" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.2"/><rect x="1" y="3" width="7" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.2" fill="var(--epx-surface-code)"/></svg>
+          )}
+        </button>
+        <div className="epx-code-editor__selector-scroll">
+          <span className="epx-code-editor__selector-kw">selector</span>
+          <span className="epx-code-editor__selector-eq"> = </span>
+          <span className="epx-code-editor__selector-val">{selector}</span>
+        </div>
       </div>
       <div className="epx-code-editor__body">
         <div ref={lineNumsRef} className="epx-code-editor__line-nums" aria-hidden="true">
@@ -166,6 +176,14 @@ function CodeEditor({
   );
 }
 
+const POSITION_OPTIONS = [
+  { value: "", label: "Default" },
+  { value: "relative", label: "Relative" },
+  { value: "absolute", label: "Absolute" },
+  { value: "fixed", label: "Fixed" },
+  { value: "sticky", label: "Sticky" },
+];
+
 function AdvancedTab({
   value,
   onChange,
@@ -178,63 +196,87 @@ function AdvancedTab({
   const set = (key: keyof AdvancedConfig, val: unknown) =>
     onChange({ ...value, [key]: val });
 
-  const selector = value.cssId
-    ? `#${value.cssId}`
-    : `[data-epx-block="${blockId}"]`;
+  const selector = `[data-epx-block="${blockId}"]`;
+
+  const zIndexNum = typeof value.zIndex === "number" ? value.zIndex : (value.zIndex ? Number(value.zIndex) : undefined);
+
+  const hasPosition = !!value.position;
+
+  const offsetValue: SpacingValue = {
+    top:    parseSide(value.top),
+    right:  parseSide(value.right),
+    bottom: parseSide(value.bottom),
+    left:   parseSide(value.left),
+  };
+
+  const handleOffset = (v: SpacingValue) => {
+    const sides: SpacingKeys[] = ["top", "right", "bottom", "left"];
+    const next: Partial<AdvancedConfig> = {};
+    sides.forEach((s) => {
+      next[s] = v[s] ? serializeSide(v[s] as SideValue) : undefined;
+    });
+    onChange({ ...value, ...next });
+  };
 
   return (
     <div className="epx-right-panel__fields">
-      {/* Position */}
-      <div className="epx-field">
-        <label className="epx-field__label">Position</label>
-        <select
-          className="epx-field__select"
+      <FieldGroup
+        isDirty={!!value.position}
+        onReset={() => onChange({ ...value, position: "", top: undefined, right: undefined, bottom: undefined, left: undefined })}
+      >
+        <SelectRow
+          label="Position"
           value={value.position ?? ""}
-          onChange={(e) => set("position", e.target.value)}
-        >
-          <option value="">Default</option>
-          <option value="absolute">Absolute</option>
-          <option value="fixed">Fixed</option>
-        </select>
-      </div>
-
-      {/* Z-Index */}
-      <div className="epx-field">
-        <label className="epx-field__label">Z-Index</label>
-        <input
-          type="number"
-          className="epx-field__input"
-          value={value.zIndex ?? ""}
-          placeholder="e.g. 10"
-          onChange={(e) => set("zIndex", e.target.value === "" ? undefined : Number(e.target.value))}
+          onChange={(v) => set("position", v)}
+          options={POSITION_OPTIONS}
         />
-      </div>
+      </FieldGroup>
 
-      {/* CSS ID */}
-      <div className="epx-field">
-        <label className="epx-field__label">CSS ID</label>
-        <input
-          type="text"
-          className="epx-field__input"
+      {hasPosition && (
+        <SpacingControl
+          label="Offset"
+          value={offsetValue}
+          onChange={handleOffset}
+          sides={["top", "right", "bottom", "left"]}
+          forceExpanded
+        />
+      )}
+
+      <FieldGroup
+        isDirty={zIndexNum !== undefined}
+        onReset={() => set("zIndex", undefined)}
+      >
+        <NumberRow
+          label="Z-Index"
+          value={zIndexNum}
+          onChange={(v) => set("zIndex", v)}
+        />
+      </FieldGroup>
+
+      <FieldGroup
+        isDirty={!!value.cssId}
+        onReset={() => set("cssId", "")}
+      >
+        <TextRow
+          label="CSS ID"
           value={value.cssId ?? ""}
-          placeholder="my-section"
-          onChange={(e) => set("cssId", e.target.value)}
+          onChange={(v) => set("cssId", v)}
+          placeholder="#"
         />
-      </div>
+      </FieldGroup>
 
-      {/* CSS Classes */}
-      <div className="epx-field">
-        <label className="epx-field__label">CSS Classes</label>
-        <input
-          type="text"
-          className="epx-field__input"
+      <FieldGroup
+        isDirty={!!value.cssClasses}
+        onReset={() => set("cssClasses", "")}
+      >
+        <TextRow
+          label="CSS Classes"
           value={value.cssClasses ?? ""}
-          placeholder="class-a class-b"
-          onChange={(e) => set("cssClasses", e.target.value)}
+          onChange={(v) => set("cssClasses", v)}
+          placeholder="."
         />
-      </div>
+      </FieldGroup>
 
-      {/* Custom CSS */}
       <div className="epx-field">
         <label className="epx-field__label">Custom CSS</label>
         <CodeEditor
@@ -280,7 +322,9 @@ export function RightPanel({ block, onChange }: Props) {
 
   const marginValue: SpacingValue = {
     top:    parseSide(style.marginTop),
+    right:  parseSide(style.marginRight),
     bottom: parseSide(style.marginBottom),
+    left:   parseSide(style.marginLeft),
   };
 
   const handleSpacing = (key: string, val: SpacingValue) => {
@@ -291,6 +335,24 @@ export function RightPanel({ block, onChange }: Props) {
       next[cssKey] = serializeSide(sv as SideValue);
     });
     onChange({ style: next });
+  };
+
+  const widthValues = {
+    fix: parseSide(style.width),
+    min: parseSide(style.minWidth),
+    max: parseSide(style.maxWidth),
+  };
+  const heightValues = {
+    fix: parseSide(style.height),
+    min: parseSide(style.minHeight),
+    max: parseSide(style.maxHeight),
+  };
+  const CSS_KEYS = {
+    width:  { fix: "width",  min: "minWidth",  max: "maxWidth"  },
+    height: { fix: "height", min: "minHeight", max: "maxHeight" },
+  } as const;
+  const handleDimension = (axis: "width" | "height", key: "fix" | "min" | "max", sv: SideValue) => {
+    onChange({ style: { ...style, [CSS_KEYS[axis][key]]: serializeSide(sv) } });
   };
 
   const radiusValue: RadiusValue = parseRadius(style);
@@ -346,6 +408,18 @@ export function RightPanel({ block, onChange }: Props) {
 
       {activeTab === "style" && (
         <div className="epx-right-panel__fields">
+          <DimensionControl
+            label="Width"
+            values={widthValues}
+            onChange={(key, v) => handleDimension("width", key, v)}
+            onReset={() => onChange({ style: { ...style, width: "", minWidth: "", maxWidth: "" } })}
+          />
+          <DimensionControl
+            label="Height"
+            values={heightValues}
+            onChange={(key, v) => handleDimension("height", key, v)}
+            onReset={() => onChange({ style: { ...style, height: "", minHeight: "", maxHeight: "" } })}
+          />
           <SpacingControl
             label="Padding"
             value={paddingValue}
@@ -356,7 +430,7 @@ export function RightPanel({ block, onChange }: Props) {
             label="Margin"
             value={marginValue}
             onChange={(v) => handleSpacing("margin", v)}
-            sides={["top", "bottom"]}
+            sides={["top", "right", "bottom", "left"]}
           />
           <BorderRadiusControl value={radiusValue} onChange={handleRadius} />
           <BorderControl value={borderValue} onChange={handleBorder} />
