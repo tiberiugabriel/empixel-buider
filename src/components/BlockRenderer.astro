@@ -1,33 +1,15 @@
 ---
-/**
- * BlockRenderer — renders a single leaf block by dispatching to the right component.
- * Does NOT handle section/columns containers (to avoid circular imports).
- */
 import type { SectionBlock } from "../types.js";
-import HeroSection from "./HeroSection.astro";
-import FeaturesGrid from "./FeaturesGrid.astro";
-import ImageText from "./ImageText.astro";
-import CtaSection from "./CtaSection.astro";
 import Testimonials from "./Testimonials.astro";
-import StatsSection from "./StatsSection.astro";
 import FaqSection from "./FaqSection.astro";
 import PricingSection from "./PricingSection.astro";
-import GallerySection from "./GallerySection.astro";
-import VideoSection from "./VideoSection.astro";
 import SpacerSection from "./SpacerSection.astro";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const LEAF_COMPONENTS: Record<string, any> = {
-  hero: HeroSection,
-  "features-grid": FeaturesGrid,
-  "image-text": ImageText,
-  cta: CtaSection,
   testimonials: Testimonials,
-  stats: StatsSection,
   faq: FaqSection,
   pricing: PricingSection,
-  gallery: GallerySection,
-  video: VideoSection,
   spacer: SpacerSection,
 };
 

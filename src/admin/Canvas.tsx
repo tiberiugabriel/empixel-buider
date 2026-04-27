@@ -162,20 +162,6 @@ export function Canvas({
                 />
               );
             }
-            if (section.type === "columns") {
-              return (
-                <ColumnsBlock
-                  key={section.id}
-                  section={section}
-                  selectedId={selectedId}
-                  onSelect={onSelect}
-                  onRemove={onRemove}
-                  onAddToContainer={onAddToContainer}
-                  dropIndicatorId={dropIndicatorId}
-                  onAddAfter={onAddAfter}
-                />
-              );
-            }
             return (
               <SortableBlock
                 key={section.id}
@@ -374,102 +360,6 @@ const ContainerBlock = memo(function ContainerBlock({
       {children.length > 0 && (
         <ContainerAddButton onAdd={(type) => onAddToContainer(section.id, null, type)} />
       )}
-
-      {section.id === dropIndicatorId && <div className="epx-drop-indicator" />}
-    </div>
-  );
-});
-
-// ─── ColumnsBlock ─────────────────────────────────────────────────────────────
-
-const ColumnsBlock = memo(function ColumnsBlock({
-  section,
-  selectedId,
-  onSelect,
-  onRemove,
-  onAddToContainer,
-  dropIndicatorId,
-  onAddAfter,
-}: ContainerBlockProps) {
-  const [hovered, setHovered] = useState(false);
-  const isSelected = section.id === selectedId;
-  const numCols = parseInt(section.config.columns ?? "2", 10);
-  const slots: SectionBlock[][] = section.slots ?? Array.from({ length: numCols }, () => []);
-
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: section.id,
-    data: {
-      kind: "block",
-      containerId: null,
-      slotIndex: null,
-      isContainer: true,
-    } satisfies BlockDragData,
-  });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`epx-columns-block${isSelected ? " is-selected" : ""}`}
-      onClick={(e) => { e.stopPropagation(); onSelect(section.id); }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <BlockOverlay
-        visible={hovered || isSelected}
-        onAdd={(type) => onAddAfter(section.id, type)}
-        dragListeners={listeners}
-        dragAttributes={attributes}
-        onDelete={() => onRemove(section.id)}
-        onSelect={() => onSelect(section.id)}
-        allowedBlockTypes="all"
-      />
-
-      <div
-        className="epx-columns-block__grid"
-        style={{ gridTemplateColumns: `repeat(${numCols}, 1fr)` }}
-      >
-        {Array.from({ length: numCols }, (_, si) => {
-          const slotItems = slots[si] ?? [];
-          return (
-            <div key={si} className="epx-columns__slot">
-              <SortableContext
-                items={slotItems.map((c) => c.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {slotItems.length > 0 ? (
-                  slotItems.map((child) => (
-                    <SortableBlock
-                      key={child.id}
-                      section={child}
-                      containerId={section.id}
-                      slotIndex={si}
-                      isSelected={child.id === selectedId}
-                      onSelect={() => onSelect(child.id)}
-                      onRemove={() => onRemove(child.id)}
-                      isDropTarget={child.id === dropIndicatorId}
-                      onAddAfter={(type) => onAddAfter(child.id, type)}
-                    />
-                  ))
-                ) : (
-                  <EmptyDropZone
-                    containerId={section.id}
-                    slotIndex={si}
-                    onAdd={(type) => onAddToContainer(section.id, si, type)}
-                  />
-                )}
-              </SortableContext>
-              <ContainerAddButton onAdd={(type) => onAddToContainer(section.id, si, type)} />
-            </div>
-          );
-        })}
-      </div>
 
       {section.id === dropIndicatorId && <div className="epx-drop-indicator" />}
     </div>

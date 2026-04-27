@@ -9,14 +9,14 @@ const BG_STYLES: Record<string, React.CSSProperties> = {
   accent: { background: "#eff6ff", color: "#1e40af" },
 };
 
-export const SectionPreview = memo(function SectionPreview({ config, children }: { config: Record<string, unknown>; children?: SectionBlock[] }) {
+export const ContainerPreview = memo(function ContainerPreview({ config, children }: { config: Record<string, unknown>; children?: SectionBlock[] }) {
   const bg = BG_STYLES[(config.background as string) ?? "white"] ?? BG_STYLES.white;
   const count = children?.length ?? 0;
 
   return (
     <div style={{ ...bg, border: "2px dashed #93c5fd", borderRadius: 6, padding: "12px", minHeight: 48 }}>
       <div style={{ fontSize: 10, color: "#93c5fd", fontWeight: 600, marginBottom: count > 0 ? 8 : 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        Section Container
+        Container
       </div>
       {count > 0 ? (
         <div style={{ fontSize: 11, color: "#888" }}>{count} block{count !== 1 ? "s" : ""} inside</div>

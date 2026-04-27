@@ -504,7 +504,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       }
       const selected = findBlockById(state.selectedId, state.sections);
       if (selected && isContainerType(selected.type)) {
-        dispatch({ type: "ADD_TO_CONTAINER", containerId: selected.id, slotIndex: selected.type === "columns" ? 0 : undefined, block });
+        dispatch({ type: "ADD_TO_CONTAINER", containerId: selected.id, slotIndex: undefined, block });
         return;
       }
     }
@@ -986,19 +986,6 @@ function BuilderStyles() {
         border-radius: 6px; transition: background 0.15s;
       }
       .epx-container__empty-zone.is-over { background: rgba(134,239,172,0.12); }
-
-      /* ── Columns block ── */
-      .epx-columns-block {
-        border: 1px solid var(--epx-border-card); border-radius: 8px; background: transparent;
-        position: relative; cursor: pointer; transition: border-color 0.15s;
-        overflow: visible;
-      }
-      .epx-columns-block.is-selected { border-color: var(--epx-selected); }
-      .epx-columns-block__grid { padding: 6px; display: grid; gap: 6px; }
-      .epx-columns__slot {
-        border: 1px dashed var(--epx-border-card); border-radius: 6px; padding: 4px;
-        display: flex; flex-direction: column; gap: 4px; min-height: 48px;
-      }
 
       /* ── Drop indicator ── */
       .epx-drop-indicator {
