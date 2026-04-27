@@ -169,7 +169,6 @@ export function TextRow({ label, value, onChange, placeholder }: {
 
 // ─── DimensionControl ─────────────────────────────────────────────────────────
 
-const EMPTY: SideValue = { num: 0, unit: "px" };
 const isEmpty = (sv: SideValue) => sv.num === 0 && sv.unit === "px";
 
 export function DimensionControl({ label, values, onChange, onReset }: {
