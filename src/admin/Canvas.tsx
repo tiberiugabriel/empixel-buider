@@ -48,17 +48,43 @@ function resolveBlockStyle(style: Record<string, unknown> | undefined): {
   innerStyle: React.CSSProperties;
 } {
   if (!style) return { outerStyle: {}, innerStyle: {} };
-  const num = (v: unknown) => (typeof v === "number" ? v : undefined);
+  const css = (v: unknown): string | number | undefined => {
+    if (typeof v === "number") return v;
+    if (typeof v === "string" && v !== "") return v;
+    return undefined;
+  };
   const outerStyle: React.CSSProperties = {};
-  if (num(style.marginTop) !== undefined) outerStyle.marginTop = num(style.marginTop);
-  if (num(style.marginBottom) !== undefined) outerStyle.marginBottom = num(style.marginBottom);
+  if (css(style.marginTop) !== undefined) outerStyle.marginTop = css(style.marginTop) as string | number;
+  if (css(style.marginBottom) !== undefined) outerStyle.marginBottom = css(style.marginBottom) as string | number;
   const innerStyle: React.CSSProperties = {};
-  if (num(style.paddingTop) !== undefined) innerStyle.paddingTop = num(style.paddingTop);
-  if (num(style.paddingRight) !== undefined) innerStyle.paddingRight = num(style.paddingRight);
-  if (num(style.paddingBottom) !== undefined) innerStyle.paddingBottom = num(style.paddingBottom);
-  if (num(style.paddingLeft) !== undefined) innerStyle.paddingLeft = num(style.paddingLeft);
+  if (css(style.paddingTop) !== undefined) innerStyle.paddingTop = css(style.paddingTop) as string | number;
+  if (css(style.paddingRight) !== undefined) innerStyle.paddingRight = css(style.paddingRight) as string | number;
+  if (css(style.paddingBottom) !== undefined) innerStyle.paddingBottom = css(style.paddingBottom) as string | number;
+  if (css(style.paddingLeft) !== undefined) innerStyle.paddingLeft = css(style.paddingLeft) as string | number;
   if (style.borderRadius && BORDER_RADIUS_MAP[style.borderRadius as string]) {
     innerStyle.borderRadius = BORDER_RADIUS_MAP[style.borderRadius as string];
+  }
+  if (css(style.borderTopLeftRadius))     innerStyle.borderTopLeftRadius     = css(style.borderTopLeftRadius)     as string;
+  if (css(style.borderTopRightRadius))    innerStyle.borderTopRightRadius    = css(style.borderTopRightRadius)    as string;
+  if (css(style.borderBottomRightRadius)) innerStyle.borderBottomRightRadius = css(style.borderBottomRightRadius) as string;
+  if (css(style.borderBottomLeftRadius))  innerStyle.borderBottomLeftRadius  = css(style.borderBottomLeftRadius)  as string;
+  if (css(style.borderTopWidth))    innerStyle.borderTopWidth    = css(style.borderTopWidth)    as string;
+  if (css(style.borderRightWidth))  innerStyle.borderRightWidth  = css(style.borderRightWidth)  as string;
+  if (css(style.borderBottomWidth)) innerStyle.borderBottomWidth = css(style.borderBottomWidth) as string;
+  if (css(style.borderLeftWidth))   innerStyle.borderLeftWidth   = css(style.borderLeftWidth)   as string;
+  if (css(style.borderStyle))       innerStyle.borderStyle       = css(style.borderStyle)       as string;
+  if (css(style.borderColor)) {
+    const color = css(style.borderColor) as string;
+    const alpha = typeof style.borderAlpha === "number" ? style.borderAlpha : 1;
+    if (alpha < 1) {
+      const hex = color.replace("#", "");
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      innerStyle.borderColor = `rgba(${r},${g},${b},${alpha})`;
+    } else {
+      innerStyle.borderColor = color;
+    }
   }
   if (style.maxWidth && MAX_WIDTH_MAP[style.maxWidth as string]) {
     innerStyle.maxWidth = MAX_WIDTH_MAP[style.maxWidth as string];

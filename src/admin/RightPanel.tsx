@@ -3,6 +3,9 @@ import type { SectionBlock } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
 import type { FieldDef } from "./blockDefinitions.js";
+import { SpacingControl, parseSide, serializeSide, type SpacingValue, type SideValue } from "./controls/SpacingControl.js";
+import { BorderRadiusControl, parseRadius, serializeRadius, type RadiusValue } from "./controls/BorderRadiusControl.js";
+import { BorderControl, parseBorder, serializeBorder, type BorderConfig } from "./controls/BorderControl.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -40,82 +43,6 @@ function IconAdvanced() {
   );
 }
 
-// ─── SpacingControl ────────────────────────────────────────────────────────────
-
-type SpacingKeys = "top" | "right" | "bottom" | "left";
-type SpacingValue = Partial<Record<SpacingKeys, number>>;
-
-const SIDE_LABELS: Record<SpacingKeys, string> = {
-  top: "T",
-  right: "R",
-  bottom: "B",
-  left: "L",
-};
-
-function SpacingControl({
-  label,
-  value,
-  onChange,
-  sides,
-  linkIcon,
-}: {
-  label: string;
-  value: SpacingValue;
-  onChange: (v: SpacingValue) => void;
-  sides: SpacingKeys[];
-  linkIcon: string;
-}) {
-  const [linked, setLinked] = useState(false);
-
-  const handleChange = (side: SpacingKeys, px: number) => {
-    if (linked) {
-      const next: SpacingValue = {};
-      sides.forEach((s) => (next[s] = px));
-      onChange({ ...value, ...next });
-    } else {
-      onChange({ ...value, [side]: px });
-    }
-  };
-
-  return (
-    <div className="epx-spacing-group">
-      <div className="epx-spacing-group__header">
-        <span className="epx-spacing-group__label">{label}</span>
-        <button
-          className={`epx-spacing-group__link${linked ? " is-linked" : ""}`}
-          onClick={() => setLinked(!linked)}
-          title={linked ? "Unlink sides" : "Link all sides"}
-          type="button"
-        >
-          {linkIcon}
-        </button>
-      </div>
-
-      {sides.map((side) => {
-        const px = value[side] ?? 0;
-        return (
-          <div key={side} className="epx-spacing-row">
-            <div className="epx-spacing-row__side">{SIDE_LABELS[side]}</div>
-            <input
-              type="range"
-              min={0}
-              max={120}
-              step={4}
-              value={px}
-              onChange={(e) => handleChange(side, Number(e.target.value))}
-              className="epx-spacing-row__slider"
-              style={{
-                background: `linear-gradient(to right, #2563eb ${(px / 120) * 100}%, #e0e0e0 ${(px / 120) * 100}%)`,
-              }}
-            />
-            <span className="epx-spacing-row__value">{px}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Style fields (misc selects) ──────────────────────────────────────────────
 
 const MISC_STYLE_FIELDS: FieldDef[] = [
@@ -129,18 +56,6 @@ const MISC_STYLE_FIELDS: FieldDef[] = [
       { value: "light-gray", label: "Light Gray" },
       { value: "dark", label: "Dark" },
       { value: "accent", label: "Accent Blue" },
-    ],
-  },
-  {
-    key: "borderRadius",
-    label: "Border Radius",
-    type: "select",
-    options: [
-      { value: "none", label: "None" },
-      { value: "sm", label: "Small (4px)" },
-      { value: "md", label: "Medium (8px)" },
-      { value: "lg", label: "Large (16px)" },
-      { value: "full", label: "Pill (9999px)" },
     ],
   },
   {
@@ -357,25 +272,35 @@ export function RightPanel({ block, onChange }: Props) {
   const advanced = (block.config.advanced ?? {}) as AdvancedConfig;
 
   const paddingValue: SpacingValue = {
-    top: (style.paddingTop as number) ?? 0,
-    right: (style.paddingRight as number) ?? 0,
-    bottom: (style.paddingBottom as number) ?? 0,
-    left: (style.paddingLeft as number) ?? 0,
+    top:    parseSide(style.paddingTop),
+    right:  parseSide(style.paddingRight),
+    bottom: parseSide(style.paddingBottom),
+    left:   parseSide(style.paddingLeft),
   };
 
   const marginValue: SpacingValue = {
-    top: (style.marginTop as number) ?? 0,
-    bottom: (style.marginBottom as number) ?? 0,
+    top:    parseSide(style.marginTop),
+    bottom: parseSide(style.marginBottom),
   };
 
   const handleSpacing = (key: string, val: SpacingValue) => {
     const prefix = key === "padding" ? "padding" : "margin";
     const next: Record<string, unknown> = { ...style };
-    Object.entries(val).forEach(([side, px]) => {
+    Object.entries(val).forEach(([side, sv]) => {
       const cssKey = `${prefix}${side.charAt(0).toUpperCase()}${side.slice(1)}`;
-      next[cssKey] = px;
+      next[cssKey] = serializeSide(sv as SideValue);
     });
     onChange({ style: next });
+  };
+
+  const radiusValue: RadiusValue = parseRadius(style);
+  const handleRadius = (val: RadiusValue) => {
+    onChange({ style: { ...style, ...serializeRadius(val) } });
+  };
+
+  const borderValue: BorderConfig = parseBorder(style);
+  const handleBorder = (val: BorderConfig) => {
+    onChange({ style: { ...style, ...serializeBorder(val) } });
   };
 
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
@@ -426,15 +351,15 @@ export function RightPanel({ block, onChange }: Props) {
             value={paddingValue}
             onChange={(v) => handleSpacing("padding", v)}
             sides={["top", "right", "bottom", "left"]}
-            linkIcon="⊙"
           />
           <SpacingControl
             label="Margin"
             value={marginValue}
             onChange={(v) => handleSpacing("margin", v)}
             sides={["top", "bottom"]}
-            linkIcon="↕"
           />
+          <BorderRadiusControl value={radiusValue} onChange={handleRadius} />
+          <BorderControl value={borderValue} onChange={handleBorder} />
           <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 12, marginTop: 4 }}>
             {MISC_STYLE_FIELDS.map((field) => (
               <FieldRenderer
