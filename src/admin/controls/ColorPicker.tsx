@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
   h = ((h % 360) + 360) % 360;
   const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
-  let r = 0, g = 0, b = 0;
+  let r: number, g: number, b: number;
   if      (h < 60)  { r = c; g = x; b = 0; }
   else if (h < 120) { r = x; g = c; b = 0; }
   else if (h < 180) { r = 0; g = c; b = x; }
@@ -73,7 +73,7 @@ export function ColorPicker({ value, alpha: alphaProp = 1, onChange, onClose, po
 
   const [hsva, setHsva] = useState(() => ({ ...parseColorValue(value), a: alphaProp }));
   const hsvaRef = useRef(hsva);
-  hsvaRef.current = hsva;
+  useEffect(() => { hsvaRef.current = hsva; });
 
   const [hexInput, setHexInput] = useState(() => rgbToHex(...hsvToRgb(hsva.h, hsva.s, hsva.val)).slice(1).toUpperCase());
 
@@ -156,8 +156,9 @@ export function ColorPicker({ value, alpha: alphaProp = 1, onChange, onClose, po
   const eyedrop = async () => {
     if (!("EyeDropper" in window)) return;
     try {
-      // @ts-ignore
-      const { sRGBHex } = await new (window as any).EyeDropper().open();
+      type EyeDropperInstance = { open(): Promise<{ sRGBHex: string }> };
+      const EyeDropperCtor = (window as unknown as { EyeDropper: new () => EyeDropperInstance }).EyeDropper;
+      const { sRGBHex } = await new EyeDropperCtor().open();
       const clean = sRGBHex.replace("#", "").slice(0, 6);
       setHexInput(clean.toUpperCase());
       commitHex(clean);
