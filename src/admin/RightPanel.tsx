@@ -7,6 +7,8 @@ import { BorderRadiusControl, parseRadius, serializeRadius, type RadiusValue } f
 import { BorderControl, parseBorder, serializeBorder, type BorderConfig } from "./controls/BorderControl.js";
 import { FieldGroup, SelectRow, TextRow, NumberRow, DimensionControl } from "./controls/FieldRow.js";
 import { BackgroundControl, parseBackground, serializeBackground } from "./controls/BackgroundControl.js";
+import { GapControl, parseGap, serializeGap, type GapValue } from "./controls/GapControl.js";
+import { LayoutControl, parseLayout } from "./controls/LayoutControl.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -407,6 +409,11 @@ export function RightPanel({ block, onChange }: Props) {
     onChange({ style: { ...style, ...serializeBackground(val) } });
   };
 
+  const gapValue: GapValue = parseGap(style);
+  const handleGap = (val: GapValue) => {
+    onChange({ style: { ...style, ...serializeGap(val) } });
+  };
+
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
     { id: "fields", icon: <IconFields />, title: "Fields" },
     { id: "style", icon: <IconStyle />, title: "Style" },
@@ -446,6 +453,15 @@ export function RightPanel({ block, onChange }: Props) {
               onChange={(val) => onChange({ [field.key]: val })}
             />
           ))}
+          {block.type === "container" && (
+            <LayoutControl
+              value={parseLayout(block.config)}
+              onChange={(patch) => onChange(patch as Record<string, unknown>)}
+            />
+          )}
+          {block.type === "container" && (
+            <GapControl value={gapValue} onChange={handleGap} />
+          )}
         </div>
       )}
 

@@ -147,6 +147,35 @@ export function SelectRow({ label, value, onChange, options, labelClassName }: {
   );
 }
 
+// ─── IconButtonRow ────────────────────────────────────────────────────────────
+
+export function IconButtonRow({ label, value, onChange, options, labelClassName }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; icon: React.ReactNode; title: string }[];
+  labelClassName?: string;
+}) {
+  return (
+    <div className="epx-side-input">
+      <span className={`epx-side-input__label epx-side-input__label--row${labelClassName ? ` ${labelClassName}` : ""}`}>{label}</span>
+      <div className="epx-icon-btn-group">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={`epx-icon-btn${value === opt.value ? " is-active" : ""}`}
+            onClick={() => onChange(opt.value)}
+            title={opt.title}
+          >
+            {opt.icon}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── TextRow ──────────────────────────────────────────────────────────────────
 
 export function TextRow({ label, value, onChange, placeholder, labelClassName }: {

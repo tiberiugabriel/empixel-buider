@@ -148,6 +148,15 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     category: "core",
     defaultConfig: {
       theme: "light",
+      layout: "flex",
+      style: {
+        paddingTop: "12px",
+        paddingRight: "12px",
+        paddingBottom: "12px",
+        paddingLeft: "12px",
+        columnGap: "6px",
+        rowGap: "6px",
+      },
     },
     fields: [],
     styleFields: [THEME_FIELD],

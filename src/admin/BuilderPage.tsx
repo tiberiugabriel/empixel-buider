@@ -406,8 +406,9 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       if (!over) return;
       const overData = over.data.current as EmptyZoneData | BlockDragData | undefined;
 
-      // Dropped on canvas background → append at end
+      // Dropped on canvas background → only containers allowed at top level
       if (over.id === CANVAS_DROP_ID) {
+        if (!isContainerType(blockType)) return;
         dispatch({ type: "ADD_BLOCK", block: newBlock });
         return;
       }
@@ -497,18 +498,27 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     const def = getBlockDef(type);
     if (!def) return;
     const block: SectionBlock = { id: crypto.randomUUID(), type, config: { ...def.defaultConfig } };
-    if (state.selectedId && !isContainerType(type)) {
+
+    if (state.selectedId) {
+      const selected = findBlockById(state.selectedId, state.sections);
+
+      // Selected block is a container → add inside it
+      if (selected && isContainerType(selected.type)) {
+        dispatch({ type: "ADD_TO_CONTAINER", containerId: selected.id, slotIndex: undefined, block });
+        return;
+      }
+
+      // Selected block is a leaf inside a container → add to that same container
       const path = findPath(state.selectedId, state.sections);
       if (path?.level === "container") {
         dispatch({ type: "ADD_TO_CONTAINER", containerId: path.containerId, slotIndex: path.slotIndex ?? undefined, block });
         return;
       }
-      const selected = findBlockById(state.selectedId, state.sections);
-      if (selected && isContainerType(selected.type)) {
-        dispatch({ type: "ADD_TO_CONTAINER", containerId: selected.id, slotIndex: undefined, block });
-        return;
-      }
     }
+
+    // No container context for non-containers → can't add at top level
+    if (!isContainerType(type)) return;
+
     dispatch({ type: "ADD_BLOCK", block });
   }, [state.selectedId, state.sections]);
 
@@ -1012,10 +1022,9 @@ function BuilderStyles() {
 
       /* ── Block preview (leaf blocks) ── */
       .epx-block-preview {
-        position: relative; border-radius: 8px; overflow: visible;
+        position: relative; overflow: visible;
         border: 1px solid transparent; cursor: pointer;
         transition: border-color 0.15s;
-        background: var(--epx-surface);
       }
       .epx-block-preview.is-selected { border-color: var(--epx-selected); }
 
@@ -1043,46 +1052,41 @@ function BuilderStyles() {
         font-size: 15px; transition: background 0.1s, color 0.1s;
       }
       .epx-block-overlay__handle:hover { background: rgba(255,255,255,0.15); color: #fff; }
-      .epx-block-overlay__picker {
-        position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-        background: var(--epx-surface); border: 1px solid var(--epx-border); border-radius: 8px; padding: 8px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 30;
-        display: flex; flex-direction: column; gap: 2px; min-width: 160px;
-      }
-      .epx-block-overlay__picker-title {
-        font-size: 10px; color: var(--epx-text-muted); font-weight: 700; text-transform: uppercase;
-        padding: 0 8px 6px; letter-spacing: 0.05em;
-      }
-
       /* ── Container block (section) ── */
       .epx-container-block {
-        border-width: 1px;
-        border-color: transparent;
         background: transparent;
-        position: relative; cursor: pointer; transition: border-color 0.15s;
+        position: relative; cursor: pointer;
         overflow: visible;
       }
-      .epx-container-block:hover { border-color: var(--epx-selected); }
-      .epx-container-block.is-selected { border-color: var(--epx-selected); }
+      .epx-container-block::before {
+        content: ""; position: absolute; inset: 0;
+        border: 1px solid transparent; pointer-events: none;
+        transition: border-color 0.15s; z-index: 5;
+      }
+      .epx-container-block:hover::before { border-color: var(--epx-selected); }
+      .epx-container-block.is-selected::before { border-color: var(--epx-selected); }
       .epx-container-block__children {
-        padding: 6px; display: flex; flex-direction: column; gap: 4px; min-height: 48px;
+        display: flex; flex-direction: column; min-height: 48px;
       }
-      .epx-container-block__add-btn {
-        display: flex; align-items: center; justify-content: center;
-        padding: 6px 0;
-      }
-      .epx-container__add-icon {
-        width: 26px; height: 26px; border-radius: 50%;
-        background: var(--epx-icon-bg); color: var(--epx-text-muted); font-size: 17px; border: none;
-        cursor: pointer; display: flex; align-items: center; justify-content: center;
-        transition: background 0.1s, color 0.1s; opacity: 0.7;
-      }
-      .epx-container__add-icon:hover { background: var(--epx-border-card); color: var(--epx-text-2); opacity: 1; }
       .epx-container__empty-zone {
         display: flex; align-items: center; justify-content: center; min-height: 56px;
         border-radius: 6px; transition: background 0.15s;
       }
       .epx-container__empty-zone.is-over { background: rgba(134,239,172,0.12); }
+
+      /* ── Inner block overlay (drag handle, top-left) ── */
+      .epx-inner-block-overlay {
+        position: absolute; top: 0; left: 0; z-index: 20;
+        opacity: 0; pointer-events: none; transition: opacity 0.15s;
+      }
+      .epx-inner-block-overlay.is-visible { opacity: 1; pointer-events: auto; }
+      .epx-inner-block-overlay__handle {
+        background: rgba(20,20,20,0.82); color: #ccc; cursor: grab; user-select: none;
+        width: 22px; height: 22px; border-radius: 4px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 15px; transition: background 0.1s, color 0.1s;
+      }
+      .epx-inner-block-overlay__handle:hover { background: rgba(20,20,20,0.95); color: #fff; }
 
       /* ── Drop indicator ── */
       .epx-drop-indicator {
@@ -1235,7 +1239,8 @@ function BuilderStyles() {
 
       /* ── SideInput ── */
       .epx-side-input {
-        display: flex; align-items: center; height: 28px;
+        display: flex; align-items: center; min-height: 28px; height: auto;
+        flex-wrap: wrap;
         background: transparent; position: relative;
         border-top: 1px solid var(--epx-border-subtle);
         min-width: 0;
@@ -1298,9 +1303,10 @@ function BuilderStyles() {
       }
       .epx-spacing-ctrl__row > .epx-field-group { flex: 1; min-width: 0; width: auto; }
       .epx-side-input__label--row {
-        flex: 1; width: auto; justify-content: flex-start; padding: 0 8px;
-        font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0;
+        flex: 0 0 auto; width: auto; justify-content: flex-start; padding: 0 8px;
+        font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0;
         cursor: default; color: var(--epx-text-faint); border-right: none;
+        text-align: left; line-height: 1; white-space: nowrap;
       }
       .epx-side-input__label--row:hover { color: var(--epx-text-faint); background: none; }
       .epx-side-input__label--scrub:hover { color: var(--epx-accent); }
@@ -1472,16 +1478,20 @@ function BuilderStyles() {
         font-size: 14px; padding: 0; color: var(--epx-text-mid);
       }
       .epx-icon-btn:hover:not(:disabled) { background: var(--epx-border); }
+      .epx-icon-btn.is-active { background: var(--epx-border); color: var(--epx-text); }
       .epx-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
       .epx-icon-btn--danger:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
       [data-mode="dark"] .epx-icon-btn--danger:hover:not(:disabled) { background: #3b0f0f; }
+      .epx-icon-btn-group {
+        display: flex; gap: 1px; margin-left: auto; flex-shrink: 0;
+        border-radius: 5px; padding: 2px;
+      }
 
       /* ── BackgroundControl ── */
       .epx-bg-ctrl__card {
         outline: 1px solid var(--epx-border);
         border-radius: 5px;
         background: var(--epx-input-bg);
-        overflow: hidden;
       }
       .epx-bg-ctrl__type-tabs {
         display: flex; border-top: 1px solid var(--epx-border-subtle);
@@ -1494,6 +1504,18 @@ function BuilderStyles() {
       .epx-bg-ctrl__type-tab:hover { color: var(--epx-text-mid); }
       .epx-bg-ctrl__type-tab.is-active { color: var(--epx-accent); border-bottom-color: var(--epx-accent); }
       .epx-bg-ctrl__body { border-top: 1px solid var(--epx-border-subtle); }
+      .epx-layout-ctrl__body .epx-side-input:first-child { border-top: none; }
+      .epx-layout-ctrl__body { container-type: inline-size; }
+      @container (max-width: 280px) {
+        .epx-layout-ctrl__body .epx-side-input { flex-wrap: wrap; height: auto; }
+        .epx-layout-ctrl__body .epx-side-input__label--row { padding: 8px; }
+        .epx-layout-ctrl__body .epx-icon-btn-group {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+          width: 100%; margin-left: 0;
+        }
+        .epx-layout-ctrl__body .epx-icon-btn { width: 100%; }
+      }
 
       .epx-bg-ctrl__color-row {
         display: flex; align-items: center; gap: 6px; height: 28px;
