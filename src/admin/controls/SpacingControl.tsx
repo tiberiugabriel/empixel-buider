@@ -213,7 +213,7 @@ export function SpacingControl({ label, value, onChange, sides, forceExpanded }:
   };
 
   return (
-    <div className="epx-spacing-ctrl">
+    <div className={`epx-spacing-ctrl${isDirty ? " is-dirty" : ""}`}>
       {!expanded && !forceExpanded ? (
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">

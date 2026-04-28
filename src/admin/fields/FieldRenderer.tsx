@@ -6,9 +6,12 @@ interface Props {
   field: FieldDef;
   value: unknown;
   onChange: (value: unknown) => void;
+  isDirty?: boolean;
 }
 
-export function FieldRenderer({ field, value, onChange }: Props) {
+export function FieldRenderer({ field, value, onChange, isDirty }: Props) {
+  const dc = isDirty ? " is-dirty" : "";
+
   if (field.type === "json-array") {
     return (
       <JsonArrayField
@@ -21,7 +24,7 @@ export function FieldRenderer({ field, value, onChange }: Props) {
 
   if (field.type === "toggle") {
     return (
-      <div className="epx-field epx-field--toggle">
+      <div className={`epx-field epx-field--toggle${dc}`}>
         <label className="epx-field__toggle-label">
           <input
             type="checkbox"
@@ -37,7 +40,7 @@ export function FieldRenderer({ field, value, onChange }: Props) {
 
   if (field.type === "select") {
     return (
-      <div className="epx-field">
+      <div className={`epx-field${dc}`}>
         <label className="epx-field__label">{field.label}</label>
         <select
           className="epx-field__select"
@@ -57,7 +60,7 @@ export function FieldRenderer({ field, value, onChange }: Props) {
 
   if (field.type === "textarea") {
     return (
-      <div className="epx-field">
+      <div className={`epx-field${dc}`}>
         <label className="epx-field__label">{field.label}</label>
         <textarea
           className="epx-field__textarea"
@@ -72,7 +75,7 @@ export function FieldRenderer({ field, value, onChange }: Props) {
 
   if (field.type === "number") {
     return (
-      <div className="epx-field">
+      <div className={`epx-field${dc}`}>
         <label className="epx-field__label">{field.label}</label>
         <input
           type="number"
@@ -87,7 +90,7 @@ export function FieldRenderer({ field, value, onChange }: Props) {
 
   // text + url
   return (
-    <div className="epx-field">
+    <div className={`epx-field${dc}`}>
       <label className="epx-field__label">
         {field.label}
         {field.required && <span className="epx-field__required">*</span>}

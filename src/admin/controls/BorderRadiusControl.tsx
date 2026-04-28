@@ -99,7 +99,7 @@ export function BorderRadiusControl({ value, onChange }: {
   };
 
   return (
-    <div className="epx-spacing-ctrl">
+    <div className={`epx-spacing-ctrl${isDirty ? " is-dirty" : ""}`}>
       {!expanded ? (
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">

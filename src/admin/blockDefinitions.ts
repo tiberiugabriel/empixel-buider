@@ -24,6 +24,8 @@ export interface BlockDef {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   defaultConfig: Record<string, any>;
   fields: FieldDef[];
+  /** Block-specific fields rendered at the top of the Style tab */
+  styleFields?: FieldDef[];
 }
 
 // ─── Shared Fields ────────────────────────────────────────────────────────────
@@ -146,11 +148,10 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     category: "core",
     defaultConfig: {
       background: "white",
-      paddingTop: "lg",
-      paddingBottom: "lg",
       theme: "light",
     },
-    fields: [
+    fields: [],
+    styleFields: [
       {
         key: "background",
         label: "Background",
@@ -161,30 +162,6 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
           { value: "light-gray", label: "Light Gray" },
           { value: "dark", label: "Dark" },
           { value: "accent", label: "Accent Blue" },
-        ],
-      },
-      {
-        key: "paddingTop",
-        label: "Padding Top",
-        type: "select",
-        options: [
-          { value: "none", label: "None" },
-          { value: "sm", label: "Small" },
-          { value: "md", label: "Medium" },
-          { value: "lg", label: "Large" },
-          { value: "xl", label: "Extra Large" },
-        ],
-      },
-      {
-        key: "paddingBottom",
-        label: "Padding Bottom",
-        type: "select",
-        options: [
-          { value: "none", label: "None" },
-          { value: "sm", label: "Small" },
-          { value: "md", label: "Medium" },
-          { value: "lg", label: "Large" },
-          { value: "xl", label: "Extra Large" },
         ],
       },
       THEME_FIELD,

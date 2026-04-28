@@ -10,7 +10,7 @@ export function FieldGroup({ children, isDirty, onReset }: {
 }) {
   return (
     <div className="epx-spacing-ctrl__row">
-      <div className="epx-field-group">{children}</div>
+      <div className={`epx-field-group${isDirty ? " is-dirty" : ""}`}>{children}</div>
       {isDirty && onReset && (
         <button type="button" className="epx-reset-btn" onClick={onReset} title="Reset">
           <IconReset />
@@ -32,10 +32,11 @@ export function DimensionRow({ label, value, onChange }: {
 
 // ─── NumberRow ────────────────────────────────────────────────────────────────
 
-export function NumberRow({ label, value, onChange }: {
+export function NumberRow({ label, value, onChange, labelClassName }: {
   label: string;
   value: number | undefined;
   onChange: (v: number | undefined) => void;
+  labelClassName?: string;
 }) {
   const handleScrubDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -59,7 +60,7 @@ export function NumberRow({ label, value, onChange }: {
   return (
     <div className="epx-side-input">
       <span
-        className="epx-side-input__label epx-side-input__label--row epx-side-input__label--scrub"
+        className={`epx-side-input__label epx-side-input__label--row epx-side-input__label--scrub${labelClassName ? ` ${labelClassName}` : ""}`}
         style={{ cursor: "ew-resize" }}
         onMouseDown={handleScrubDown}
         title="Drag to adjust"
@@ -113,11 +114,12 @@ function SelectDropdown({ value, options, onSelect, onClose, anchorRef }: {
 
 // ─── SelectRow ────────────────────────────────────────────────────────────────
 
-export function SelectRow({ label, value, onChange, options }: {
+export function SelectRow({ label, value, onChange, options, labelClassName }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  labelClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -125,7 +127,7 @@ export function SelectRow({ label, value, onChange, options }: {
 
   return (
     <div className="epx-side-input">
-      <span className="epx-side-input__label epx-side-input__label--row">{label}</span>
+      <span className={`epx-side-input__label epx-side-input__label--row${labelClassName ? ` ${labelClassName}` : ""}`}>{label}</span>
       <div ref={wrapRef} className="epx-field-row__select-wrap">
         <button type="button" className="epx-field-row__select-btn" onClick={() => setOpen(o => !o)}>
           <span>{display}</span>
@@ -147,15 +149,16 @@ export function SelectRow({ label, value, onChange, options }: {
 
 // ─── TextRow ──────────────────────────────────────────────────────────────────
 
-export function TextRow({ label, value, onChange, placeholder }: {
+export function TextRow({ label, value, onChange, placeholder, labelClassName }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  labelClassName?: string;
 }) {
   return (
     <div className="epx-side-input">
-      <span className="epx-side-input__label epx-side-input__label--row">{label}</span>
+      <span className={`epx-side-input__label epx-side-input__label--row${labelClassName ? ` ${labelClassName}` : ""}`}>{label}</span>
       <input
         type="text"
         className="epx-side-input__num"
@@ -181,7 +184,7 @@ export function DimensionControl({ label, values, onChange, onReset }: {
   const isDirty = !isEmpty(values.fix) || !isEmpty(values.min) || !isEmpty(values.max);
 
   return (
-    <div className="epx-spacing-ctrl">
+    <div className={`epx-spacing-ctrl${isDirty ? " is-dirty" : ""}`}>
       {!expanded ? (
         <div className="epx-spacing-ctrl__row">
           <div className="epx-spacing-ctrl__collapsed">

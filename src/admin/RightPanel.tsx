@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import type { SectionBlock } from "../types.js";
 import { getBlockDef } from "./blockDefinitions.js";
 import { FieldRenderer } from "./fields/FieldRenderer.js";
-import type { FieldDef } from "./blockDefinitions.js";
 import { SpacingControl, parseSide, serializeSide, type SpacingValue, type SideValue, type SpacingKeys } from "./controls/SpacingControl.js";
 import { BorderRadiusControl, parseRadius, serializeRadius, type RadiusValue } from "./controls/BorderRadiusControl.js";
 import { BorderControl, parseBorder, serializeBorder, type BorderConfig } from "./controls/BorderControl.js";
@@ -46,20 +45,6 @@ function IconAdvanced() {
 
 // ─── Style fields (misc selects) ──────────────────────────────────────────────
 
-const MISC_STYLE_FIELDS: FieldDef[] = [
-  {
-    key: "background",
-    label: "Background",
-    type: "select",
-    options: [
-      { value: "transparent", label: "Transparent" },
-      { value: "white", label: "White" },
-      { value: "light-gray", label: "Light Gray" },
-      { value: "dark", label: "Dark" },
-      { value: "accent", label: "Accent Blue" },
-    ],
-  },
-];
 
 // ─── Advanced Tab ─────────────────────────────────────────────────────────────
 
@@ -74,6 +59,12 @@ type AdvancedConfig = {
   cssClasses?: string;
   customCss?: string;
 };
+
+// ─── Divider ──────────────────────────────────────────────────────────────────
+
+export function PanelDivider() {
+  return <div className="epx-panel-divider" />;
+}
 
 // ─── CodeEditor ───────────────────────────────────────────────────────────────
 
@@ -188,10 +179,26 @@ function AdvancedTab({
   value,
   onChange,
   blockId,
+  widthValues,
+  heightValues,
+  paddingValue,
+  marginValue,
+  onDimension,
+  onSpacing,
+  onResetWidth,
+  onResetHeight,
 }: {
   value: AdvancedConfig;
   onChange: (v: AdvancedConfig) => void;
   blockId: string;
+  widthValues: { fix: SideValue; min: SideValue; max: SideValue };
+  heightValues: { fix: SideValue; min: SideValue; max: SideValue };
+  paddingValue: SpacingValue;
+  marginValue: SpacingValue;
+  onDimension: (axis: "width" | "height", key: "fix" | "min" | "max", sv: SideValue) => void;
+  onSpacing: (key: string, val: SpacingValue) => void;
+  onResetWidth: () => void;
+  onResetHeight: () => void;
 }) {
   const set = (key: keyof AdvancedConfig, val: unknown) =>
     onChange({ ...value, [key]: val });
@@ -220,6 +227,31 @@ function AdvancedTab({
 
   return (
     <div className="epx-right-panel__fields">
+      <DimensionControl
+        label="Width"
+        values={widthValues}
+        onChange={(key, v) => onDimension("width", key, v)}
+        onReset={onResetWidth}
+      />
+      <DimensionControl
+        label="Height"
+        values={heightValues}
+        onChange={(key, v) => onDimension("height", key, v)}
+        onReset={onResetHeight}
+      />
+      <SpacingControl
+        label="Padding"
+        value={paddingValue}
+        onChange={(v) => onSpacing("padding", v)}
+        sides={["top", "right", "bottom", "left"]}
+      />
+      <SpacingControl
+        label="Margin"
+        value={marginValue}
+        onChange={(v) => onSpacing("margin", v)}
+        sides={["top", "right", "bottom", "left"]}
+      />
+      <PanelDivider />
       <FieldGroup
         isDirty={!!value.position}
         onReset={() => onChange({ ...value, position: "", top: undefined, right: undefined, bottom: undefined, left: undefined })}
@@ -229,6 +261,7 @@ function AdvancedTab({
           value={value.position ?? ""}
           onChange={(v) => set("position", v)}
           options={POSITION_OPTIONS}
+          labelClassName="epx-row-label--section"
         />
       </FieldGroup>
 
@@ -250,6 +283,7 @@ function AdvancedTab({
           label="Z-Index"
           value={zIndexNum}
           onChange={(v) => set("zIndex", v)}
+          labelClassName="epx-row-label--section"
         />
       </FieldGroup>
 
@@ -262,6 +296,7 @@ function AdvancedTab({
           value={value.cssId ?? ""}
           onChange={(v) => set("cssId", v)}
           placeholder="#"
+          labelClassName="epx-row-label--color"
         />
       </FieldGroup>
 
@@ -274,6 +309,7 @@ function AdvancedTab({
           value={value.cssClasses ?? ""}
           onChange={(v) => set("cssClasses", v)}
           placeholder="."
+          labelClassName="epx-row-label--color"
         />
       </FieldGroup>
 
@@ -400,6 +436,7 @@ export function RightPanel({ block, onChange }: Props) {
               key={field.key}
               field={field}
               value={block.config[field.key]}
+              isDirty={JSON.stringify(block.config[field.key]) !== JSON.stringify(def.defaultConfig[field.key])}
               onChange={(val) => onChange({ [field.key]: val })}
             />
           ))}
@@ -408,42 +445,17 @@ export function RightPanel({ block, onChange }: Props) {
 
       {activeTab === "style" && (
         <div className="epx-right-panel__fields">
-          <DimensionControl
-            label="Width"
-            values={widthValues}
-            onChange={(key, v) => handleDimension("width", key, v)}
-            onReset={() => onChange({ style: { ...style, width: "", minWidth: "", maxWidth: "" } })}
-          />
-          <DimensionControl
-            label="Height"
-            values={heightValues}
-            onChange={(key, v) => handleDimension("height", key, v)}
-            onReset={() => onChange({ style: { ...style, height: "", minHeight: "", maxHeight: "" } })}
-          />
-          <SpacingControl
-            label="Padding"
-            value={paddingValue}
-            onChange={(v) => handleSpacing("padding", v)}
-            sides={["top", "right", "bottom", "left"]}
-          />
-          <SpacingControl
-            label="Margin"
-            value={marginValue}
-            onChange={(v) => handleSpacing("margin", v)}
-            sides={["top", "right", "bottom", "left"]}
-          />
+          {def.styleFields?.map((field) => (
+            <FieldRenderer
+              key={field.key}
+              field={field}
+              value={block.config[field.key]}
+              isDirty={JSON.stringify(block.config[field.key]) !== JSON.stringify(def.defaultConfig[field.key])}
+              onChange={(val) => onChange({ [field.key]: val })}
+            />
+          ))}
           <BorderRadiusControl value={radiusValue} onChange={handleRadius} />
           <BorderControl value={borderValue} onChange={handleBorder} />
-          <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 12, marginTop: 4 }}>
-            {MISC_STYLE_FIELDS.map((field) => (
-              <FieldRenderer
-                key={field.key}
-                field={field}
-                value={style[field.key]}
-                onChange={(val) => onChange({ style: { ...style, [field.key]: val } })}
-              />
-            ))}
-          </div>
         </div>
       )}
 
@@ -452,6 +464,14 @@ export function RightPanel({ block, onChange }: Props) {
           value={advanced}
           onChange={(val) => onChange({ advanced: val })}
           blockId={block.id}
+          widthValues={widthValues}
+          heightValues={heightValues}
+          paddingValue={paddingValue}
+          marginValue={marginValue}
+          onDimension={handleDimension}
+          onSpacing={handleSpacing}
+          onResetWidth={() => onChange({ style: { ...style, width: "", minWidth: "", maxWidth: "" } })}
+          onResetHeight={() => onChange({ style: { ...style, height: "", minHeight: "", maxHeight: "" } })}
         />
       )}
     </aside>
