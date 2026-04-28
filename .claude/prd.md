@@ -15,7 +15,7 @@ Drag-and-drop page builder plugin for EmDash. Users visually compose pages using
 | Frontend | Astro | `src/components/` | 🟡 13 components exist, need audit |
 | RightPanel | React | `src/admin/` controls + fields | ✅ Done |
 
-## Current State (v0.1.2)
+## Current State (v0.2.0)
 
 ### Completed
 ✅ 3-panel builder UI with drag-drop (`@dnd-kit`)

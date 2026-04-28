@@ -47,7 +47,7 @@ Define all block types, their configuration schemas, and metadata. Single source
 | `toggle` | Checkbox + inline label | block.config[key] (boolean) |
 | `json-array` | Expandable item list | block.config[key] (array) |
 
-## Current Blocks (v0.1.2)
+## Current Blocks (v0.2.0)
 
 ### Defined
 1. **testimonials** — Quote carousel/grid
