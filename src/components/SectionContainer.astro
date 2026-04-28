@@ -1,35 +1,78 @@
 ---
-import type { SectionBlock, SectionConfig } from "../types.js";
+import type { SectionBlock } from "../types.js";
 import BlockRenderer from "./BlockRenderer.astro";
+import { buildBlockStyle, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
 
 interface Props {
-  value: SectionConfig;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  value: Record<string, any>;
   children?: SectionBlock[];
+  blockId?: string;
 }
 
-const { value, children = [] } = Astro.props;
-const { background = "white", paddingTop = "lg", paddingBottom = "lg" } = value;
+const { value, children = [], blockId = "" } = Astro.props;
 
-const bgMap: Record<string, string> = {
-  transparent: "transparent",
-  white: "#fff",
-  "light-gray": "#f3f4f6",
-  dark: "#111",
-  accent: "#eff6ff",
-};
+const style = (value.style ?? {}) as Record<string, unknown>;
 
+// Padding: prefer style.* (new system), fall back to named spacingMap (old system)
 const spacingMap: Record<string, string> = {
-  none: "0",
-  sm: "32px",
-  md: "48px",
-  lg: "64px",
-  xl: "96px",
+  none: "0", sm: "32px", md: "48px", lg: "64px", xl: "96px",
 };
+function resolveSpacing(styleVal: unknown, legacyKey: string): string {
+  const sv = typeof styleVal === "string" && styleVal && !styleVal.startsWith("@@") ? styleVal
+    : typeof styleVal === "string" && styleVal.startsWith("@@") ? styleVal.slice(2)
+    : "";
+  if (sv) return sv;
+  return spacingMap[legacyKey] ?? "48px";
+}
+
+const paddingTop    = resolveSpacing(style.paddingTop,    value.paddingTop);
+const paddingRight  = resolveSpacing(style.paddingRight,  "");
+const paddingBottom = resolveSpacing(style.paddingBottom, value.paddingBottom);
+const paddingLeft   = resolveSpacing(style.paddingLeft,   "");
+
+// Build all other styles (background, margin, border, width, height, etc.)
+// via buildBlockStyle, then override padding with resolved values
+const fullStyle = buildBlockStyle(value);
+
+// Compose final inline style — buildBlockStyle may include paddingTop etc.
+// but we override below with our resolved values that respect both systems
+const paddingCss = [
+  paddingTop    ? `padding-top:${paddingTop}`      : "",
+  paddingRight  ? `padding-right:${paddingRight}`  : "",
+  paddingBottom ? `padding-bottom:${paddingBottom}` : "",
+  paddingLeft   ? `padding-left:${paddingLeft}`    : "",
+].filter(Boolean).join(";");
+
+// Strip any padding-* the full style may have added, then append resolved padding
+const styleWithoutPadding = fullStyle.replace(/padding-[^:]+:[^;]+(;|$)/g, "");
+const inlineStyle = [styleWithoutPadding, paddingCss].filter(Boolean).join(";");
+
+const videoSrc   = getVideoBackground(value);
+const extraId    = getBlockId(value);
+const extraClass = getBlockClass(value);
+const customCss  = blockId ? getCustomCss(value, blockId) : "";
 ---
 
 <section
-  class={`epx-section-container epx-theme--${value.theme ?? "light"}`}
-  style={`background: ${bgMap[background] ?? "#fff"}; padding-top: ${spacingMap[paddingTop] ?? "64px"}; padding-bottom: ${spacingMap[paddingBottom] ?? "64px"};`}
+  class={`epx-section-container epx-theme--${value.theme ?? "light"}${extraClass ? ` ${extraClass}` : ""}`}
+  id={extraId ?? undefined}
+  data-epx-block={blockId || undefined}
+  style={inlineStyle || undefined}
 >
-  {children.map((child) => <BlockRenderer block={child} />)}
+  {videoSrc && (
+    <video
+      autoplay
+      muted
+      loop
+      playsinline
+      style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;"
+      src={videoSrc}
+    />
+  )}
+  <div style={videoSrc ? "position:relative;z-index:1;" : undefined}>
+    {children.map((child) => <BlockRenderer block={child} />)}
+  </div>
 </section>
+
+{customCss && <style set:html={customCss} is:global />}

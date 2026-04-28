@@ -11,6 +11,7 @@ import { isContainerType } from "../types.js";
 import { PREVIEW_COMPONENTS } from "./previews/index.js";
 import { BlockOverlay } from "./BlockOverlay.js";
 import { BLOCK_DEFINITIONS } from "./blockDefinitions.js";
+import { hexToRgbVals, hexToRgba, type GradientStop } from "./controls/BackgroundControl.js";
 
 export const CANVAS_DROP_ID = "canvas-drop";
 
@@ -49,17 +50,60 @@ function css(v: unknown): string | number | undefined {
   return undefined;
 }
 
+function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
+  const type = style.backgroundType as string | undefined;
+  if (!type) return {};
+
+  if (type === "color") {
+    const color = (style.backgroundColor as string) ?? "#ffffff";
+    const alpha = (style.backgroundColorAlpha as number) ?? 1;
+    return { background: hexToRgba(color, alpha) };
+  }
+
+  if (type === "gradient") {
+    const angle = (style.backgroundGradAngle as number) ?? 135;
+    let stops: GradientStop[] = [];
+    try { stops = JSON.parse((style.backgroundGradStops as string) ?? "[]"); } catch { /**/ }
+    if (stops.length < 2) return {};
+    const parts = [...stops]
+      .sort((a, b) => a.pos - b.pos)
+      .map(s => `rgba(${hexToRgbVals(s.color).join(",")},${s.alpha}) ${s.pos}%`)
+      .join(",");
+    return { background: `linear-gradient(${angle}deg,${parts})` };
+  }
+
+  if (type === "image") {
+    const key = style.backgroundImageStorageKey as string | undefined;
+    if (!key) return {};
+    return { backgroundImage: `url(/_emdash/api/media/file/${key})`, backgroundSize: "cover", backgroundPosition: "center" };
+  }
+
+  if (type === "video") return { background: "#0f172a" };
+
+  if (type === "slideshow") {
+    let slides: Array<{ storageKey?: string }> = [];
+    try { slides = JSON.parse((style.backgroundSlides as string) ?? "[]"); } catch { /**/ }
+    const first = slides[0];
+    if (first?.storageKey) {
+      return { backgroundImage: `url(/_emdash/api/media/file/${first.storageKey})`, backgroundSize: "cover", backgroundPosition: "center" };
+    }
+    return { background: "#1e293b" };
+  }
+
+  return {};
+}
+
 function resolveBlockStyle(style: Record<string, unknown> | undefined): {
   outerStyle: React.CSSProperties;
   innerStyle: React.CSSProperties;
 } {
   if (!style) return { outerStyle: {}, innerStyle: {} };
   const outerStyle: React.CSSProperties = {};
-  if (css(style.marginTop) !== undefined)    outerStyle.marginTop    = css(style.marginTop)    as string | number;
-  if (css(style.marginRight) !== undefined)  outerStyle.marginRight  = css(style.marginRight)  as string | number;
-  if (css(style.marginBottom) !== undefined) outerStyle.marginBottom = css(style.marginBottom) as string | number;
-  if (css(style.marginLeft) !== undefined)   outerStyle.marginLeft   = css(style.marginLeft)   as string | number;
   const innerStyle: React.CSSProperties = {};
+  if (css(style.marginTop) !== undefined)    innerStyle.marginTop    = css(style.marginTop)    as string | number;
+  if (css(style.marginRight) !== undefined)  innerStyle.marginRight  = css(style.marginRight)  as string | number;
+  if (css(style.marginBottom) !== undefined) innerStyle.marginBottom = css(style.marginBottom) as string | number;
+  if (css(style.marginLeft) !== undefined)   innerStyle.marginLeft   = css(style.marginLeft)   as string | number;
   if (css(style.width) !== undefined)     innerStyle.width     = css(style.width)     as string;
   if (css(style.minWidth) !== undefined)  innerStyle.minWidth  = css(style.minWidth)  as string;
   if (css(style.height) !== undefined)    innerStyle.height    = css(style.height)    as string;
@@ -104,6 +148,7 @@ function resolveBlockStyle(style: Record<string, unknown> | undefined): {
       innerStyle.maxWidth = css(mw) as string;
     }
   }
+  Object.assign(innerStyle, getBgStyle(style));
   return { outerStyle, innerStyle };
 }
 
@@ -306,10 +351,15 @@ const ContainerBlock = memo(function ContainerBlock({
     } satisfies BlockDragData,
   });
 
+  const { innerStyle: containerBgStyle } = resolveBlockStyle(
+    section.config.style as Record<string, unknown> | undefined
+  );
+
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
+    ...containerBgStyle,
   };
 
   return (
@@ -402,8 +452,7 @@ function ContainerAddButton({ onAdd }: { onAdd: (type: BlockType) => void }) {
   return (
     <div className="epx-container-block__add-btn" onClick={(e) => e.stopPropagation()}>
       {open ? (
-        <div className="epx-block-overlay__picker" style={{ position: "static", width: "100%" }}>
-          <div className="epx-block-overlay__picker-title">Add Block Inside</div>
+        <div className="epx-block-overlay__picker">
           {LEAF_BLOCK_DEFS.map((def) => (
             <button
               key={def.type}

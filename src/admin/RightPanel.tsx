@@ -6,6 +6,7 @@ import { SpacingControl, parseSide, serializeSide, type SpacingValue, type SideV
 import { BorderRadiusControl, parseRadius, serializeRadius, type RadiusValue } from "./controls/BorderRadiusControl.js";
 import { BorderControl, parseBorder, serializeBorder, type BorderConfig } from "./controls/BorderControl.js";
 import { FieldGroup, SelectRow, TextRow, NumberRow, DimensionControl } from "./controls/FieldRow.js";
+import { BackgroundControl, parseBackground, serializeBackground } from "./controls/BackgroundControl.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -401,6 +402,11 @@ export function RightPanel({ block, onChange }: Props) {
     onChange({ style: { ...style, ...serializeBorder(val) } });
   };
 
+  const bgValue = parseBackground(style);
+  const handleBackground = (val: ReturnType<typeof parseBackground>) => {
+    onChange({ style: { ...style, ...serializeBackground(val) } });
+  };
+
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
     { id: "fields", icon: <IconFields />, title: "Fields" },
     { id: "style", icon: <IconStyle />, title: "Style" },
@@ -454,6 +460,7 @@ export function RightPanel({ block, onChange }: Props) {
               onChange={(val) => onChange({ [field.key]: val })}
             />
           ))}
+          <BackgroundControl value={bgValue} onChange={handleBackground} />
           <BorderRadiusControl value={radiusValue} onChange={handleRadius} />
           <BorderControl value={borderValue} onChange={handleBorder} />
         </div>

@@ -147,25 +147,10 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     description: "Wrapper block that can contain other blocks",
     category: "core",
     defaultConfig: {
-      background: "white",
       theme: "light",
     },
     fields: [],
-    styleFields: [
-      {
-        key: "background",
-        label: "Background",
-        type: "select",
-        options: [
-          { value: "transparent", label: "Transparent" },
-          { value: "white", label: "White" },
-          { value: "light-gray", label: "Light Gray" },
-          { value: "dark", label: "Dark" },
-          { value: "accent", label: "Accent Blue" },
-        ],
-      },
-      THEME_FIELD,
-    ],
+    styleFields: [THEME_FIELD],
   },
 
   {
