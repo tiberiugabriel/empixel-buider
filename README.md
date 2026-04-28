@@ -1,6 +1,6 @@
-# empixel-builder
-
 [![npm](https://img.shields.io/npm/v/empixel-builder)](https://www.npmjs.com/package/empixel-builder)
+
+# EmPixel Builder
 
 > **Work in progress** — this plugin is in active development and may contain bugs. Contributions are welcome!
 
