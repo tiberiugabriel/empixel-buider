@@ -318,6 +318,7 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
 
 function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pageTitle: string; collection: string; onBack: () => void }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [showBackWarning, setShowBackWarning] = useState(false);
   const backUrl = new URLSearchParams(window.location.search).get("back") ?? null;
 
   // Keep a ref to sections to avoid stale closure in drag handlers
@@ -555,6 +556,26 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     }
   }, [pageId, collection, state.sections]);
 
+  useEffect(() => {
+    if (!state.isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [state.isDirty]);
+
+  const doNavigateBack = useCallback(() => {
+    if (backUrl) { window.location.href = backUrl; } else { onBack(); }
+  }, [backUrl, onBack]);
+
+  const handleBackClick = useCallback(() => {
+    if (state.isDirty) { setShowBackWarning(true); } else { doNavigateBack(); }
+  }, [state.isDirty, doNavigateBack]);
+
+  const handleSaveAndBack = useCallback(async () => {
+    await save();
+    doNavigateBack();
+  }, [save, doNavigateBack]);
+
   const selectedBlock = state.selectedId ? findBlockById(state.selectedId, state.sections) : null;
 
   if (state.isLoading) {
@@ -585,7 +606,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       <div className="epx-builder">
         <header className="epx-topbar">
           <div className="epx-topbar__left">
-            <button className="epx-btn epx-btn--ghost" onClick={backUrl ? () => { window.location.href = backUrl; } : onBack} type="button">
+            <button className="epx-btn epx-btn--ghost" onClick={handleBackClick} type="button">
               ← Back
             </button>
             <ThemeToggle />
@@ -633,6 +654,24 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       <DragOverlay dropAnimation={null} zIndex={99999}>
         <DragGhost sections={state.sections} />
       </DragOverlay>
+
+      {showBackWarning && (
+        <div className="epx-modal-backdrop" onClick={() => setShowBackWarning(false)}>
+          <div className="epx-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="epx-modal__close" onClick={() => setShowBackWarning(false)} type="button" aria-label="Cancel">✕</button>
+            <h2 className="epx-modal__title">Unsaved changes</h2>
+            <p className="epx-modal__body">You have unsaved changes. Do you want to save before leaving?</p>
+            <div className="epx-modal__actions">
+              <button className="epx-btn epx-btn--primary" onClick={handleSaveAndBack} disabled={state.isSaving} type="button">
+                {state.isSaving ? "Saving…" : "Save & exit"}
+              </button>
+              <button className="epx-btn epx-btn--ghost" onClick={doNavigateBack} type="button">
+                Exit without saving
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DndContext>
   );
 }
@@ -877,6 +916,61 @@ function BuilderStyles() {
       .epx-btn--primary:not(:disabled):hover { background: var(--epx-accent-hover); }
       .epx-btn--ghost { background: transparent; color: var(--epx-text-mid); border-color: var(--epx-input-border); }
       .epx-btn--ghost:hover { background: var(--epx-hover-bg); }
+
+      /* ── Unsaved-changes modal ── */
+      .epx-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 100000;
+        background: rgba(0,0,0,0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .epx-modal {
+        position: relative;
+        background: var(--epx-surface);
+        border: 1px solid var(--epx-border);
+        border-radius: 12px;
+        padding: 32px 32px 28px;
+        width: 380px;
+        max-width: calc(100vw - 40px);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      }
+      .epx-modal__close {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--epx-text-muted);
+        font-size: 14px;
+        transition: background 0.1s, color 0.1s;
+      }
+      .epx-modal__close:hover { background: var(--epx-hover-bg); color: var(--epx-text); }
+      .epx-modal__title {
+        margin: 0 0 10px;
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--epx-text);
+      }
+      .epx-modal__body {
+        margin: 0 0 24px;
+        font-size: 14px;
+        color: var(--epx-text-muted);
+        line-height: 1.5;
+      }
+      .epx-modal__actions {
+        display: flex;
+        gap: 10px;
+      }
 
       .epx-left-panel {
         background: var(--epx-surface);
