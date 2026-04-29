@@ -1,5 +1,14 @@
 type GradStop = { color: string; alpha: number; pos: number };
 
+function getEffectiveStyle(config: Record<string, unknown>): Record<string, unknown> {
+  const style = (config.style ?? {}) as Record<string, unknown>;
+  if ((config.theme as string) === "dark") {
+    const styleDark = (config.styleDark ?? {}) as Record<string, unknown>;
+    return { ...style, ...styleDark };
+  }
+  return style;
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   const c    = hex.replace("#", "");
   const full = c.length === 3 ? c.split("").map(x => x + x).join("") : c.slice(0, 6);
@@ -73,7 +82,7 @@ const STYLE_PROPS = [
 ] as const;
 
 export function buildBlockStyle(config: Record<string, unknown>): string {
-  const style    = (config.style    ?? {}) as Record<string, unknown>;
+  const style    = getEffectiveStyle(config);
   const advanced = (config.advanced ?? {}) as Record<string, unknown>;
 
   const parts: string[] = [];
@@ -117,7 +126,7 @@ export function buildBlockStyle(config: Record<string, unknown>): string {
 // ─── Video background: storage key or URL ────────────────────────────────────
 
 export function getVideoBackground(config: Record<string, unknown>): string | null {
-  const style = (config.style ?? {}) as Record<string, unknown>;
+  const style = getEffectiveStyle(config);
   if (style.backgroundType !== "video") return null;
 
   const src = style.backgroundVideoSrc as string | undefined;

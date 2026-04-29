@@ -57,7 +57,7 @@ const Tag        = ((value.htmlTag as string) || "section") as astroHTML.JSX.HTM
 ---
 
 <Tag
-  class={`epx-section-container epx-theme--${value.theme ?? "light"}${extraClass ? ` ${extraClass}` : ""}`}
+  class={`epx-section-container epx-theme--${(value.theme as string) || "light"}${extraClass ? ` ${extraClass}` : ""}`}
   id={extraId ?? undefined}
   data-epx-block={blockId || undefined}
   style={inlineStyle || undefined}

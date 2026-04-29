@@ -10,6 +10,7 @@ import { BackgroundControl, parseBackground, serializeBackground } from "./contr
 import { GapControl, parseGap, serializeGap, type GapValue } from "./controls/GapControl.js";
 import { LayoutControl, parseLayout } from "./controls/LayoutControl.js";
 import { OverflowControl, parseOverflow, serializeOverflow, type OverflowValue } from "./controls/OverflowControl.js";
+import { ThemeStyleToggle, getThemeStyleKey } from "./controls/ThemeStyleToggle.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -47,8 +48,24 @@ function IconAdvanced() {
   );
 }
 
-// ─── Style fields (misc selects) ──────────────────────────────────────────────
+// ─── State & theme icons ──────────────────────────────────────────────────────
 
+function IconStateNormal() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="6.5" cy="6.5" r="3" fill="currentColor"/>
+      <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.2" opacity="0.35"/>
+    </svg>
+  );
+}
+
+function IconStateHover() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 2.5L3 10L5.5 7.5L7 11L8.5 10.4L7 7H10.5L3 2.5Z" fill="currentColor" strokeLinejoin="round"/>
+    </svg>
+  );
+}
 
 // ─── Advanced Tab ─────────────────────────────────────────────────────────────
 
@@ -374,6 +391,11 @@ export function RightPanel({ block, onChange }: Props) {
   const def = getBlockDef(block.type);
   if (!def) return null;
 
+  const theme = (block.config.theme as string) || "light";
+  const handleTheme = (v: string) => onChange({ theme: v });
+  const activeStyleKey = getThemeStyleKey(theme);
+  const activeStyle = (block.config[activeStyleKey] ?? {}) as Record<string, unknown>;
+
   const style = (block.config.style ?? {}) as Record<string, unknown>;
   const advanced = (block.config.advanced ?? {}) as AdvancedConfig;
 
@@ -421,30 +443,30 @@ export function RightPanel({ block, onChange }: Props) {
 
   const styleHover = (block.config.styleHover ?? {}) as Record<string, unknown>;
 
-  const radiusValue: RadiusValue = parseRadius(radiusMode === "hover" ? styleHover : style);
+  const radiusValue: RadiusValue = parseRadius(radiusMode === "hover" ? styleHover : activeStyle);
   const handleRadius = (val: RadiusValue) => {
     if (radiusMode === "hover") {
       onChange({ styleHover: { ...styleHover, ...serializeRadius(val) } });
     } else {
-      onChange({ style: { ...style, ...serializeRadius(val) } });
+      onChange({ [activeStyleKey]: { ...activeStyle, ...serializeRadius(val) } });
     }
   };
 
-  const borderValue: BorderConfig = parseBorder(borderMode === "hover" ? styleHover : style);
+  const borderValue: BorderConfig = parseBorder(borderMode === "hover" ? styleHover : activeStyle);
   const handleBorder = (val: BorderConfig) => {
     if (borderMode === "hover") {
       onChange({ styleHover: { ...styleHover, ...serializeBorder(val) } });
     } else {
-      onChange({ style: { ...style, ...serializeBorder(val) } });
+      onChange({ [activeStyleKey]: { ...activeStyle, ...serializeBorder(val) } });
     }
   };
 
-  const bgValue = parseBackground(bgMode === "hover" ? styleHover : style);
+  const bgValue = parseBackground(bgMode === "hover" ? styleHover : activeStyle);
   const handleBackground = (val: ReturnType<typeof parseBackground>) => {
     if (bgMode === "hover") {
       onChange({ styleHover: { ...styleHover, ...serializeBackground(val) } });
     } else {
-      onChange({ style: { ...style, ...serializeBackground(val) } });
+      onChange({ [activeStyleKey]: { ...activeStyle, ...serializeBackground(val) } });
     }
   };
 
@@ -539,41 +561,38 @@ export function RightPanel({ block, onChange }: Props) {
             />
           ))}
           <div className="epx-stateful-ctrl">
-            <div className="epx-state-toggle">
-              {(["normal", "hover"] as const).map(m => (
-                <button key={m} type="button"
-                  className={`epx-state-toggle__btn${bgMode === m ? " is-active" : ""}`}
-                  onClick={() => setBgMode(m)}
-                >
-                  {m === "normal" ? "Normal" : "Hover"}
+            <div className="epx-state-header">
+              <div className="epx-state-toggle">
+                <button type="button" className={`epx-state-toggle__btn${bgMode === "normal" ? " is-active" : ""}`} onClick={() => setBgMode("normal")} data-tooltip="Normal">
+                  <IconStateNormal />
                 </button>
-              ))}
+                <button type="button" className={`epx-state-toggle__btn${bgMode === "hover" ? " is-active" : ""}`} onClick={() => setBgMode("hover")} data-tooltip="Hover">
+                  <IconStateHover />
+                </button>
+              </div>
+              <ThemeStyleToggle theme={theme} onChange={handleTheme} />
             </div>
             <BackgroundControl value={bgValue} onChange={handleBackground} allowedTypes={bgMode === "hover" ? ["color", "gradient", "image"] : undefined} />
           </div>
           <div className="epx-stateful-ctrl">
             <div className="epx-state-toggle">
-              {(["normal", "hover"] as const).map(m => (
-                <button key={m} type="button"
-                  className={`epx-state-toggle__btn${radiusMode === m ? " is-active" : ""}`}
-                  onClick={() => setRadiusMode(m)}
-                >
-                  {m === "normal" ? "Normal" : "Hover"}
-                </button>
-              ))}
+              <button type="button" className={`epx-state-toggle__btn${radiusMode === "normal" ? " is-active" : ""}`} onClick={() => setRadiusMode("normal")} data-tooltip="Normal">
+                <IconStateNormal />
+              </button>
+              <button type="button" className={`epx-state-toggle__btn${radiusMode === "hover" ? " is-active" : ""}`} onClick={() => setRadiusMode("hover")} data-tooltip="Hover">
+                <IconStateHover />
+              </button>
             </div>
             <BorderRadiusControl value={radiusValue} onChange={handleRadius} />
           </div>
           <div className="epx-stateful-ctrl">
             <div className="epx-state-toggle">
-              {(["normal", "hover"] as const).map(m => (
-                <button key={m} type="button"
-                  className={`epx-state-toggle__btn${borderMode === m ? " is-active" : ""}`}
-                  onClick={() => setBorderMode(m)}
-                >
-                  {m === "normal" ? "Normal" : "Hover"}
-                </button>
-              ))}
+              <button type="button" className={`epx-state-toggle__btn${borderMode === "normal" ? " is-active" : ""}`} onClick={() => setBorderMode("normal")} data-tooltip="Normal">
+                <IconStateNormal />
+              </button>
+              <button type="button" className={`epx-state-toggle__btn${borderMode === "hover" ? " is-active" : ""}`} onClick={() => setBorderMode("hover")} data-tooltip="Hover">
+                <IconStateHover />
+              </button>
             </div>
             <BorderControl value={borderValue} onChange={handleBorder} />
           </div>

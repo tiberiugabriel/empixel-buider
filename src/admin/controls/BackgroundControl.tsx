@@ -333,7 +333,7 @@ export function BackgroundControl({ value, onChange, allowedTypes }: {
               type="button"
               className={`epx-bg-ctrl__type-tab${value.type === tab.type ? " is-active" : ""}`}
               onClick={() => setType(tab.type)}
-              title={tab.title}
+              data-tooltip={tab.title}
             >
               {tab.icon}
             </button>

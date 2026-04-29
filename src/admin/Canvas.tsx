@@ -89,11 +89,13 @@ function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
   return {};
 }
 
-function resolveBlockStyle(style: Record<string, unknown> | undefined): {
+function resolveBlockStyle(config: Record<string, unknown>): {
   outerStyle: React.CSSProperties;
   innerStyle: React.CSSProperties;
 } {
-  if (!style) return { outerStyle: {}, innerStyle: {} };
+  const base = (config.style ?? {}) as Record<string, unknown>;
+  const dark = (config.styleDark ?? {}) as Record<string, unknown>;
+  const style = (config.theme as string) === "dark" ? { ...base, ...dark } : base;
   const outerStyle: React.CSSProperties = {};
   const innerStyle: React.CSSProperties = {};
   if (css(style.marginTop) !== undefined)    innerStyle.marginTop    = css(style.marginTop)    as string | number;
@@ -286,9 +288,7 @@ function SortableBlock({
     } satisfies BlockDragData,
   });
 
-  const { outerStyle, innerStyle } = resolveBlockStyle(
-    section.config.style as Record<string, unknown> | undefined
-  );
+  const { outerStyle, innerStyle } = resolveBlockStyle(section.config);
 
   const adv = (section.config.advanced ?? {}) as Record<string, unknown>;
   if (adv.position) outerStyle.position = adv.position as React.CSSProperties["position"];
@@ -335,7 +335,7 @@ function SortableBlock({
         />
       )}
 
-      <div data-epx-block={section.id} style={innerStyle}>
+      <div data-epx-block={section.id} style={innerStyle} className={`epx-theme--${(section.config.theme as string) || "light"}`}>
         {Preview ? (
           <Preview config={section.config} children={section.children} slots={section.slots} />
         ) : (
@@ -419,9 +419,7 @@ const ContainerBlock = memo(function ContainerBlock({
     } satisfies BlockDragData,
   });
 
-  const { innerStyle: containerBgStyle } = resolveBlockStyle(
-    section.config.style as Record<string, unknown> | undefined
-  );
+  const { innerStyle: containerBgStyle } = resolveBlockStyle(section.config);
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -435,7 +433,7 @@ const ContainerBlock = memo(function ContainerBlock({
       ref={setNodeRef}
       data-epx-block={section.id}
       style={style}
-      className={`epx-container-block${isSelected ? " is-selected" : ""}`}
+      className={`epx-container-block epx-theme--${(section.config.theme as string) || "light"}${isSelected ? " is-selected" : ""}`}
       onClick={(e) => { e.stopPropagation(); onSelect(section.id); }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

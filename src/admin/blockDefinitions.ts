@@ -30,16 +30,6 @@ export interface BlockDef {
 
 // ─── Shared Fields ────────────────────────────────────────────────────────────
 
-const THEME_FIELD: FieldDef = {
-  key: "theme",
-  label: "Theme",
-  type: "select",
-  options: [
-    { value: "light", label: "Light" },
-    { value: "dark", label: "Dark" },
-    { value: "accent", label: "Accent" },
-  ],
-};
 
 // ─── Block Definitions ────────────────────────────────────────────────────────
 
@@ -78,7 +68,6 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
           { key: "avatarUrl", label: "Avatar URL", type: "url", placeholder: "https://..." },
         ],
       },
-      THEME_FIELD,
     ],
   },
 
@@ -104,7 +93,6 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
           { key: "answer", label: "Answer", type: "textarea", placeholder: "The answer is..." },
         ],
       },
-      THEME_FIELD,
     ],
   },
 
@@ -136,7 +124,6 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
           { key: "highlighted", label: "Highlighted (recommended)", type: "toggle" },
         ],
       },
-      THEME_FIELD,
     ],
   },
 
@@ -159,7 +146,6 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       },
     },
     fields: [],
-    styleFields: [THEME_FIELD],
   },
 
   {

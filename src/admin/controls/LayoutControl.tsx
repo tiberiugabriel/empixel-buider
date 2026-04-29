@@ -233,7 +233,7 @@ export function LayoutControl({ value, onChange }: {
               type="button"
               className={`epx-bg-ctrl__type-tab${layout === tab.type ? " is-active" : ""}`}
               onClick={() => setLayout(tab.type)}
-              title={tab.title}
+              data-tooltip={tab.title}
             >
               {tab.icon}
             </button>

@@ -128,7 +128,7 @@ export function SelectRow({ label, value, onChange, options, labelClassName, ico
 
   return (
     <div className="epx-side-input">
-      <span className={`epx-side-input__label${icon ? " epx-side-input__label--icon" : " epx-side-input__label--row"}${labelClassName ? ` ${labelClassName}` : ""}`}>{icon ?? label}</span>
+      <span className={`epx-side-input__label${icon ? " epx-side-input__label--icon" : " epx-side-input__label--row"}${labelClassName ? ` ${labelClassName}` : ""}`} {...(icon && label ? { "data-tooltip": label } : {})}>{icon ?? label}</span>
       <div ref={wrapRef} className="epx-field-row__select-wrap">
         <button type="button" className="epx-field-row__select-btn" onClick={() => setOpen(o => !o)}>
           <span>{display}</span>
@@ -167,7 +167,7 @@ export function IconButtonRow({ label, value, onChange, options, labelClassName 
             type="button"
             className={`epx-icon-btn${value === opt.value ? " is-active" : ""}`}
             onClick={() => onChange(opt.value)}
-            title={opt.title}
+            data-tooltip={opt.title}
           >
             {opt.icon}
           </button>
