@@ -210,9 +210,10 @@ function SortableSlide({ slide, onRemove }: { slide: MediaRef; onRemove: () => v
 
 type PickerKey = "main" | `stop-${number}`;
 
-export function BackgroundControl({ value, onChange }: {
+export function BackgroundControl({ value, onChange, allowedTypes }: {
   value: BackgroundConfig;
   onChange: (v: BackgroundConfig) => void;
+  allowedTypes?: BackgroundType[];
 }) {
   const [pickerKey, setPickerKey]       = useState<PickerKey | null>(null);
   const [pickerPos, setPickerPos]       = useState({ top: 0, left: 0 });
@@ -326,7 +327,7 @@ export function BackgroundControl({ value, onChange }: {
 
         {/* ── Type tabs ── */}
         <div className="epx-bg-ctrl__type-tabs">
-          {TYPE_TABS.map(tab => (
+          {(allowedTypes ? TYPE_TABS.filter(t => allowedTypes.includes(t.type)) : TYPE_TABS).map(tab => (
             <button
               key={tab.type}
               type="button"

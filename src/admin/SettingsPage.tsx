@@ -70,7 +70,7 @@ export function SettingsPage() {
   return (
     <div className="epx-settings">
       <div className="epx-settings__header">
-        <span className="epx-topbar__logo">⚡ EmPixel Builder — Settings</span>
+        <span className="epx-topbar__logo">EmPixel Builder — Settings</span>
         <p className="epx-settings__subtitle">
           Enable the builder on a content type to allow visual page editing.
           Layouts are stored in a dedicated table and do not affect the collection schema.

@@ -69,6 +69,7 @@ const STYLE_PROPS = [
   "borderTopLeftRadius", "borderTopRightRadius",
   "borderBottomRightRadius", "borderBottomLeftRadius",
   "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+  "overflowX", "overflowY",
 ] as const;
 
 export function buildBlockStyle(config: Record<string, unknown>): string {
@@ -124,6 +125,41 @@ export function getVideoBackground(config: Record<string, unknown>): string | nu
 
   const key = style.backgroundVideoMediaStorageKey as string | undefined;
   return key ? `/_emdash/api/media/file/${key}` : null;
+}
+
+// ─── Hover CSS ────────────────────────────────────────────────────────────────
+
+const HOVER_STYLE_PROPS = [
+  "borderTopLeftRadius", "borderTopRightRadius",
+  "borderBottomRightRadius", "borderBottomLeftRadius",
+  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+] as const;
+
+export function buildHoverCss(config: Record<string, unknown>, blockId: string): string {
+  const styleHover = (config.styleHover ?? {}) as Record<string, unknown>;
+  const parts: string[] = [];
+
+  // Background
+  const bg = buildBackgroundCss(styleHover);
+  if (bg) parts.push(bg.replace(/;$/, "") + " !important");
+
+  // Border style + color
+  const borderSt = cssStr(styleHover.borderStyle);
+  if (borderSt && borderSt !== "none") {
+    const color = (styleHover.borderColor as string) ?? "#000000";
+    const alpha = (styleHover.borderAlpha as number) ?? 1;
+    parts.push(`border-style:${borderSt} !important`);
+    parts.push(`border-color:${hexToRgba(color, alpha)} !important`);
+  }
+
+  // Border widths + radius
+  for (const prop of HOVER_STYLE_PROPS) {
+    const v = cssStr(styleHover[prop]);
+    if (v) parts.push(`${camelToKebab(prop)}:${v} !important`);
+  }
+
+  if (!parts.length) return "";
+  return `[data-epx-block="${blockId}"]:hover{${parts.join(";")}}`;
 }
 
 // ─── HTML attribute helpers ───────────────────────────────────────────────────

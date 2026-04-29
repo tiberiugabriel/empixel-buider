@@ -4,7 +4,7 @@ import Testimonials from "./Testimonials.astro";
 import FaqSection from "./FaqSection.astro";
 import PricingSection from "./PricingSection.astro";
 import SpacerSection from "./SpacerSection.astro";
-import { buildBlockStyle, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
+import { buildBlockStyle, buildHoverCss, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const LEAF_COMPONENTS: Record<string, any> = {
@@ -27,6 +27,7 @@ const videoSrc    = getVideoBackground(config);
 const blockId     = getBlockId(config);
 const extraClass  = getBlockClass(config);
 const customCss   = getCustomCss(config, block.id);
+const hoverCss    = buildHoverCss(config, block.id);
 ---
 
 {Component && (
@@ -53,3 +54,4 @@ const customCss   = getCustomCss(config, block.id);
 )}
 
 {customCss && <style set:html={customCss} is:global />}
+{hoverCss && <style set:html={hoverCss} is:global />}

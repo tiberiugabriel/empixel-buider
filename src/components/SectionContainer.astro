@@ -1,7 +1,7 @@
 ---
 import type { SectionBlock } from "../types.js";
 import BlockRenderer from "./BlockRenderer.astro";
-import { buildBlockStyle, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
+import { buildBlockStyle, buildHoverCss, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,9 +52,11 @@ const videoSrc   = getVideoBackground(value);
 const extraId    = getBlockId(value);
 const extraClass = getBlockClass(value);
 const customCss  = blockId ? getCustomCss(value, blockId) : "";
+const hoverCss   = blockId ? buildHoverCss(value, blockId) : "";
+const Tag        = ((value.htmlTag as string) || "section") as astroHTML.JSX.HTMLTag;
 ---
 
-<section
+<Tag
   class={`epx-section-container epx-theme--${value.theme ?? "light"}${extraClass ? ` ${extraClass}` : ""}`}
   id={extraId ?? undefined}
   data-epx-block={blockId || undefined}
@@ -71,8 +73,13 @@ const customCss  = blockId ? getCustomCss(value, blockId) : "";
     />
   )}
   <div style={videoSrc ? "position:relative;z-index:1;" : undefined}>
-    {children.map((child) => <BlockRenderer block={child} />)}
+    {children.map((child) =>
+      child.type === "container"
+        ? <Astro.self value={child.config} children={child.children ?? []} blockId={child.id} />
+        : <BlockRenderer block={child} />
+    )}
   </div>
-</section>
+</Tag>
 
 {customCss && <style set:html={customCss} is:global />}
+{hoverCss && <style set:html={hoverCss} is:global />}

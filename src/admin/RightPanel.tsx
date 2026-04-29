@@ -9,6 +9,7 @@ import { FieldGroup, SelectRow, TextRow, NumberRow, DimensionControl } from "./c
 import { BackgroundControl, parseBackground, serializeBackground } from "./controls/BackgroundControl.js";
 import { GapControl, parseGap, serializeGap, type GapValue } from "./controls/GapControl.js";
 import { LayoutControl, parseLayout } from "./controls/LayoutControl.js";
+import { OverflowControl, parseOverflow, serializeOverflow, type OverflowValue } from "./controls/OverflowControl.js";
 
 interface Props {
   block: SectionBlock | null;
@@ -169,6 +170,19 @@ function CodeEditor({
     </div>
   );
 }
+
+const HTML_TAG_OPTIONS = [
+  { value: "",        label: "Default (div)" },
+  { value: "div",     label: "div" },
+  { value: "header",  label: "header" },
+  { value: "footer",  label: "footer" },
+  { value: "main",    label: "main" },
+  { value: "article", label: "article" },
+  { value: "section", label: "section" },
+  { value: "aside",   label: "aside" },
+  { value: "nav",     label: "nav" },
+  { value: "a",       label: "a (link)" },
+];
 
 const POSITION_OPTIONS = [
   { value: "", label: "Default" },
@@ -334,6 +348,17 @@ type Tab = "fields" | "style" | "advanced";
 
 export function RightPanel({ block, onChange }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("fields");
+  const [radiusMode, setRadiusMode] = useState<"normal" | "hover">("normal");
+  const [borderMode, setBorderMode] = useState<"normal" | "hover">("normal");
+  const [bgMode, setBgMode] = useState<"normal" | "hover">("normal");
+  const [trackedId, setTrackedId] = useState(block?.id);
+
+  if (block?.id !== trackedId) {
+    setTrackedId(block?.id);
+    setRadiusMode("normal");
+    setBorderMode("normal");
+    setBgMode("normal");
+  }
 
   if (!block) {
     return (
@@ -394,24 +419,43 @@ export function RightPanel({ block, onChange }: Props) {
     onChange({ style: { ...style, [CSS_KEYS[axis][key]]: serializeSide(sv) } });
   };
 
-  const radiusValue: RadiusValue = parseRadius(style);
+  const styleHover = (block.config.styleHover ?? {}) as Record<string, unknown>;
+
+  const radiusValue: RadiusValue = parseRadius(radiusMode === "hover" ? styleHover : style);
   const handleRadius = (val: RadiusValue) => {
-    onChange({ style: { ...style, ...serializeRadius(val) } });
+    if (radiusMode === "hover") {
+      onChange({ styleHover: { ...styleHover, ...serializeRadius(val) } });
+    } else {
+      onChange({ style: { ...style, ...serializeRadius(val) } });
+    }
   };
 
-  const borderValue: BorderConfig = parseBorder(style);
+  const borderValue: BorderConfig = parseBorder(borderMode === "hover" ? styleHover : style);
   const handleBorder = (val: BorderConfig) => {
-    onChange({ style: { ...style, ...serializeBorder(val) } });
+    if (borderMode === "hover") {
+      onChange({ styleHover: { ...styleHover, ...serializeBorder(val) } });
+    } else {
+      onChange({ style: { ...style, ...serializeBorder(val) } });
+    }
   };
 
-  const bgValue = parseBackground(style);
+  const bgValue = parseBackground(bgMode === "hover" ? styleHover : style);
   const handleBackground = (val: ReturnType<typeof parseBackground>) => {
-    onChange({ style: { ...style, ...serializeBackground(val) } });
+    if (bgMode === "hover") {
+      onChange({ styleHover: { ...styleHover, ...serializeBackground(val) } });
+    } else {
+      onChange({ style: { ...style, ...serializeBackground(val) } });
+    }
   };
 
   const gapValue: GapValue = parseGap(style);
   const handleGap = (val: GapValue) => {
     onChange({ style: { ...style, ...serializeGap(val) } });
+  };
+
+  const overflowValue: OverflowValue = parseOverflow(style);
+  const handleOverflow = (val: OverflowValue) => {
+    onChange({ style: { ...style, ...serializeOverflow(val) } });
   };
 
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
@@ -462,6 +506,24 @@ export function RightPanel({ block, onChange }: Props) {
           {block.type === "container" && (
             <GapControl value={gapValue} onChange={handleGap} />
           )}
+          {block.type === "container" && (
+            <>
+              <PanelDivider />
+              <OverflowControl value={overflowValue} onChange={handleOverflow} />
+              <FieldGroup
+                isDirty={!!block.config.htmlTag}
+                onReset={() => onChange({ htmlTag: "" })}
+              >
+                <SelectRow
+                  label="HTML Tag"
+                  value={(block.config.htmlTag as string) ?? ""}
+                  onChange={(v) => onChange({ htmlTag: v })}
+                  options={HTML_TAG_OPTIONS}
+                  labelClassName="epx-row-label--section"
+                />
+              </FieldGroup>
+            </>
+          )}
         </div>
       )}
 
@@ -476,9 +538,45 @@ export function RightPanel({ block, onChange }: Props) {
               onChange={(val) => onChange({ [field.key]: val })}
             />
           ))}
-          <BackgroundControl value={bgValue} onChange={handleBackground} />
-          <BorderRadiusControl value={radiusValue} onChange={handleRadius} />
-          <BorderControl value={borderValue} onChange={handleBorder} />
+          <div className="epx-stateful-ctrl">
+            <div className="epx-state-toggle">
+              {(["normal", "hover"] as const).map(m => (
+                <button key={m} type="button"
+                  className={`epx-state-toggle__btn${bgMode === m ? " is-active" : ""}`}
+                  onClick={() => setBgMode(m)}
+                >
+                  {m === "normal" ? "Normal" : "Hover"}
+                </button>
+              ))}
+            </div>
+            <BackgroundControl value={bgValue} onChange={handleBackground} allowedTypes={bgMode === "hover" ? ["color", "gradient", "image"] : undefined} />
+          </div>
+          <div className="epx-stateful-ctrl">
+            <div className="epx-state-toggle">
+              {(["normal", "hover"] as const).map(m => (
+                <button key={m} type="button"
+                  className={`epx-state-toggle__btn${radiusMode === m ? " is-active" : ""}`}
+                  onClick={() => setRadiusMode(m)}
+                >
+                  {m === "normal" ? "Normal" : "Hover"}
+                </button>
+              ))}
+            </div>
+            <BorderRadiusControl value={radiusValue} onChange={handleRadius} />
+          </div>
+          <div className="epx-stateful-ctrl">
+            <div className="epx-state-toggle">
+              {(["normal", "hover"] as const).map(m => (
+                <button key={m} type="button"
+                  className={`epx-state-toggle__btn${borderMode === m ? " is-active" : ""}`}
+                  onClick={() => setBorderMode(m)}
+                >
+                  {m === "normal" ? "Normal" : "Hover"}
+                </button>
+              ))}
+            </div>
+            <BorderControl value={borderValue} onChange={handleBorder} />
+          </div>
         </div>
       )}
 

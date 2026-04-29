@@ -1,4 +1,4 @@
-import React, { memo, useState } from "react";
+import React, { memo, useEffect, useState } from "react";
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -11,6 +11,7 @@ import { isContainerType } from "../types.js";
 import { PREVIEW_COMPONENTS } from "./previews/index.js";
 import { BlockOverlay } from "./BlockOverlay.js";
 import { hexToRgbVals, hexToRgba, type GradientStop } from "./controls/BackgroundControl.js";
+import { buildHoverCss } from "../components/styleUtils.js";
 
 export const CANVAS_DROP_ID = "canvas-drop";
 
@@ -143,6 +144,10 @@ function resolveBlockStyle(style: Record<string, unknown> | undefined): {
       innerStyle.maxWidth = css(mw) as string;
     }
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (css(style.overflowX)) (innerStyle as any).overflowX = css(style.overflowX);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (css(style.overflowY)) (innerStyle as any).overflowY = css(style.overflowY);
   Object.assign(innerStyle, getBgStyle(style));
   return { outerStyle, innerStyle };
 }
@@ -159,6 +164,19 @@ interface CanvasProps {
   onAddAfter: (afterId: string, type: BlockType) => void;
 }
 
+// ─── Hover CSS injection ──────────────────────────────────────────────────────
+
+function collectHoverCss(sections: SectionBlock[]): string {
+  let css = "";
+  for (const block of sections) {
+    const config = block.config as Record<string, unknown>;
+    css += buildHoverCss(config, block.id);
+    if (block.children) css += collectHoverCss(block.children);
+    if (block.slots) block.slots.forEach(slot => { css += collectHoverCss(slot); });
+  }
+  return css;
+}
+
 // ─── Canvas ───────────────────────────────────────────────────────────────────
 
 export function Canvas({
@@ -171,6 +189,17 @@ export function Canvas({
   onAddAfter,
 }: CanvasProps) {
   const { setNodeRef: setCanvasRef } = useDroppable({ id: CANVAS_DROP_ID });
+
+  useEffect(() => {
+    let el = document.getElementById("epx-canvas-hover-css") as HTMLStyleElement | null;
+    if (!el) {
+      el = document.createElement("style");
+      el.id = "epx-canvas-hover-css";
+      document.head.appendChild(el);
+    }
+    el.textContent = collectHoverCss(sections);
+    return () => { el?.remove(); };
+  }, [sections]);
 
   if (sections.length === 0) {
     return (
@@ -306,7 +335,7 @@ function SortableBlock({
         />
       )}
 
-      <div style={innerStyle}>
+      <div data-epx-block={section.id} style={innerStyle}>
         {Preview ? (
           <Preview config={section.config} children={section.children} slots={section.slots} />
         ) : (
@@ -404,6 +433,7 @@ const ContainerBlock = memo(function ContainerBlock({
   return (
     <div
       ref={setNodeRef}
+      data-epx-block={section.id}
       style={style}
       className={`epx-container-block${isSelected ? " is-selected" : ""}`}
       onClick={(e) => { e.stopPropagation(); onSelect(section.id); }}

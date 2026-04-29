@@ -114,12 +114,13 @@ function SelectDropdown({ value, options, onSelect, onClose, anchorRef }: {
 
 // ─── SelectRow ────────────────────────────────────────────────────────────────
 
-export function SelectRow({ label, value, onChange, options, labelClassName }: {
+export function SelectRow({ label, value, onChange, options, labelClassName, icon }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
   labelClassName?: string;
+  icon?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -127,7 +128,7 @@ export function SelectRow({ label, value, onChange, options, labelClassName }: {
 
   return (
     <div className="epx-side-input">
-      <span className={`epx-side-input__label epx-side-input__label--row${labelClassName ? ` ${labelClassName}` : ""}`}>{label}</span>
+      <span className={`epx-side-input__label${icon ? " epx-side-input__label--icon" : " epx-side-input__label--row"}${labelClassName ? ` ${labelClassName}` : ""}`}>{icon ?? label}</span>
       <div ref={wrapRef} className="epx-field-row__select-wrap">
         <button type="button" className="epx-field-row__select-btn" onClick={() => setOpen(o => !o)}>
           <span>{display}</span>

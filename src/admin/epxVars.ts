@@ -13,6 +13,7 @@ export const epxVars = `
     --epx-text-muted:       #888888;
     --epx-text-faint:       #aaaaaa;
     --epx-input-bg:         #fafafa;
+    --epx-ctrl-bg:          #efefef;
     --epx-input-border:     #d0d0d0;
     --epx-hover-bg:         #f0f0f0;
     --epx-card-hover-bg:    #f0f4ff;
@@ -40,6 +41,7 @@ export const epxVars = `
     --epx-text-muted:       #707070;
     --epx-text-faint:       #555555;
     --epx-input-bg:         #161616;
+    --epx-ctrl-bg:          #1f1f1f;
     --epx-input-border:     #383838;
     --epx-hover-bg:         #252525;
     --epx-card-hover-bg:    #1a1f3a;

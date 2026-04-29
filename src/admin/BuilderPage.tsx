@@ -266,7 +266,7 @@ function PageSelector({ onSelect }: { onSelect: (id: string, title: string, coll
     <div className="epx-selector">
       <div className="epx-selector__header">
         <div className="epx-selector__header-top">
-          <span className="epx-topbar__logo">⚡ EmPixel Builder</span>
+          <span className="epx-topbar__logo">EmPixel Builder</span>
           <a className="epx-selector__settings-link" href="/_emdash/admin/plugins/empixel-builder/settings">⚙ Settings</a>
         </div>
         <p className="epx-selector__subtitle">Select a page or post to edit its layout</p>
@@ -1357,6 +1357,26 @@ function BuilderStyles() {
       }
       .epx-border-color-hex {
         font-size: 10px; color: var(--epx-text-muted); font-family: monospace;
+      }
+
+      /* ── Stateful control wrapper (toggle + control grouped) ── */
+      .epx-stateful-ctrl { display: flex; flex-direction: column; gap: 1px; }
+
+      /* ── State toggle (Normal / Hover) ── */
+      .epx-state-toggle {
+        display: flex; gap: 2px;
+        outline: 1px solid var(--epx-border); border-radius: 5px;
+        background: var(--epx-ctrl-bg); overflow: visible;
+        padding: 2px; margin: 0 0 3px;
+      }
+      .epx-state-toggle__btn {
+        flex: 1; padding: 3px 0; font-size: 11px; border-radius: 4px;
+        border: none; background: transparent; color: var(--epx-text-faint);
+        cursor: pointer; text-transform: uppercase; letter-spacing: 0.04em;
+        transition: color 0.1s, background 0.1s;
+      }
+      .epx-state-toggle__btn.is-active {
+        background: var(--epx-surface-2); color: var(--epx-text);
       }
 
       /* ── ColorPicker ── */
