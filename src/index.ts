@@ -3,7 +3,7 @@ import type { PluginDescriptor } from "emdash";
 export function empixelBuilder(): PluginDescriptor {
   return {
     id: "empixel-builder",
-    version: "0.1.0",
+    version: "0.2.0",
     format: "native",
     entrypoint: "empixel-builder/plugin",
     adminEntry: "empixel-builder/admin",
