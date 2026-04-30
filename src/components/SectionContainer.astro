@@ -54,6 +54,36 @@ const extraClass = getBlockClass(value);
 const customCss  = blockId ? getCustomCss(value, blockId) : "";
 const hoverCss   = blockId ? buildHoverCss(value, blockId) : "";
 const Tag        = ((value.htmlTag as string) || "section") as astroHTML.JSX.HTMLTag;
+
+// Layout styles applied to the children wrapper div
+const layoutMode = (value.layout as string) ?? "flex";
+const isGrid     = layoutMode === "grid";
+function resolveTrack(raw: unknown): string {
+  if (typeof raw !== "string" || !raw) return "";
+  if (raw.startsWith("@@")) return raw.slice(2);
+  return raw;
+}
+function cssVal(v: unknown): string {
+  if (typeof v !== "string" || !v.trim()) return "";
+  const t = v.trim();
+  return t.startsWith("@@") ? t.slice(2) : t;
+}
+const layoutParts: string[] = [`display:${isGrid ? "grid" : "flex"}`];
+const colGap = cssVal(style.columnGap); if (colGap) layoutParts.push(`column-gap:${colGap}`);
+const rowGap = cssVal(style.rowGap);    if (rowGap) layoutParts.push(`row-gap:${rowGap}`);
+if (isGrid) {
+  const flow = (value.gridFlow as string) ?? "row"; layoutParts.push(`grid-auto-flow:${flow}`);
+  const ji   = (value.justifyItems as string) ?? "stretch"; layoutParts.push(`justify-items:${ji}`);
+  const ai   = (value.alignItems   as string) ?? "stretch"; layoutParts.push(`align-items:${ai}`);
+  const gtc  = resolveTrack(value.gridColumns); if (gtc) layoutParts.push(`grid-template-columns:${gtc}`);
+  const gtr  = resolveTrack(value.gridRows);    if (gtr) layoutParts.push(`grid-template-rows:${gtr}`);
+} else {
+  const wrap = (value.flexWrap       as string) ?? "nowrap";     layoutParts.push(`flex-wrap:${wrap}`);
+  const dir  = (value.flexDirection  as string) ?? "row";        layoutParts.push(`flex-direction:${dir}`);
+  const jc   = (value.justifyContent as string) ?? "flex-start"; layoutParts.push(`justify-content:${jc}`);
+  const ai   = (value.flexAlignItems as string) ?? "stretch";    layoutParts.push(`align-items:${ai}`);
+}
+const layoutStyle = layoutParts.join(";");
 ---
 
 <Tag
@@ -72,7 +102,7 @@ const Tag        = ((value.htmlTag as string) || "section") as astroHTML.JSX.HTM
       src={videoSrc}
     />
   )}
-  <div style={videoSrc ? "position:relative;z-index:1;" : undefined}>
+  <div style={[layoutStyle, videoSrc ? "position:relative;z-index:1" : ""].filter(Boolean).join(";")}>
     {children.map((child) =>
       child.type === "container"
         ? <Astro.self value={child.config} children={child.children ?? []} blockId={child.id} />

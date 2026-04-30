@@ -1302,7 +1302,7 @@ function BuilderStyles() {
       /* ── Right panel ── */
       .epx-right-panel {
         background: var(--epx-surface);
-        display: flex; flex-direction: column; overflow: hidden;
+        display: flex; flex-direction: column; overflow: hidden; height: 100%;
       }
       .epx-right-panel--empty { align-items: center; justify-content: center; }
       .epx-right-panel__placeholder { text-align: center; color: var(--epx-text-faint); padding: 32px 16px; }
@@ -1316,7 +1316,7 @@ function BuilderStyles() {
       .epx-right-panel__tab { flex: 1; padding: 9px 0; border: none; background: none; color: var(--epx-text-faint); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; display: flex; align-items: center; justify-content: center; }
       .epx-right-panel__tab:hover { color: var(--epx-text-mid); }
       .epx-right-panel__tab.is-active { color: var(--epx-accent); border-bottom-color: var(--epx-accent); }
-      .epx-right-panel__fields { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--epx-text-muted) transparent; }
+      .epx-right-panel__fields { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--epx-text-muted) transparent; height: 100%; }
       .epx-right-panel__fields::-webkit-scrollbar { width: 4px; }
       .epx-right-panel__fields::-webkit-scrollbar-track { background: transparent; }
       .epx-right-panel__fields::-webkit-scrollbar-thumb { background: var(--epx-text-muted); border-radius: 4px; }

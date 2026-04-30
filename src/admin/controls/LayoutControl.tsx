@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { IconReset } from "./SpacingControl.js";
 import { SelectRow, IconButtonRow } from "./FieldRow.js";
 
@@ -13,6 +13,8 @@ export type LayoutConfig = {
   gridFlow?: string;
   justifyItems?: string;
   alignItems?: string;
+  gridColumns?: string;
+  gridRows?: string;
 };
 
 const DEFAULTS: Required<LayoutConfig> = {
@@ -24,6 +26,8 @@ const DEFAULTS: Required<LayoutConfig> = {
   gridFlow:       "row",
   justifyItems:   "stretch",
   alignItems:     "stretch",
+  gridColumns:    "",
+  gridRows:       "",
 };
 
 export function parseLayout(config: Record<string, unknown>): LayoutConfig {
@@ -36,6 +40,8 @@ export function parseLayout(config: Record<string, unknown>): LayoutConfig {
     gridFlow:       (config.gridFlow       as string) || DEFAULTS.gridFlow,
     justifyItems:   (config.justifyItems   as string) || DEFAULTS.justifyItems,
     alignItems:     (config.alignItems     as string) || DEFAULTS.alignItems,
+    gridColumns:    (config.gridColumns    as string) ?? DEFAULTS.gridColumns,
+    gridRows:       (config.gridRows       as string) ?? DEFAULTS.gridRows,
   };
 }
 
@@ -48,7 +54,145 @@ export function layoutIsDirty(cfg: LayoutConfig): boolean {
     (cfg.flexAlignItems ?? DEFAULTS.flexAlignItems) !== DEFAULTS.flexAlignItems ||
     (cfg.gridFlow       ?? DEFAULTS.gridFlow)       !== DEFAULTS.gridFlow       ||
     (cfg.justifyItems   ?? DEFAULTS.justifyItems)   !== DEFAULTS.justifyItems   ||
-    (cfg.alignItems     ?? DEFAULTS.alignItems)     !== DEFAULTS.alignItems
+    (cfg.alignItems     ?? DEFAULTS.alignItems)     !== DEFAULTS.alignItems     ||
+    (cfg.gridColumns    ?? DEFAULTS.gridColumns)    !== DEFAULTS.gridColumns    ||
+    (cfg.gridRows       ?? DEFAULTS.gridRows)       !== DEFAULTS.gridRows
+  );
+}
+
+// ─── GridTrackValue ───────────────────────────────────────────────────────────
+
+type GridTrackValue = { num: number; unit: "fr" | "custom"; raw?: string };
+
+function parseGridTrack(raw: string): GridTrackValue {
+  if (!raw) return { num: 1, unit: "fr" };
+  if (raw.startsWith("@@")) return { num: 1, unit: "custom", raw: raw.slice(2) };
+  const repeatMatch = raw.match(/^repeat\(\s*(\d+)\s*,\s*1fr\s*\)$/);
+  if (repeatMatch) return { num: parseInt(repeatMatch[1], 10), unit: "fr" };
+  return { num: 1, unit: "custom", raw };
+}
+
+function serializeGridTrack(v: GridTrackValue): string {
+  if (v.unit === "custom") return `@@${v.raw ?? ""}`;
+  return `repeat(${Math.max(1, Math.round(v.num))}, 1fr)`;
+}
+
+// ─── GridTrackInput ───────────────────────────────────────────────────────────
+
+function IconPen() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8.5 1.5a1.414 1.414 0 0 1 2 2L4 10H2v-2L8.5 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function GridTrackDropdown({ unit, onSelect, onClose, anchorRef }: {
+  unit: string;
+  onSelect: (u: "fr" | "custom") => void;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLButtonElement>;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (!panelRef.current?.contains(e.target as Node) &&
+          !anchorRef.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [onClose, anchorRef]);
+
+  return (
+    <div ref={panelRef} className="epx-unit-dropdown">
+      <button type="button"
+        className={`epx-unit-dropdown__item${unit === "fr" ? " is-active" : ""}`}
+        onMouseDown={(e) => { e.preventDefault(); onSelect("fr"); onClose(); }}
+      >fr</button>
+      <div className="epx-unit-dropdown__sep" />
+      <button type="button"
+        className={`epx-unit-dropdown__item epx-unit-dropdown__item--pen${unit === "custom" ? " is-active" : ""}`}
+        onMouseDown={(e) => { e.preventDefault(); onSelect("custom"); onClose(); }}
+      ><IconPen /></button>
+    </div>
+  );
+}
+
+function GridTrackInput({ label, value, onChange }: {
+  label: string;
+  value: GridTrackValue;
+  onChange: (v: GridTrackValue) => void;
+}) {
+  const [unitOpen, setUnitOpen] = useState(false);
+  const unitBtnRef = useRef<HTMLButtonElement>(null);
+
+  const handleScrubDown = (e: React.MouseEvent) => {
+    if (value.unit === "custom") return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startNum = value.num;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(1, Math.round(startNum + (ev.clientX - startX) / 4));
+      onChange({ ...value, num: next });
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div className="epx-side-input">
+      <span
+        className="epx-side-input__label epx-side-input__label--full"
+        onMouseDown={handleScrubDown}
+        style={{ cursor: value.unit === "custom" ? "default" : "ew-resize" }}
+        title={value.unit === "custom" ? undefined : "Drag to adjust"}
+      >{label}</span>
+      {value.unit === "custom" ? (
+        <input
+          type="text"
+          className="epx-side-input__num epx-side-input__num--custom"
+          value={value.raw ?? ""}
+          placeholder="custom"
+          onChange={(e) => onChange({ ...value, raw: e.target.value })}
+        />
+      ) : (
+        <input
+          type="number"
+          className="epx-side-input__num"
+          value={value.num}
+          placeholder="1"
+          min={1}
+          step={1}
+          onChange={(e) => {
+            const n = parseInt(e.target.value, 10);
+            onChange({ ...value, num: isNaN(n) ? 1 : Math.max(1, n) });
+          }}
+        />
+      )}
+      <div className="epx-side-input__unit-wrap">
+        <button ref={unitBtnRef} type="button"
+          className={`epx-side-input__unit-btn${value.unit === "custom" ? " epx-side-input__unit-btn--icon" : ""}`}
+          onClick={() => setUnitOpen(o => !o)}
+        >{value.unit === "custom" ? <IconPen /> : "fr"}</button>
+        {unitOpen && (
+          <GridTrackDropdown
+            unit={value.unit}
+            onSelect={(u) => onChange(u === "custom" ? { num: 1, unit: "custom", raw: "" } : { num: value.num || 1, unit: "fr" })}
+            onClose={() => setUnitOpen(false)}
+            anchorRef={unitBtnRef as React.RefObject<HTMLButtonElement>}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -196,6 +340,8 @@ export function LayoutControl({ value, onChange }: {
   const gridFlow       = value.gridFlow       ?? DEFAULTS.gridFlow;
   const justifyItems   = value.justifyItems   ?? DEFAULTS.justifyItems;
   const alignItems     = value.alignItems     ?? DEFAULTS.alignItems;
+  const gridColumns    = value.gridColumns    ?? DEFAULTS.gridColumns;
+  const gridRows       = value.gridRows       ?? DEFAULTS.gridRows;
 
   const dirty = layoutIsDirty(value);
 
@@ -295,6 +441,16 @@ export function LayoutControl({ value, onChange }: {
                 value={alignItems}
                 onChange={(v) => onChange({ alignItems: v })}
                 options={ALIGN_OPTIONS}
+              />
+              <GridTrackInput
+                label="Columns"
+                value={parseGridTrack(gridColumns)}
+                onChange={(v) => onChange({ gridColumns: serializeGridTrack(v) })}
+              />
+              <GridTrackInput
+                label="Rows"
+                value={parseGridTrack(gridRows)}
+                onChange={(v) => onChange({ gridRows: serializeGridTrack(v) })}
               />
             </>
           )}
