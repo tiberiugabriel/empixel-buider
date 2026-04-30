@@ -620,7 +620,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     dispatch({ type: "REMOVE_BLOCK", id });
   }, []);
 
-  const selectBlock = useCallback((id: string) => {
+  const selectBlock = useCallback((id: string | null) => {
     dispatch({ type: "SELECT", id });
   }, []);
 

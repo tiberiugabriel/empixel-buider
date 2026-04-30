@@ -159,7 +159,7 @@ function resolveBlockStyle(config: Record<string, unknown>): {
 interface CanvasProps {
   sections: SectionBlock[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   onRemove: (id: string) => void;
   onAddToContainer: (containerId: string, slotIndex: number | null, type: BlockType) => void;
   dropIndicatorId: string | null;
@@ -205,7 +205,7 @@ export function Canvas({
 
   if (sections.length === 0) {
     return (
-      <main ref={setCanvasRef} className="epx-canvas epx-canvas--empty">
+      <main ref={setCanvasRef} className="epx-canvas epx-canvas--empty" onClick={() => onSelect(null)}>
         <div className="epx-canvas__empty-state">
           <h3>Start building your page</h3>
           <p>Click or drag a block from the left panel</p>
@@ -215,7 +215,7 @@ export function Canvas({
   }
 
   return (
-    <main ref={setCanvasRef} className="epx-canvas">
+    <main ref={setCanvasRef} className="epx-canvas" onClick={() => onSelect(null)}>
       <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
         <div className="epx-canvas__list">
           {sections.map((section) => {
@@ -387,7 +387,7 @@ function InnerBlockOverlay({
 interface ContainerBlockProps {
   section: SectionBlock;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   onRemove: (id: string) => void;
   onAddToContainer: (containerId: string, slotIndex: number | null, type: BlockType) => void;
   dropIndicatorId: string | null;
