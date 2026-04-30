@@ -18,6 +18,7 @@ import { getBlockDef } from "./blockDefinitions.js";
 import { LeftPanel } from "./LeftPanel.js";
 import { Canvas, CANVAS_DROP_ID, type BlockDragData, type EmptyZoneData } from "./Canvas.js";
 import { RightPanel } from "./RightPanel.js";
+import { StructurePanel, type StructureDropTarget } from "./StructurePanel.js";
 import {
   findBlockById,
   removeFromTree,
@@ -26,6 +27,7 @@ import {
   reorderInContainer,
   findPath,
   insertAtPath,
+  isDescendant,
 } from "./treeUtils.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -327,10 +329,20 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
 
   // Drag state
   const [overBlockId, setOverBlockId] = useState<string | null>(null);
+  const [structureDropTarget, _setStructureDropTarget] = useState<StructureDropTarget>(null);
+  const structureDropTargetRef = useRef<StructureDropTarget>(null);
+  const setStructureDropTarget = useCallback((val: StructureDropTarget) => {
+    structureDropTargetRef.current = val;
+    _setStructureDropTarget(val);
+  }, []);
 
   // Panel resize
   const [leftWidth, setLeftWidth] = useState(220);
   const [rightWidth, setRightWidth] = useState(280);
+
+  // Structure panel state
+  const [structureHeight, setStructureHeight] = useState(240);
+  const [structureCollapsed, setStructureCollapsed] = useState(false);
 
   const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -366,6 +378,24 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     window.addEventListener("mouseup", onUp);
   }, [rightWidth]);
 
+  const handleStructureResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = structureHeight;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) =>
+      setStructureHeight(Math.max(120, Math.min(600, startH + (startY - ev.clientY))));
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [structureHeight]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -382,19 +412,65 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     // ghost is rendered via DragGhost which reads from useDndContext directly
   }, []);
 
-  const handleDragOver = useCallback(({ active, over }: DragOverEvent) => {
+  const handleDragOver = useCallback(({ active, over, delta, activatorEvent }: DragOverEvent) => {
     const data = active.data.current as { kind: string } | undefined;
+
+    if (data?.kind === "structure-block") {
+      if (!over) { setStructureDropTarget(null); return; }
+      const overData = over.data.current as { kind?: string; blockId?: string; isContainer?: boolean } | undefined;
+      if (overData?.kind !== "struct-row") { setStructureDropTarget(null); return; }
+      const sourceBlockId = (data as { blockId?: string }).blockId;
+      // never set self as target
+      if (overData.blockId === sourceBlockId) { setStructureDropTarget(null); return; }
+      const overRect = over.rect;
+      const pointerY = (activatorEvent as MouseEvent).clientY + delta.y;
+      const relY = (pointerY - overRect.top) / overRect.height;
+      const position = overData.isContainer
+        ? (relY < 0.28 ? "before" : relY > 0.72 ? "after" : "inside")
+        : (relY < 0.5 ? "before" : "after");
+      setStructureDropTarget({ id: overData.blockId!, position });
+      return;
+    }
+
     if (data?.kind === "new-block") {
       const overData = over?.data.current as { kind: string } | undefined;
       setOverBlockId(over && overData?.kind === "block" ? String(over.id) : null);
     }
-  }, []);
+  }, [setStructureDropTarget]);
 
   const handleDragEnd = useCallback(({ active, over }: DragEndEvent) => {
     setOverBlockId(null);
 
     const sections = sectionsRef.current;
-    const activeData = active.data.current as BlockDragData | { kind: "new-block"; blockType: BlockType } | undefined;
+    const activeData = active.data.current as BlockDragData | { kind: "new-block"; blockType: BlockType } | { kind: "structure-block"; blockId: string } | undefined;
+
+    // ── Structure panel drag ──
+    if (activeData?.kind === "structure-block") {
+      const target = structureDropTargetRef.current;
+      setStructureDropTarget(null);
+      if (!target) return;
+      const sourceId = (activeData as { kind: "structure-block"; blockId: string }).blockId;
+      const { id: targetId, position } = target;
+      if (sourceId === targetId) return;
+      if (isDescendant(sourceId, targetId, sections)) return;
+
+      if (position === "before" || position === "after") {
+        const path = findPath(targetId, sections);
+        if (!path) return;
+        dispatch({ type: "MOVE_BLOCK", sourceId,
+          targetContainerId: path.level === "container" ? path.containerId : null,
+          targetSlotIndex: path.level === "container" ? path.slotIndex : null,
+          targetIndex: position === "before" ? path.index : path.index + 1,
+        });
+      } else {
+        const container = findBlockById(targetId, sections);
+        dispatch({ type: "MOVE_BLOCK", sourceId,
+          targetContainerId: targetId, targetSlotIndex: null,
+          targetIndex: container?.children?.length ?? 0,
+        });
+      }
+      return;
+    }
 
     // ── New block dragged from sidebar ──
     if (activeData?.kind === "new-block") {
@@ -492,7 +568,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     const path = findPath(String(over.id), sections);
     const targetIndex = path ? path.index : 0;
     dispatch({ type: "MOVE_BLOCK", sourceId: String(active.id), targetContainerId: overContainerId, targetSlotIndex: overSlotIndex, targetIndex });
-  }, []);
+  }, [setStructureDropTarget]);
 
   const addBlock = useCallback((type: BlockType) => {
     const def = getBlockDef(type);
@@ -637,7 +713,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
           </div>
         </header>
 
-        <div className="epx-builder__panels" style={{ gridTemplateColumns: selectedBlock ? `${leftWidth}px 4px 1fr 4px ${rightWidth}px` : `${leftWidth}px 4px 1fr` }}>
+        <div className="epx-builder__panels" style={{ gridTemplateColumns: `${leftWidth}px 4px 1fr 4px ${rightWidth}px` }}>
           <LeftPanel onAddBlock={addBlock} />
           <div className="epx-resize-handle" onMouseDown={handleLeftResizeStart} />
           <Canvas
@@ -649,15 +725,45 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
             dropIndicatorId={overBlockId}
             onAddAfter={addAfterBlock}
           />
-          {selectedBlock && (
-            <>
-              <div className="epx-resize-handle" onMouseDown={handleRightResizeStart} />
-              <RightPanel
-                block={selectedBlock}
-                onChange={(config) => updateBlock(selectedBlock.id, config)}
-              />
-            </>
-          )}
+          <div className="epx-resize-handle" onMouseDown={handleRightResizeStart} />
+          <div className="epx-right-column">
+            {selectedBlock && (
+              <>
+                <div
+                  className="epx-right-column__settings"
+                  style={structureCollapsed
+                    ? { flex: 1 }
+                    : { height: `calc(100% - ${structureHeight}px - 4px)` }
+                  }
+                >
+                  <RightPanel
+                    block={selectedBlock}
+                    onChange={(config) => updateBlock(selectedBlock.id, config)}
+                  />
+                </div>
+                {!structureCollapsed && (
+                  <div
+                    className="epx-resize-handle epx-resize-handle--row"
+                    onMouseDown={handleStructureResizeStart}
+                  />
+                )}
+              </>
+            )}
+            <StructurePanel
+              sections={state.sections}
+              selectedId={state.selectedId}
+              onSelect={selectBlock}
+              isCollapsed={structureCollapsed}
+              onToggleCollapse={() => setStructureCollapsed((c) => !c)}
+              dropTarget={structureDropTarget}
+              style={structureCollapsed
+                ? { flexShrink: 0, marginTop: "auto" }
+                : selectedBlock
+                  ? { height: structureHeight, flexShrink: 0 }
+                  : { flex: 1 }
+              }
+            />
+          </div>
         </div>
       </div>
 
@@ -1088,6 +1194,91 @@ function BuilderStyles() {
       }
       .epx-inner-block-overlay__handle:hover { background: rgba(20,20,20,0.95); color: #fff; }
 
+      /* ── Right column (always-visible settings + structure) ── */
+      .epx-right-column {
+        display: flex; flex-direction: column; overflow: hidden;
+        background: var(--epx-surface);
+      }
+      .epx-right-column__settings {
+        overflow: hidden; display: flex; flex-direction: column; flex-shrink: 0;
+      }
+
+      /* Horizontal resize handle (between settings and structure) */
+      .epx-resize-handle--row {
+        cursor: row-resize; height: 4px; background: var(--epx-border);
+        flex-shrink: 0; position: relative; z-index: 10; transition: background 0.15s;
+      }
+      .epx-resize-handle--row::after { content: ''; position: absolute; inset: -3px 0; }
+      .epx-resize-handle--row:hover { background: var(--epx-accent); }
+
+      /* ── Structure panel ── */
+      .epx-structure-panel {
+        display: flex; flex-direction: column; overflow: hidden;
+        border-top: 1px solid var(--epx-border); background: var(--epx-surface); flex-shrink: 0;
+      }
+      .epx-structure-panel__header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 10px; height: 32px; flex-shrink: 0;
+        border-bottom: 1px solid var(--epx-border-subtle);
+      }
+      .epx-structure-panel__title {
+        font-size: 11px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.06em; color: var(--epx-text-faint);
+      }
+      .epx-structure-panel__collapse-btn {
+        background: none; border: none; cursor: pointer; color: var(--epx-text-faint);
+        width: 22px; height: 22px; border-radius: 4px; display: flex;
+        align-items: center; justify-content: center; padding: 0; transition: background 0.1s, color 0.1s;
+      }
+      .epx-structure-panel__collapse-btn:hover { background: var(--epx-hover-bg); color: var(--epx-text-mid); }
+      .epx-structure-panel__body {
+        flex: 1; overflow-y: auto; padding: 4px 0;
+        scrollbar-width: thin; scrollbar-color: var(--epx-text-muted) transparent;
+      }
+      .epx-structure-panel__body::-webkit-scrollbar { width: 4px; }
+      .epx-structure-panel__body::-webkit-scrollbar-track { background: transparent; }
+      .epx-structure-panel__body::-webkit-scrollbar-thumb { background: var(--epx-text-muted); border-radius: 4px; }
+      .epx-structure-panel__empty {
+        padding: 20px 12px; font-size: 12px; color: var(--epx-text-faint); text-align: center;
+      }
+
+      /* ── Structure rows ── */
+      .epx-structure-row-wrapper { position: relative; }
+      .epx-structure-row {
+        display: flex; align-items: center; gap: 4px; height: 28px;
+        cursor: pointer; border-radius: 4px; margin: 0 4px;
+        transition: background 0.1s; user-select: none;
+      }
+      .epx-structure-row:hover { background: var(--epx-hover-bg); }
+      .epx-structure-row.is-selected { background: var(--epx-accent-bg); }
+      .epx-structure-row.is-dragging { opacity: 0.4; }
+      .epx-structure-row.is-drop-inside {
+        background: var(--epx-accent-bg);
+        outline: 1.5px dashed var(--epx-accent);
+        outline-offset: -1px;
+      }
+      .epx-structure-row__expand-btn {
+        background: none; border: none; cursor: pointer; color: var(--epx-text-faint);
+        width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center;
+        justify-content: center; border-radius: 3px; padding: 0; transition: color 0.1s, background 0.1s;
+      }
+      .epx-structure-row__expand-btn:hover { color: var(--epx-text-mid); background: var(--epx-hover-bg); }
+      .epx-structure-row__icon { font-size: 12px; width: 16px; text-align: center; flex-shrink: 0; }
+      .epx-structure-row__label {
+        font-size: 12px; color: var(--epx-text-mid); overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
+        cursor: grab; touch-action: none;
+      }
+      .epx-structure-row__label:active { cursor: grabbing; }
+      .epx-structure-row.is-selected .epx-structure-row__label { color: var(--epx-accent); font-weight: 600; }
+
+      /* ── Structure drop line ── */
+      .epx-structure-drop-line {
+        height: 2px; margin-right: 8px; border-radius: 1px;
+        background-image: repeating-linear-gradient(90deg, var(--epx-accent) 0px, var(--epx-accent) 5px, transparent 5px, transparent 9px);
+        margin-top: 1px; margin-bottom: 1px;
+      }
+
       /* ── Drop indicator ── */
       .epx-drop-indicator {
         position: absolute; bottom: -3px; left: 0; right: 0;
@@ -1125,7 +1316,7 @@ function BuilderStyles() {
       .epx-right-panel__tab { flex: 1; padding: 9px 0; border: none; background: none; color: var(--epx-text-faint); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; display: flex; align-items: center; justify-content: center; }
       .epx-right-panel__tab:hover { color: var(--epx-text-mid); }
       .epx-right-panel__tab.is-active { color: var(--epx-accent); border-bottom-color: var(--epx-accent); }
-      .epx-right-panel__fields { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; flex: 1; scrollbar-width: thin; scrollbar-color: var(--epx-text-muted) transparent; }
+      .epx-right-panel__fields { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--epx-text-muted) transparent; }
       .epx-right-panel__fields::-webkit-scrollbar { width: 4px; }
       .epx-right-panel__fields::-webkit-scrollbar-track { background: transparent; }
       .epx-right-panel__fields::-webkit-scrollbar-thumb { background: var(--epx-text-muted); border-radius: 4px; }
@@ -1330,6 +1521,7 @@ function BuilderStyles() {
         transition: color 0.1s;
       }
       .epx-field-row__select-btn:hover { color: var(--epx-accent); }
+      .epx-field-row__select-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
       .epx-field-row__select-caret { font-size: 9px; color: var(--epx-text-faint); flex-shrink: 0; }
 
       /* ── BorderControl ── */

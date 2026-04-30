@@ -147,6 +147,16 @@ export function reorderInContainer(
 
 // ─── addToContainer ──────────────────────────────────────────────────────────
 
+// ─── isDescendant ────────────────────────────────────────────────────────────
+
+export function isDescendant(ancestorId: string, targetId: string, sections: SectionBlock[]): boolean {
+  const ancestor = findBlockById(ancestorId, sections);
+  if (!ancestor) return false;
+  return !!findBlockById(targetId, [ancestor]);
+}
+
+// ─── addToContainer ──────────────────────────────────────────────────────────
+
 export function addToContainer(
   containerId: string,
   slotIndex: number | null,
