@@ -1853,11 +1853,11 @@ function BuilderStyles() {
         padding: 4px 8px; border-top: 1px solid var(--epx-border-subtle);
       }
       .epx-bg-ctrl__thumb {
-        width: 28px; height: 28px; border-radius: 3px; object-fit: cover; flex-shrink: 0;
+        width: 25px; height: 25px; border-radius: 3px; object-fit: cover; flex-shrink: 0;
         border: 1px solid var(--epx-border);
       }
       .epx-bg-ctrl__thumb-placeholder {
-        width: 28px; height: 28px; border-radius: 3px; flex-shrink: 0;
+        width: 25px; height: 25px; border-radius: 3px; flex-shrink: 0;
         background: var(--epx-surface-2); border: 1px dashed var(--epx-border);
         display: flex; align-items: center; justify-content: center;
         color: var(--epx-text-faint);
@@ -1917,6 +1917,23 @@ function BuilderStyles() {
         padding: 0; display: flex; align-items: center; transition: color 0.1s; flex-shrink: 0;
       }
       .epx-bg-ctrl__slide-remove:hover { color: #dc2626; }
+
+      /* ── Toggle switch ── */
+      .epx-toggle { display: inline-flex; align-items: center; cursor: pointer; }
+      .epx-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+      .epx-toggle__track {
+        position: relative; width: 28px; height: 16px;
+        background: var(--epx-border); border-radius: 999px;
+        transition: background 0.15s; flex-shrink: 0;
+      }
+      .epx-toggle input:checked ~ .epx-toggle__track { background: var(--epx-accent); }
+      .epx-toggle__thumb {
+        position: absolute; top: 2px; left: 2px;
+        width: 12px; height: 12px; border-radius: 50%;
+        background: #fff; transition: transform 0.15s;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+      }
+      .epx-toggle input:checked ~ .epx-toggle__track .epx-toggle__thumb { transform: translateX(12px); }
 
       /* ── MediaPicker modal ── */
       .epx-media-picker {

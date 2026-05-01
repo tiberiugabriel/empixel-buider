@@ -83,7 +83,11 @@ function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
     };
   }
 
-  if (type === "video") return { background: "#0f172a" };
+  if (type === "video") {
+    const fkey = style.backgroundVideoFallbackStorageKey as string | undefined;
+    if (fkey) return { backgroundImage: `url(/_emdash/api/media/file/${fkey})`, backgroundSize: "cover", backgroundPosition: "center" };
+    return { background: "#0f172a" };
+  }
 
   if (type === "slideshow") {
     let slides: Array<{ storageKey?: string }> = [];

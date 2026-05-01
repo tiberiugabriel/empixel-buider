@@ -45,6 +45,10 @@ export interface BackgroundConfig {
   videoSrc?: "media" | "url";
   videoMedia?: MediaRef;
   videoUrl?: string;
+  videoStartTime?: number;
+  videoEndTime?: number;
+  videoPlayOnce?: boolean;
+  videoFallback?: MediaRef;
   slides?: MediaRef[];
 }
 
@@ -76,7 +80,13 @@ export function parseBackground(style: Record<string, unknown>): BackgroundConfi
     const vid    = style.backgroundVideoMediaId           as string | undefined;
     const vkey   = style.backgroundVideoMediaStorageKey   as string | undefined;
     if (vid && vkey) cfg.videoMedia = { id: vid, storageKey: vkey, filename: style.backgroundVideoMediaFilename as string | undefined };
-    cfg.videoUrl = style.backgroundVideoUrl as string | undefined;
+    cfg.videoUrl       = style.backgroundVideoUrl as string | undefined;
+    if (style.backgroundVideoStartTime !== undefined) cfg.videoStartTime = style.backgroundVideoStartTime as number;
+    if (style.backgroundVideoEndTime   !== undefined) cfg.videoEndTime   = style.backgroundVideoEndTime   as number;
+    cfg.videoPlayOnce  = (style.backgroundVideoPlayOnce as boolean) ?? false;
+    const fid  = style.backgroundVideoFallbackId         as string | undefined;
+    const fkey = style.backgroundVideoFallbackStorageKey as string | undefined;
+    if (fid && fkey) cfg.videoFallback = { id: fid, storageKey: fkey, filename: style.backgroundVideoFallbackFilename as string | undefined };
   } else if (type === "slideshow") {
     try { cfg.slides = JSON.parse((style.backgroundSlides as string) ?? "[]"); }
     catch { cfg.slides = []; }
@@ -96,7 +106,12 @@ const CLEARED: Record<string, undefined> = {
   backgroundImageRepeat: undefined, backgroundImageAttachment: undefined,
   backgroundVideoSrc: undefined, backgroundVideoMediaId: undefined,
   backgroundVideoMediaStorageKey: undefined, backgroundVideoMediaFilename: undefined,
-  backgroundVideoUrl: undefined, backgroundSlides: undefined,
+  backgroundVideoUrl: undefined,
+  backgroundVideoStartTime: undefined, backgroundVideoEndTime: undefined,
+  backgroundVideoPlayOnce: undefined,
+  backgroundVideoFallbackId: undefined, backgroundVideoFallbackStorageKey: undefined,
+  backgroundVideoFallbackFilename: undefined,
+  backgroundSlides: undefined,
 };
 
 export function serializeBackground(cfg: BackgroundConfig): Record<string, unknown> {
@@ -128,7 +143,15 @@ export function serializeBackground(cfg: BackgroundConfig): Record<string, unkno
       out.backgroundVideoMediaStorageKey   = cfg.videoMedia.storageKey;
       out.backgroundVideoMediaFilename     = cfg.videoMedia.filename;
     }
-    out.backgroundVideoUrl = cfg.videoUrl;
+    out.backgroundVideoUrl       = cfg.videoUrl;
+    if (cfg.videoStartTime !== undefined) out.backgroundVideoStartTime = cfg.videoStartTime;
+    if (cfg.videoEndTime   !== undefined) out.backgroundVideoEndTime   = cfg.videoEndTime;
+    out.backgroundVideoPlayOnce  = cfg.videoPlayOnce ?? false;
+    if (cfg.videoFallback) {
+      out.backgroundVideoFallbackId           = cfg.videoFallback.id;
+      out.backgroundVideoFallbackStorageKey   = cfg.videoFallback.storageKey;
+      out.backgroundVideoFallbackFilename     = cfg.videoFallback.filename;
+    }
   } else if (cfg.type === "slideshow") {
     out.backgroundSlides = JSON.stringify(cfg.slides ?? []);
   }
@@ -221,6 +244,71 @@ function IconPenSm() {
     <svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M8.5 1.5a1.414 1.414 0 0 1 2 2L4 10H2v-2L8.5 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
+  );
+}
+
+function BgNumRow({ label, value, onChange }: {
+  label: string;
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+}) {
+  const handleScrub = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startVal = value ?? 0;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(0, Math.round(startVal + (ev.clientX - startX) / 2));
+      onChange(next);
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div className="epx-side-input">
+      <span
+        className="epx-side-input__label epx-side-input__label--row epx-row-label--section epx-side-input__label--scrub"
+        style={{ cursor: "ew-resize" }}
+        onMouseDown={handleScrub}
+        title="Drag to adjust"
+      >{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 3, marginLeft: "auto", paddingRight: 6 }}>
+        <input
+          type="number"
+          className="epx-bg-ctrl__stop-pos"
+          style={{ width: 44, textAlign: "right" }}
+          min={0}
+          value={value ?? ""}
+          placeholder="—"
+          onChange={e => onChange(e.target.value !== "" ? Number(e.target.value) : undefined)}
+        />
+        <span className="epx-bg-ctrl__stop-unit">s</span>
+      </div>
+    </div>
+  );
+}
+
+function BgToggleRow({ label, value, onChange }: {
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="epx-side-input">
+      <span className="epx-side-input__label epx-side-input__label--row epx-row-label--section">{label}</span>
+      <label className="epx-toggle" style={{ marginLeft: "auto", paddingRight: 8 }}>
+        <input type="checkbox" checked={value} onChange={e => onChange(e.target.checked)} />
+        <span className="epx-toggle__track"><span className="epx-toggle__thumb" /></span>
+      </label>
+    </div>
   );
 }
 
@@ -370,7 +458,7 @@ export function BackgroundControl({ value, onChange, allowedTypes }: {
   const [pickerKey, setPickerKey]       = useState<PickerKey | null>(null);
   const [pickerPos, setPickerPos]       = useState({ top: 0, left: 0 });
   const [colorFormat, setColorFormat]   = useState<ColorFormat>("HEX");
-  const [mediaPicker, setMediaPicker]   = useState<"image" | "video" | "slideshow" | null>(null);
+  const [mediaPicker, setMediaPicker]   = useState<"image" | "video" | "slideshow" | "video-fallback" | null>(null);
 
   const isDirty = !!value.type;
   const stops   = value.gradStops ?? [];
@@ -749,6 +837,33 @@ export function BackgroundControl({ value, onChange, allowedTypes }: {
                   />
                 </div>
               )}
+
+              <BgNumRow    label="Start Time" value={value.videoStartTime} onChange={v => onChange({ ...value, videoStartTime: v })} />
+              <BgNumRow    label="End Time"   value={value.videoEndTime}   onChange={v => onChange({ ...value, videoEndTime: v })} />
+              <BgToggleRow label="Play Once"  value={value.videoPlayOnce ?? false} onChange={v => onChange({ ...value, videoPlayOnce: v })} />
+
+              <div className="epx-side-input">
+                <span className="epx-side-input__label epx-side-input__label--row epx-row-label--section">Fallback</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto", paddingRight: 6 }}>
+                  {value.videoFallback?.storageKey ? (
+                    <img
+                      className="epx-bg-ctrl__thumb"
+                      src={`/_emdash/api/media/file/${value.videoFallback.storageKey}`}
+                      alt={value.videoFallback.filename ?? ""}
+                    />
+                  ) : (
+                    <div className="epx-bg-ctrl__thumb-placeholder"><IconImage /></div>
+                  )}
+                  <button type="button" className="epx-bg-ctrl__media-btn" onClick={() => setMediaPicker("video-fallback")}>
+                    {value.videoFallback ? "Change" : "Select"}
+                  </button>
+                  {value.videoFallback && (
+                    <button type="button" className="epx-bg-ctrl__stop-remove" onClick={() => onChange({ ...value, videoFallback: undefined })} title="Clear">
+                      <IconClose />
+                    </button>
+                  )}
+                </div>
+              </div>
             </>
           )}
 
@@ -812,6 +927,15 @@ export function BackgroundControl({ value, onChange, allowedTypes }: {
           onSelect={([ref]) => { onChange({ ...value, videoMedia: ref }); setMediaPicker(null); }}
           onClose={() => setMediaPicker(null)}
           selectedIds={value.videoMedia ? [value.videoMedia.id] : []}
+        />
+      )}
+      {mediaPicker === "video-fallback" && (
+        <MediaPicker
+          title="Select Fallback Image"
+          mimeTypeFilter="image/"
+          onSelect={([ref]) => { onChange({ ...value, videoFallback: ref }); setMediaPicker(null); }}
+          onClose={() => setMediaPicker(null)}
+          selectedIds={value.videoFallback ? [value.videoFallback.id] : []}
         />
       )}
       {mediaPicker === "slideshow" && (

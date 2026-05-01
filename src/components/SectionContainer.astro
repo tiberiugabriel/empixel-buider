@@ -1,7 +1,7 @@
 ---
 import type { SectionBlock } from "../types.js";
 import BlockRenderer from "./BlockRenderer.astro";
-import { buildBlockStyle, buildHoverCss, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
+import { buildBlockStyle, wrapBlockCss, buildHoverCss, getVideoBackground, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,38 +48,7 @@ const paddingCss = [
 const styleWithoutPadding = fullStyle.replace(/padding-[^:]+:[^;]+(;|$)/g, "");
 const inlineStyle = [styleWithoutPadding, paddingCss].filter(Boolean).join(";");
 
-const videoSrc   = getVideoBackground(value);
-const extraId    = getBlockId(value);
-const extraClass = getBlockClass(value);
-const customCss  = blockId ? getCustomCss(value, blockId) : "";
-const hoverCss   = blockId ? buildHoverCss(value, blockId) : "";
-const Tag        = ((value.htmlTag as string) || "section") as astroHTML.JSX.HTMLTag;
-
-// Link attributes (only relevant when Tag === "a")
-const linkHref       = (value.linkHref       as string)  || undefined;
-const linkNewTab     = (value.linkNewTab      as boolean) || false;
-const linkNofollow   = (value.linkNofollow    as boolean) || false;
-const linkCustomAttr = (value.linkCustomAttr  as string)  || "";
-const linkTarget     = linkNewTab   ? "_blank"   : undefined;
-const linkRel        = (() => {
-  const parts: string[] = [];
-  if (linkNewTab)   parts.push("noopener", "noreferrer");
-  if (linkNofollow) parts.push("nofollow");
-  return parts.length ? parts.join(" ") : undefined;
-})();
-const linkCustomAttrs: Record<string, string> = {};
-if (linkCustomAttr) {
-  for (const pair of linkCustomAttr.split(",")) {
-    const sep = pair.indexOf("|");
-    if (sep > 0) {
-      const k = pair.slice(0, sep).trim();
-      const v = pair.slice(sep + 1).trim();
-      if (k) linkCustomAttrs[k] = v;
-    }
-  }
-}
-
-// Layout styles applied to the children wrapper div
+// Layout styles
 const layoutMode = (value.layout as string) ?? "flex";
 const isGrid     = layoutMode === "grid";
 function resolveTrack(raw: unknown): string {
@@ -108,13 +77,55 @@ if (isGrid) {
   const ai   = (value.flexAlignItems as string) ?? "stretch";    layoutParts.push(`align-items:${ai}`);
 }
 const layoutStyle = layoutParts.join(";");
+
+const videoSrc   = getVideoBackground(value);
+const extraId    = getBlockId(value);
+const extraClass = getBlockClass(value);
+const customCss  = blockId ? getCustomCss(value, blockId) : "";
+const hoverCss   = blockId ? buildHoverCss(value, blockId) : "";
+const videoExtraCss = videoSrc ? "position:relative;overflow:hidden" : "";
+const fullStyleStr  = [inlineStyle, videoExtraCss, layoutStyle].filter(Boolean).join(";");
+const blockCss      = wrapBlockCss(fullStyleStr, blockId);
+const allCss        = [blockCss, hoverCss, customCss].filter(Boolean).join("");
+
+// Video options
+const videoPlayOnce  = (value.backgroundVideoPlayOnce  as boolean) ?? false;
+const videoStartTime = value.backgroundVideoStartTime as number | undefined;
+const videoEndTime   = value.backgroundVideoEndTime   as number | undefined;
+const videoFallbackKey = value.backgroundVideoFallbackStorageKey as string | undefined;
+const videoPoster    = videoFallbackKey ? `/_emdash/api/media/file/${videoFallbackKey}` : undefined;
+const hasVideoTiming = videoStartTime !== undefined || videoEndTime !== undefined || videoPlayOnce;
+const Tag        = ((value.htmlTag as string) || "section") as astroHTML.JSX.HTMLTag;
+
+// Link attributes (only relevant when Tag === "a")
+const linkHref       = (value.linkHref       as string)  || undefined;
+const linkNewTab     = (value.linkNewTab      as boolean) || false;
+const linkNofollow   = (value.linkNofollow    as boolean) || false;
+const linkCustomAttr = (value.linkCustomAttr  as string)  || "";
+const linkTarget     = linkNewTab   ? "_blank"   : undefined;
+const linkRel        = (() => {
+  const parts: string[] = [];
+  if (linkNewTab)   parts.push("noopener", "noreferrer");
+  if (linkNofollow) parts.push("nofollow");
+  return parts.length ? parts.join(" ") : undefined;
+})();
+const linkCustomAttrs: Record<string, string> = {};
+if (linkCustomAttr) {
+  for (const pair of linkCustomAttr.split(",")) {
+    const sep = pair.indexOf("|");
+    if (sep > 0) {
+      const k = pair.slice(0, sep).trim();
+      const v = pair.slice(sep + 1).trim();
+      if (k) linkCustomAttrs[k] = v;
+    }
+  }
+}
 ---
 
 <Tag
   class={`epx-section-container epx-theme--${(value.theme as string) || "light"}${extraClass ? ` ${extraClass}` : ""}`}
   id={extraId ?? undefined}
   data-epx-block={blockId || undefined}
-  style={[inlineStyle, videoSrc ? "position:relative;overflow:hidden" : ""].filter(Boolean).join(";") || undefined}
   href={linkHref}
   target={linkTarget}
   rel={linkRel}
@@ -124,20 +135,49 @@ const layoutStyle = layoutParts.join(";");
     <video
       autoplay
       muted
-      loop
+      loop={!videoPlayOnce || undefined}
       playsinline
+      poster={videoPoster}
+      data-epx-start={videoStartTime !== undefined ? String(videoStartTime) : undefined}
+      data-epx-end={videoEndTime !== undefined ? String(videoEndTime) : undefined}
+      data-epx-once={videoPlayOnce ? "1" : undefined}
       style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;"
       src={videoSrc}
     />
   )}
-  <div style={[layoutStyle, videoSrc ? "position:relative;z-index:1" : ""].filter(Boolean).join(";")}>
-    {children.map((child) =>
-      child.type === "container"
-        ? <Astro.self value={child.config} children={child.children ?? []} blockId={child.id} />
-        : <BlockRenderer block={child} />
-    )}
-  </div>
+  {videoSrc && hasVideoTiming && (
+    <script is:inline>{`
+      (function(){
+        var v = document.currentScript.previousElementSibling;
+        while(v && v.tagName !== 'VIDEO') v = v.previousElementSibling;
+        if(!v) return;
+        var start = v.dataset.epxStart !== undefined ? parseFloat(v.dataset.epxStart) : null;
+        var end   = v.dataset.epxEnd   !== undefined ? parseFloat(v.dataset.epxEnd)   : null;
+        var once  = v.dataset.epxOnce === '1';
+        if(start !== null) { v.addEventListener('loadedmetadata', function(){ v.currentTime = start; }, {once:true}); }
+        if(end !== null || once) {
+          v.addEventListener('timeupdate', function(){
+            if(end !== null && v.currentTime >= end) {
+              if(once) { v.pause(); } else { v.currentTime = start !== null ? start : 0; }
+            }
+          });
+        }
+      })();
+    `}</script>
+  )}
+  {videoSrc ? (
+    <div style="position:relative;z-index:1">
+      {children.map((child) =>
+        child.type === "container"
+          ? <Astro.self value={child.config} children={child.children ?? []} blockId={child.id} />
+          : <BlockRenderer block={child} />
+      )}
+    </div>
+  ) : children.map((child) =>
+    child.type === "container"
+      ? <Astro.self value={child.config} children={child.children ?? []} blockId={child.id} />
+      : <BlockRenderer block={child} />
+  )}
 </Tag>
 
-{customCss && <style set:html={customCss} is:global />}
-{hoverCss && <style set:html={hoverCss} is:global />}
+{allCss && <style set:html={allCss} is:global />}

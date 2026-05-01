@@ -184,6 +184,17 @@ export function buildHoverCss(config: Record<string, unknown>, blockId: string):
   return `[data-epx-block="${blockId}"]:hover{${parts.join(";")}}`;
 }
 
+// ─── Block CSS (selector-based, replaces inline style) ───────────────────────
+
+export function wrapBlockCss(styleStr: string, blockId: string): string {
+  if (!styleStr || !blockId) return "";
+  return `[data-epx-block="${blockId}"]{${styleStr}}`;
+}
+
+export function buildBlockCss(config: Record<string, unknown>, blockId: string): string {
+  return wrapBlockCss(buildBlockStyle(config), blockId);
+}
+
 // ─── HTML attribute helpers ───────────────────────────────────────────────────
 
 export function getBlockId(config: Record<string, unknown>): string | null {
