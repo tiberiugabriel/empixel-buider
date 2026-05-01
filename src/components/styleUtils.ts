@@ -52,9 +52,22 @@ export function buildBackgroundCss(style: Record<string, unknown>): string {
   }
 
   if (type === "image") {
-    const key = style.backgroundImageStorageKey as string | undefined;
-    if (!key) return "";
-    return `background:url(/_emdash/api/media/file/${key}) center/cover no-repeat;`;
+    const src    = style.backgroundImageSrc as string | undefined;
+    const imgUrl = src === "url"
+      ? (style.backgroundImageUrl as string | undefined)
+      : (() => { const k = style.backgroundImageStorageKey as string | undefined; return k ? `/_emdash/api/media/file/${k}` : undefined; })();
+    if (!imgUrl) return "";
+    const size       = (style.backgroundImageSize       as string) || "cover";
+    const position   = (style.backgroundImagePosition   as string) || "center";
+    const repeat     = (style.backgroundImageRepeat     as string) || "no-repeat";
+    const attachment = (style.backgroundImageAttachment as string) || "";
+    return [
+      `background-image:url(${imgUrl})`,
+      `background-size:${size}`,
+      `background-position:${position}`,
+      `background-repeat:${repeat}`,
+      ...(attachment && attachment !== "scroll" ? [`background-attachment:${attachment}`] : []),
+    ].join(";") + ";";
   }
 
   if (type === "slideshow") {

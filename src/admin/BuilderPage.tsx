@@ -1378,6 +1378,14 @@ function BuilderStyles() {
       .epx-field--toggle .epx-field__toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
       .epx-field__toggle-input { width: 16px; height: 16px; cursor: pointer; }
 
+      /* ── LinkControl ── */
+      .epx-link-ctrl__checks { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-top: 1px solid var(--epx-border-subtle); }
+      .epx-link-ctrl__check { display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 11px; color: var(--epx-text-2); user-select: none; }
+      .epx-link-ctrl__check input[type="checkbox"] { width: 13px; height: 13px; cursor: pointer; accent-color: var(--epx-accent); }
+      .epx-bg-ctrl__url-row--indent { padding-left: 0; }
+      .epx-link-ctrl__hint { margin: 0; padding: 5px 10px 7px; font-size: 10px; line-height: 1.6; color: var(--epx-text-faint); border-top: 1px solid var(--epx-border-subtle); }
+      .epx-link-ctrl__hint code { font-family: monospace; color: #f38019; border: 1px solid var(--epx-border-subtle); border-radius: 3px; padding: 0 3px; }
+
       /* ── SpacingControl ── */
       .epx-spacing-ctrl { display: flex; flex-direction: column; container-type: inline-size; }
       .epx-spacing-ctrl__row { display: flex; align-items: center; gap: 2px; }
@@ -1444,7 +1452,6 @@ function BuilderStyles() {
         transition: color 0.1s, background 0.1s;
         border-right: 1px solid var(--epx-border-subtle);
       }
-      .epx-side-input__label:hover { color: var(--epx-accent); }
       .epx-side-input__label--full {
         flex: 1; width: auto; justify-content: flex-start; padding: 0 8px;
         font-size: 10px; letter-spacing: 0.06em; border-right: none;
@@ -1522,6 +1529,7 @@ function BuilderStyles() {
       }
       .epx-field-row__select-btn:hover { color: var(--epx-accent); }
       .epx-field-row__select-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+      .epx-field-row__select-btn--pen { color: var(--epx-text-muted); }
       .epx-field-row__select-caret { font-size: 9px; color: var(--epx-text-faint); flex-shrink: 0; }
 
       /* ── BorderControl ── */

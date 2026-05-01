@@ -10,6 +10,7 @@ import { BackgroundControl, parseBackground, serializeBackground } from "./contr
 import { GapControl, parseGap, serializeGap, type GapValue } from "./controls/GapControl.js";
 import { LayoutControl, parseLayout } from "./controls/LayoutControl.js";
 import { OverflowControl, parseOverflow, serializeOverflow, type OverflowValue } from "./controls/OverflowControl.js";
+import { LinkControl, parseLink, serializeLink, type LinkValue } from "./controls/LinkControl.js";
 import { ThemeStyleToggle, getThemeStyleKey } from "./controls/ThemeStyleToggle.js";
 
 interface Props {
@@ -286,28 +287,30 @@ function AdvancedTab({
         sides={["top", "right", "bottom", "left"]}
       />
       <PanelDivider />
-      <FieldGroup
-        isDirty={!!value.position}
-        onReset={() => onChange({ ...value, position: "", top: undefined, right: undefined, bottom: undefined, left: undefined })}
-      >
-        <SelectRow
-          label="Position"
-          value={value.position ?? ""}
-          onChange={(v) => set("position", v)}
-          options={POSITION_OPTIONS}
-          labelClassName="epx-row-label--section"
-        />
-      </FieldGroup>
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        <FieldGroup
+          isDirty={!!value.position}
+          onReset={() => onChange({ ...value, position: "", top: undefined, right: undefined, bottom: undefined, left: undefined })}
+        >
+          <SelectRow
+            label="Position"
+            value={value.position ?? ""}
+            onChange={(v) => set("position", v)}
+            options={POSITION_OPTIONS}
+            labelClassName="epx-row-label--section"
+          />
+        </FieldGroup>
 
-      {hasPosition && (
-        <SpacingControl
-          label="Offset"
-          value={offsetValue}
-          onChange={handleOffset}
-          sides={["top", "right", "bottom", "left"]}
-          forceExpanded
-        />
-      )}
+        {hasPosition && (
+          <SpacingControl
+            label="Offset"
+            value={offsetValue}
+            onChange={handleOffset}
+            sides={["top", "right", "bottom", "left"]}
+            forceExpanded
+          />
+        )}
+      </div>
 
       <FieldGroup
         isDirty={zIndexNum !== undefined}
@@ -480,6 +483,9 @@ export function RightPanel({ block, onChange }: Props) {
     onChange({ style: { ...style, ...serializeOverflow(val) } });
   };
 
+  const linkValue: LinkValue = parseLink(block.config);
+  const handleLink = (val: LinkValue) => onChange(serializeLink(val));
+
   const TABS: { id: Tab; icon: React.ReactNode; title: string }[] = [
     { id: "fields", icon: <IconFields />, title: "Fields" },
     { id: "style", icon: <IconStyle />, title: "Style" },
@@ -532,18 +538,23 @@ export function RightPanel({ block, onChange }: Props) {
             <>
               <PanelDivider />
               <OverflowControl value={overflowValue} onChange={handleOverflow} />
-              <FieldGroup
-                isDirty={!!block.config.htmlTag}
-                onReset={() => onChange({ htmlTag: "" })}
-              >
-                <SelectRow
-                  label="HTML Tag"
-                  value={(block.config.htmlTag as string) ?? ""}
-                  onChange={(v) => onChange({ htmlTag: v })}
-                  options={HTML_TAG_OPTIONS}
-                  labelClassName="epx-row-label--section"
-                />
-              </FieldGroup>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <FieldGroup
+                  isDirty={!!block.config.htmlTag}
+                  onReset={() => onChange({ htmlTag: "" })}
+                >
+                  <SelectRow
+                    label="HTML Tag"
+                    value={(block.config.htmlTag as string) ?? ""}
+                    onChange={(v) => onChange({ htmlTag: v })}
+                    options={HTML_TAG_OPTIONS}
+                    labelClassName="epx-row-label--section"
+                  />
+                </FieldGroup>
+                {(block.config.htmlTag as string) === "a" && (
+                  <LinkControl value={linkValue} onChange={handleLink} />
+                )}
+              </div>
             </>
           )}
         </div>

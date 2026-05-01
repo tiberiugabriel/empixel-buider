@@ -69,9 +69,18 @@ function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
   }
 
   if (type === "image") {
-    const key = style.backgroundImageStorageKey as string | undefined;
-    if (!key) return {};
-    return { backgroundImage: `url(/_emdash/api/media/file/${key})`, backgroundSize: "cover", backgroundPosition: "center" };
+    const src    = style.backgroundImageSrc as string | undefined;
+    const imgUrl = src === "url"
+      ? (style.backgroundImageUrl as string | undefined)
+      : (() => { const k = style.backgroundImageStorageKey as string | undefined; return k ? `/_emdash/api/media/file/${k}` : undefined; })();
+    if (!imgUrl) return {};
+    return {
+      backgroundImage:      `url(${imgUrl})`,
+      backgroundSize:       (style.backgroundImageSize       as string) || "cover",
+      backgroundPosition:   (style.backgroundImagePosition   as string) || "center",
+      backgroundRepeat:     (style.backgroundImageRepeat     as string) || "no-repeat",
+      backgroundAttachment: (style.backgroundImageAttachment as string) || undefined,
+    };
   }
 
   if (type === "video") return { background: "#0f172a" };

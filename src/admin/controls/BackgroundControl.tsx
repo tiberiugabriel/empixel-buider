@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -35,7 +35,13 @@ export interface BackgroundConfig {
   colorAlpha?: number;
   gradAngle?: number;
   gradStops?: GradientStop[];
+  imageSrc?: "media" | "url";
   image?: MediaRef;
+  imageUrl?: string;
+  imageSize?: string;
+  imagePosition?: string;
+  imageRepeat?: string;
+  imageAttachment?: string;
   videoSrc?: "media" | "url";
   videoMedia?: MediaRef;
   videoUrl?: string;
@@ -56,9 +62,15 @@ export function parseBackground(style: Record<string, unknown>): BackgroundConfi
     try { cfg.gradStops = JSON.parse((style.backgroundGradStops as string) ?? "[]"); }
     catch { cfg.gradStops = []; }
   } else if (type === "image") {
+    cfg.imageSrc       = (style.backgroundImageSrc        as "media" | "url") ?? "media";
     const id  = style.backgroundImageId         as string | undefined;
     const key = style.backgroundImageStorageKey as string | undefined;
     if (id && key) cfg.image = { id, storageKey: key, alt: style.backgroundImageAlt as string | undefined, filename: style.backgroundImageFilename as string | undefined };
+    cfg.imageUrl        = (style.backgroundImageUrl        as string) ?? "";
+    cfg.imageSize       = (style.backgroundImageSize       as string) ?? "";
+    cfg.imagePosition   = (style.backgroundImagePosition   as string) ?? "";
+    cfg.imageRepeat     = (style.backgroundImageRepeat     as string) ?? "";
+    cfg.imageAttachment = (style.backgroundImageAttachment as string) ?? "";
   } else if (type === "video") {
     cfg.videoSrc = (style.backgroundVideoSrc as "media" | "url") ?? "media";
     const vid    = style.backgroundVideoMediaId           as string | undefined;
@@ -76,8 +88,12 @@ const CLEARED: Record<string, undefined> = {
   backgroundType: undefined,
   backgroundColor: undefined, backgroundColorAlpha: undefined,
   backgroundGradAngle: undefined, backgroundGradStops: undefined,
+  backgroundImageSrc: undefined,
   backgroundImageId: undefined, backgroundImageStorageKey: undefined,
   backgroundImageAlt: undefined, backgroundImageFilename: undefined,
+  backgroundImageUrl: undefined,
+  backgroundImageSize: undefined, backgroundImagePosition: undefined,
+  backgroundImageRepeat: undefined, backgroundImageAttachment: undefined,
   backgroundVideoSrc: undefined, backgroundVideoMediaId: undefined,
   backgroundVideoMediaStorageKey: undefined, backgroundVideoMediaFilename: undefined,
   backgroundVideoUrl: undefined, backgroundSlides: undefined,
@@ -92,11 +108,19 @@ export function serializeBackground(cfg: BackgroundConfig): Record<string, unkno
   } else if (cfg.type === "gradient") {
     out.backgroundGradAngle = cfg.gradAngle ?? 135;
     out.backgroundGradStops = JSON.stringify(cfg.gradStops ?? []);
-  } else if (cfg.type === "image" && cfg.image) {
-    out.backgroundImageId         = cfg.image.id;
-    out.backgroundImageStorageKey = cfg.image.storageKey;
-    out.backgroundImageAlt        = cfg.image.alt;
-    out.backgroundImageFilename   = cfg.image.filename;
+  } else if (cfg.type === "image") {
+    out.backgroundImageSrc = cfg.imageSrc ?? "media";
+    if (cfg.image) {
+      out.backgroundImageId         = cfg.image.id;
+      out.backgroundImageStorageKey = cfg.image.storageKey;
+      out.backgroundImageAlt        = cfg.image.alt;
+      out.backgroundImageFilename   = cfg.image.filename;
+    }
+    out.backgroundImageUrl        = cfg.imageUrl        ?? "";
+    out.backgroundImageSize       = cfg.imageSize       ?? "";
+    out.backgroundImagePosition   = cfg.imagePosition   ?? "";
+    out.backgroundImageRepeat     = cfg.imageRepeat     ?? "";
+    out.backgroundImageAttachment = cfg.imageAttachment ?? "";
   } else if (cfg.type === "video") {
     out.backgroundVideoSrc = cfg.videoSrc ?? "media";
     if (cfg.videoMedia) {
@@ -142,9 +166,22 @@ export function buildBackgroundCss(style: Record<string, unknown>): string {
     return `background:linear-gradient(${angle}deg,${parts})`;
   }
   if (type === "image") {
-    const key = style.backgroundImageStorageKey as string | undefined;
-    if (!key) return "";
-    return `background:url(/_emdash/api/media/file/${key}) center/cover no-repeat`;
+    const src  = style.backgroundImageSrc as string | undefined;
+    const imgUrl = src === "url"
+      ? (style.backgroundImageUrl as string | undefined)
+      : (() => { const k = style.backgroundImageStorageKey as string | undefined; return k ? `/_emdash/api/media/file/${k}` : undefined; })();
+    if (!imgUrl) return "";
+    const size       = (style.backgroundImageSize       as string) || "cover";
+    const position   = (style.backgroundImagePosition   as string) || "center";
+    const repeat     = (style.backgroundImageRepeat     as string) || "no-repeat";
+    const attachment = (style.backgroundImageAttachment as string) || "";
+    return [
+      `background-image:url(${imgUrl})`,
+      `background-size:${size}`,
+      `background-position:${position}`,
+      `background-repeat:${repeat}`,
+      ...(attachment && attachment !== "scroll" ? [`background-attachment:${attachment}`] : []),
+    ].join(";");
   }
   return "";
 }
@@ -171,6 +208,121 @@ function IconSlideshow() { return <svg width="14" height="14" viewBox="0 0 14 14
 function IconDragDots()  { return <svg width="10" height="14" viewBox="0 0 10 14" fill="none"><circle cx="3" cy="3" r="1.2" fill="currentColor"/><circle cx="7" cy="3" r="1.2" fill="currentColor"/><circle cx="3" cy="7" r="1.2" fill="currentColor"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/><circle cx="3" cy="11" r="1.2" fill="currentColor"/><circle cx="7" cy="11" r="1.2" fill="currentColor"/></svg>; }
 function IconClose()     { return <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>; }
 function IconMedia()     { return <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="0.5" y="0.5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1"/></svg>; }
+
+// ─── Image option sets ────────────────────────────────────────────────────────
+
+const IMG_SIZE_OPTIONS       = ["cover","contain","auto"].map(v => ({ value: v, label: v }));
+const IMG_POSITION_OPTIONS   = ["center","top","bottom","left","right","top left","top center","top right","center left","center right","bottom left","bottom center","bottom right"].map(v => ({ value: v, label: v }));
+const IMG_REPEAT_OPTIONS     = ["no-repeat","repeat","repeat-x","repeat-y","space","round"].map(v => ({ value: v, label: v }));
+const IMG_ATTACHMENT_OPTIONS = ["scroll","fixed","local"].map(v => ({ value: v, label: v }));
+
+function IconPenSm() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8.5 1.5a1.414 1.414 0 0 1 2 2L4 10H2v-2L8.5 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function BgOptionDropdown({ options, value, onSelect, onClose, anchorRef }: {
+  options: { value: string; label: string }[];
+  value: string;
+  onSelect: (v: string) => void;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLDivElement>;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (!panelRef.current?.contains(e.target as Node) &&
+          !anchorRef.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [onClose, anchorRef]);
+
+  const isCustom = !!value && !options.some(o => o.value === value);
+
+  return (
+    <div ref={panelRef} className="epx-unit-dropdown">
+      {options.map(opt => (
+        <button key={opt.value} type="button"
+          className={`epx-unit-dropdown__item${opt.value === value ? " is-active" : ""}`}
+          onMouseDown={e => { e.preventDefault(); onSelect(opt.value); onClose(); }}
+        >{opt.label}</button>
+      ))}
+      <div className="epx-unit-dropdown__sep" />
+      <button type="button"
+        className={`epx-unit-dropdown__item epx-unit-dropdown__item--pen${isCustom ? " is-active" : ""}`}
+        onMouseDown={e => { e.preventDefault(); onSelect("__custom__"); onClose(); }}
+      ><IconPenSm /></button>
+    </div>
+  );
+}
+
+function BgOptionRow({ label, value, options, onChange }: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const predefined   = options.map(o => o.value);
+  const isCustomVal  = !!value && !predefined.includes(value);
+  const showInput    = isCustomVal || customMode;
+  const displayLabel = options.find(o => o.value === value)?.label ?? (value || (options[0]?.label ?? ""));
+
+  const handleSelect = (v: string) => {
+    if (v === "__custom__") { setCustomMode(true); }
+    else { setCustomMode(false); onChange(v); }
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <div className="epx-side-input">
+        <span className="epx-side-input__label epx-side-input__label--row epx-row-label--section">{label}</span>
+        <div ref={wrapRef} className="epx-field-row__select-wrap">
+          <button type="button"
+            className={`epx-field-row__select-btn${showInput ? " epx-field-row__select-btn--pen" : ""}`}
+            onClick={() => setOpen(o => !o)}
+          >
+            {showInput
+              ? <IconPenSm />
+              : <><span>{displayLabel}</span><span className="epx-field-row__select-caret">▾</span></>
+            }
+          </button>
+          {open && (
+            <BgOptionDropdown
+              options={options}
+              value={value}
+              onSelect={handleSelect}
+              onClose={() => setOpen(false)}
+              anchorRef={wrapRef as React.RefObject<HTMLDivElement>}
+            />
+          )}
+        </div>
+      </div>
+      {showInput && (
+        <div className="epx-bg-ctrl__url-row">
+          <input
+            type="text"
+            className="epx-bg-ctrl__url-input"
+            value={value}
+            placeholder="e.g. 50% auto"
+            onChange={e => { setCustomMode(false); onChange(e.target.value); }}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Tab icons ────────────────────────────────────────────────────────────────
 
 const TYPE_TABS: { type: BackgroundType; icon: React.ReactNode; title: string }[] = [
   { type: "color",     icon: <IconColor />,     title: "Solid Color" },
@@ -230,6 +382,7 @@ export function BackgroundControl({ value, onChange, allowedTypes }: {
     const next: BackgroundConfig = { type };
     if (type === "color")     { next.color = "#ffffff"; next.colorAlpha = 1; }
     if (type === "gradient")  { next.gradAngle = 135; next.gradStops = [{ color: "#000000", alpha: 1, pos: 0 }, { color: "#ffffff", alpha: 1, pos: 100 }]; }
+    if (type === "image")     { next.imageSrc = "media"; }
     if (type === "video")     { next.videoSrc = "media"; }
     if (type === "slideshow") { next.slides = []; }
     onChange(next);
@@ -488,26 +641,65 @@ export function BackgroundControl({ value, onChange, allowedTypes }: {
 
           {/* ── IMAGE ── */}
           {value.type === "image" && (
-            <div className="epx-bg-ctrl__media-row">
-              {value.image?.storageKey ? (
-                <img
-                  className="epx-bg-ctrl__thumb"
-                  src={`/_emdash/api/media/file/${value.image.storageKey}`}
-                  alt={value.image.alt ?? value.image.filename ?? ""}
-                />
-              ) : (
-                <div className="epx-bg-ctrl__thumb-placeholder"><IconImage /></div>
-              )}
-              <span className="epx-bg-ctrl__media-name">{value.image?.filename ?? (value.image ? "Image selected" : "No image")}</span>
-              <button type="button" className="epx-bg-ctrl__media-btn" onClick={() => setMediaPicker("image")}>
-                {value.image ? "Change" : "Select"}
-              </button>
-              {value.image && (
-                <button type="button" className="epx-bg-ctrl__stop-remove" onClick={() => onChange({ ...value, image: undefined })} title="Clear">
-                  <IconClose />
+            <>
+              <div className="epx-bg-ctrl__src-toggle">
+                <button
+                  type="button"
+                  className={`epx-bg-ctrl__src-btn${(value.imageSrc ?? "media") === "media" ? " is-active" : ""}`}
+                  onClick={() => onChange({ ...value, imageSrc: "media" })}
+                >
+                  Media
                 </button>
+                <button
+                  type="button"
+                  className={`epx-bg-ctrl__src-btn${value.imageSrc === "url" ? " is-active" : ""}`}
+                  onClick={() => onChange({ ...value, imageSrc: "url" })}
+                >
+                  URL
+                </button>
+              </div>
+
+              {(value.imageSrc ?? "media") === "media" && (
+                <div className="epx-bg-ctrl__media-row">
+                  {value.image?.storageKey ? (
+                    <img
+                      className="epx-bg-ctrl__thumb"
+                      src={`/_emdash/api/media/file/${value.image.storageKey}`}
+                      alt={value.image.alt ?? value.image.filename ?? ""}
+                    />
+                  ) : (
+                    <div className="epx-bg-ctrl__thumb-placeholder"><IconImage /></div>
+                  )}
+                  <span className="epx-bg-ctrl__media-name">{value.image?.filename ?? (value.image ? "Image selected" : "No image")}</span>
+                  <button type="button" className="epx-bg-ctrl__media-btn" onClick={() => setMediaPicker("image")}>
+                    {value.image ? "Change" : "Select"}
+                  </button>
+                  {value.image && (
+                    <button type="button" className="epx-bg-ctrl__stop-remove" onClick={() => onChange({ ...value, image: undefined })} title="Clear">
+                      <IconClose />
+                    </button>
+                  )}
+                </div>
               )}
-            </div>
+
+              {value.imageSrc === "url" && (
+                <div className="epx-bg-ctrl__url-row">
+                  <span className="epx-bg-ctrl__stop-label">URL</span>
+                  <input
+                    type="url"
+                    className="epx-bg-ctrl__url-input"
+                    value={value.imageUrl ?? ""}
+                    placeholder="https://example.com/image.jpg"
+                    onChange={e => onChange({ ...value, imageUrl: e.target.value })}
+                  />
+                </div>
+              )}
+
+              <BgOptionRow label="Size"       value={value.imageSize       ?? ""} options={IMG_SIZE_OPTIONS}       onChange={v => onChange({ ...value, imageSize: v })} />
+              <BgOptionRow label="Position"   value={value.imagePosition   ?? ""} options={IMG_POSITION_OPTIONS}   onChange={v => onChange({ ...value, imagePosition: v })} />
+              <BgOptionRow label="Repeat"     value={value.imageRepeat     ?? ""} options={IMG_REPEAT_OPTIONS}     onChange={v => onChange({ ...value, imageRepeat: v })} />
+              <BgOptionRow label="Attachment" value={value.imageAttachment ?? ""} options={IMG_ATTACHMENT_OPTIONS} onChange={v => onChange({ ...value, imageAttachment: v })} />
+            </>
           )}
 
           {/* ── VIDEO ── */}

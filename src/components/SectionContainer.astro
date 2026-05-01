@@ -55,6 +55,30 @@ const customCss  = blockId ? getCustomCss(value, blockId) : "";
 const hoverCss   = blockId ? buildHoverCss(value, blockId) : "";
 const Tag        = ((value.htmlTag as string) || "section") as astroHTML.JSX.HTMLTag;
 
+// Link attributes (only relevant when Tag === "a")
+const linkHref       = (value.linkHref       as string)  || undefined;
+const linkNewTab     = (value.linkNewTab      as boolean) || false;
+const linkNofollow   = (value.linkNofollow    as boolean) || false;
+const linkCustomAttr = (value.linkCustomAttr  as string)  || "";
+const linkTarget     = linkNewTab   ? "_blank"   : undefined;
+const linkRel        = (() => {
+  const parts: string[] = [];
+  if (linkNewTab)   parts.push("noopener", "noreferrer");
+  if (linkNofollow) parts.push("nofollow");
+  return parts.length ? parts.join(" ") : undefined;
+})();
+const linkCustomAttrs: Record<string, string> = {};
+if (linkCustomAttr) {
+  for (const pair of linkCustomAttr.split(",")) {
+    const sep = pair.indexOf("|");
+    if (sep > 0) {
+      const k = pair.slice(0, sep).trim();
+      const v = pair.slice(sep + 1).trim();
+      if (k) linkCustomAttrs[k] = v;
+    }
+  }
+}
+
 // Layout styles applied to the children wrapper div
 const layoutMode = (value.layout as string) ?? "flex";
 const isGrid     = layoutMode === "grid";
@@ -90,7 +114,11 @@ const layoutStyle = layoutParts.join(";");
   class={`epx-section-container epx-theme--${(value.theme as string) || "light"}${extraClass ? ` ${extraClass}` : ""}`}
   id={extraId ?? undefined}
   data-epx-block={blockId || undefined}
-  style={inlineStyle || undefined}
+  style={[inlineStyle, videoSrc ? "position:relative;overflow:hidden" : ""].filter(Boolean).join(";") || undefined}
+  href={linkHref}
+  target={linkTarget}
+  rel={linkRel}
+  {...linkCustomAttrs}
 >
   {videoSrc && (
     <video
