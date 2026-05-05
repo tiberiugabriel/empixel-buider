@@ -28,7 +28,9 @@ import {
   findPath,
   insertAtPath,
   isDescendant,
+  deepCloneBlock,
 } from "./treeUtils.js";
+import { ContextMenu } from "./ContextMenu.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +69,9 @@ type Action =
   | { type: "ADD_TO_CONTAINER"; containerId: string; slotIndex?: number; block: SectionBlock }
   | { type: "MOVE_BLOCK"; sourceId: string; targetContainerId: string | null; targetSlotIndex: number | null; targetIndex: number }
   | { type: "REORDER_IN_CONTAINER"; containerId: string; slotIndex: number | null; newOrder: SectionBlock[] }
-  | { type: "INSERT_AFTER"; afterId: string; block: SectionBlock };
+  | { type: "INSERT_AFTER"; afterId: string; block: SectionBlock }
+  | { type: "DUPLICATE_BLOCK"; id: string }
+  | { type: "PASTE_SETTINGS"; id: string; config: Record<string, unknown> };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -133,6 +137,29 @@ function reducer(state: State, action: Action): State {
       }
       return { ...state, sections: next, selectedId: action.block.id, isDirty: true };
     }
+    case "DUPLICATE_BLOCK": {
+      const orig = findBlockById(action.id, state.sections);
+      if (!orig) return state;
+      const clone = deepCloneBlock(orig);
+      const path = findPath(action.id, state.sections);
+      let next: SectionBlock[];
+      if (!path) {
+        next = [...state.sections, clone];
+      } else if (path.level === "top") {
+        next = [...state.sections];
+        next.splice(path.index + 1, 0, clone);
+      } else {
+        next = insertAtPath(clone, {
+          level: "container",
+          containerId: path.containerId,
+          slotIndex: path.slotIndex,
+          index: path.index + 1,
+        }, state.sections);
+      }
+      return { ...state, sections: next, selectedId: clone.id, isDirty: true };
+    }
+    case "PASTE_SETTINGS":
+      return { ...state, sections: updateBlockInTree(action.id, action.config, state.sections), isDirty: true };
     default:
       return state;
   }
@@ -538,6 +565,11 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
   const [structureHeight, setStructureHeight] = useState(240);
   const [structureCollapsed, setStructureCollapsed] = useState(false);
 
+  // Context menu & clipboard
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; blockId: string } | null>(null);
+  const [clipboardBlock, setClipboardBlock] = useState<SectionBlock | null>(null);
+  const [clipboardSettings, setClipboardSettings] = useState<Record<string, unknown> | null>(null);
+
   // Breakpoints
   const [activeBreakpoint, setActiveBreakpoint_] = useState<BreakpointId>("desktop");
   const [liveCanvasWidth, setLiveCanvasWidth] = useState<number | null>(null);
@@ -871,6 +903,37 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
     dispatch({ type: "SELECT", id });
   }, []);
 
+  const duplicateBlock = useCallback((id: string) => {
+    dispatch({ type: "DUPLICATE_BLOCK", id });
+  }, []);
+
+  const copyBlock = useCallback((id: string) => {
+    const block = findBlockById(id, sectionsRef.current);
+    if (block) setClipboardBlock(deepCloneBlock(block));
+  }, []);
+
+  const copyBlockSettings = useCallback((id: string) => {
+    const block = findBlockById(id, sectionsRef.current);
+    if (block) setClipboardSettings({ ...block.config });
+  }, []);
+
+  const pasteBlock = useCallback((afterId: string) => {
+    if (!clipboardBlock) return;
+    const clone = deepCloneBlock(clipboardBlock);
+    dispatch({ type: "INSERT_AFTER", afterId, block: clone });
+  }, [clipboardBlock]);
+
+  const pasteBlockSettings = useCallback((id: string) => {
+    if (!clipboardSettings) return;
+    dispatch({ type: "PASTE_SETTINGS", id, config: clipboardSettings });
+  }, [clipboardSettings]);
+
+  const showContextMenu = useCallback((e: React.MouseEvent, blockId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, blockId });
+  }, []);
+
   const save = useCallback(async () => {
     dispatch({ type: "SAVE_START" });
     try {
@@ -1042,6 +1105,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
             previewWidth={previewWidth}
             resizeBounds={resizeBounds}
             onWidthChange={setLiveCanvasWidth}
+            onBlockContextMenu={showContextMenu}
           />
           <div
             className={`epx-resize-handle${rightCollapsed ? " is-collapsed" : ""}`}
@@ -1078,6 +1142,7 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
               isCollapsed={structureCollapsed}
               onToggleCollapse={() => setStructureCollapsed((c) => !c)}
               dropTarget={structureDropTarget}
+              onBlockContextMenu={showContextMenu}
               style={structureCollapsed
                 ? { flexShrink: 0, marginTop: "auto" }
                 : selectedBlock
@@ -1092,6 +1157,23 @@ function Builder({ pageId, pageTitle, collection, onBack }: { pageId: string; pa
       <DragOverlay dropAnimation={null} zIndex={99999}>
         <DragGhost sections={state.sections} />
       </DragOverlay>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          canPaste={clipboardBlock !== null}
+          canPasteSettings={clipboardSettings !== null}
+          onEdit={() => { selectBlock(contextMenu.blockId); setContextMenu(null); }}
+          onDuplicate={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}
+          onCopy={() => { copyBlock(contextMenu.blockId); setContextMenu(null); }}
+          onCopySettings={() => { copyBlockSettings(contextMenu.blockId); setContextMenu(null); }}
+          onPaste={() => { pasteBlock(contextMenu.blockId); setContextMenu(null); }}
+          onPasteSettings={() => { pasteBlockSettings(contextMenu.blockId); setContextMenu(null); }}
+          onDelete={() => { removeBlock(contextMenu.blockId); setContextMenu(null); }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
 
       {showBackWarning && (
         <div className="epx-modal-backdrop" onClick={() => setShowBackWarning(false)}>
@@ -1499,6 +1581,43 @@ function BuilderStyles() {
         gap: 10px;
       }
 
+      /* ── Context Menu ── */
+      .epx-context-menu {
+        position: fixed;
+        z-index: 99999;
+        background: var(--epx-surface);
+        border: 1px solid var(--epx-border);
+        border-radius: 7px;
+        box-shadow: 0 6px 20px rgba(0,0,0,.18);
+        min-width: 168px;
+        padding: 4px 0;
+        user-select: none;
+      }
+      .epx-context-menu__item {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 7px 14px;
+        font-size: 13px;
+        text-align: left;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--epx-text);
+        line-height: 1;
+        gap: 8px;
+        transition: background 0.1s;
+      }
+      .epx-context-menu__item:hover:not(:disabled) { background: var(--epx-hover-bg); }
+      .epx-context-menu__item:disabled { opacity: 0.4; cursor: not-allowed; }
+      .epx-context-menu__item--danger { color: var(--epx-red, #d94040); }
+      .epx-context-menu__item--danger:hover:not(:disabled) { background: color-mix(in srgb, var(--epx-red, #d94040) 10%, transparent); }
+      .epx-context-menu__separator {
+        margin: 4px 0;
+        border: none;
+        border-top: 1px solid var(--epx-border);
+      }
+
       .epx-left-panel {
         background: var(--epx-surface);
         overflow: hidden; display: flex; flex-direction: column;
@@ -1535,7 +1654,7 @@ function BuilderStyles() {
       .epx-canvas__empty-icon { font-size: 48px; margin-bottom: 12px; }
       .epx-canvas__empty-state h3 { margin: 0 0 6px; font-size: 16px; color: var(--epx-text-mid); }
       .epx-canvas__empty-state p { margin: 0; font-size: 13px; }
-      .epx-canvas__list { display: flex; flex-direction: column; gap: 6px; }
+      .epx-canvas__list { display: flex; flex-direction: column; }
 
       /* ── Block preview (leaf blocks) ── */
       .epx-block-preview {

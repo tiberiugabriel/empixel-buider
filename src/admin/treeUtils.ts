@@ -155,6 +155,17 @@ export function isDescendant(ancestorId: string, targetId: string, sections: Sec
   return !!findBlockById(targetId, [ancestor]);
 }
 
+// ─── deepCloneBlock ───────────────────────────────────────────────────────────
+
+export function deepCloneBlock(block: SectionBlock): SectionBlock {
+  return {
+    ...block,
+    id: crypto.randomUUID(),
+    children: block.children?.map(deepCloneBlock),
+    slots: block.slots?.map((slot) => slot.map(deepCloneBlock)),
+  };
+}
+
 // ─── addToContainer ──────────────────────────────────────────────────────────
 
 export function addToContainer(

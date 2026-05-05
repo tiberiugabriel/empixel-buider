@@ -18,6 +18,7 @@ interface StructurePanelProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   dropTarget: StructureDropTarget;
+  onBlockContextMenu?: (e: React.MouseEvent, id: string) => void;
   style?: React.CSSProperties;
 }
 
@@ -63,9 +64,10 @@ interface StructureRowProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   dropTarget: StructureDropTarget;
+  onBlockContextMenu?: (e: React.MouseEvent, id: string) => void;
 }
 
-function StructureRow({ block, depth, selectedId, onSelect, dropTarget }: StructureRowProps) {
+function StructureRow({ block, depth, selectedId, onSelect, dropTarget, onBlockContextMenu }: StructureRowProps) {
   const def = getBlockDef(block.type);
   const isContainer = isContainerType(block.type);
   const isSelected = block.id === selectedId;
@@ -111,6 +113,7 @@ function StructureRow({ block, depth, selectedId, onSelect, dropTarget }: Struct
         className={`epx-structure-row${isSelected ? " is-selected" : ""}${isDragging ? " is-dragging" : ""}${isDropInside ? " is-drop-inside" : ""}`}
         style={{ paddingLeft: zoneIndent }}
         onClick={() => onSelect(block.id)}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onBlockContextMenu?.(e, block.id); }}
       >
         {isContainer && (
           <button
@@ -136,6 +139,7 @@ function StructureRow({ block, depth, selectedId, onSelect, dropTarget }: Struct
           selectedId={selectedId}
           onSelect={onSelect}
           dropTarget={dropTarget}
+          onBlockContextMenu={onBlockContextMenu}
         />
       ))}
 
@@ -148,7 +152,7 @@ function StructureRow({ block, depth, selectedId, onSelect, dropTarget }: Struct
 
 // ─── StructurePanel ───────────────────────────────────────────────────────────
 
-export function StructurePanel({ sections, selectedId, onSelect, isCollapsed, onToggleCollapse, dropTarget, style }: StructurePanelProps) {
+export function StructurePanel({ sections, selectedId, onSelect, isCollapsed, onToggleCollapse, dropTarget, onBlockContextMenu, style }: StructurePanelProps) {
   return (
     <div className="epx-structure-panel" style={style}>
       <div className="epx-structure-panel__header">
@@ -177,6 +181,7 @@ export function StructurePanel({ sections, selectedId, onSelect, isCollapsed, on
                 selectedId={selectedId}
                 onSelect={onSelect}
                 dropTarget={dropTarget}
+                onBlockContextMenu={onBlockContextMenu}
               />
             ))
           )}

@@ -180,6 +180,7 @@ interface CanvasProps {
   previewWidth?: number | null;
   resizeBounds?: { min: number; max: number } | null;
   onWidthChange?: (w: number | null) => void;
+  onBlockContextMenu?: (e: React.MouseEvent, id: string) => void;
 }
 
 // ─── Hover CSS injection ──────────────────────────────────────────────────────
@@ -208,6 +209,7 @@ export function Canvas({
   previewWidth,
   resizeBounds,
   onWidthChange,
+  onBlockContextMenu,
 }: CanvasProps) {
   const { setNodeRef: setCanvasRef } = useDroppable({ id: CANVAS_DROP_ID });
 
@@ -295,6 +297,7 @@ export function Canvas({
                 dropIndicatorId={dropIndicatorId}
                 onAddAfter={onAddAfter}
                 containerId={null}
+                onBlockContextMenu={onBlockContextMenu}
               />
             );
           }
@@ -309,6 +312,7 @@ export function Canvas({
               onRemove={() => onRemove(section.id)}
               isDropTarget={section.id === dropIndicatorId}
               onAddAfter={(type) => onAddAfter(section.id, type)}
+              onBlockContextMenu={onBlockContextMenu}
             />
           );
         })}
@@ -346,6 +350,7 @@ interface SortableBlockProps {
   onRemove: () => void;
   isDropTarget: boolean;
   onAddAfter: (type: BlockType) => void;
+  onBlockContextMenu?: (e: React.MouseEvent, id: string) => void;
 }
 
 function SortableBlock({
@@ -357,6 +362,7 @@ function SortableBlock({
   onRemove,
   isDropTarget,
   onAddAfter,
+  onBlockContextMenu,
 }: SortableBlockProps) {
   const [hovered, setHovered] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -395,6 +401,7 @@ function SortableBlock({
       style={wrapperStyle}
       className={`epx-block-preview${isSelected ? " is-selected" : ""}`}
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
+      onContextMenu={(e) => onBlockContextMenu?.(e, section.id)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -474,6 +481,7 @@ interface ContainerBlockProps {
   dropIndicatorId: string | null;
   onAddAfter: (afterId: string, type: BlockType) => void;
   containerId: string | null;
+  onBlockContextMenu?: (e: React.MouseEvent, id: string) => void;
 }
 
 const ContainerBlock = memo(function ContainerBlock({
@@ -485,6 +493,7 @@ const ContainerBlock = memo(function ContainerBlock({
   dropIndicatorId,
   onAddAfter,
   containerId,
+  onBlockContextMenu,
 }: ContainerBlockProps) {
   const [hovered, setHovered] = useState(false);
   const isSelected = section.id === selectedId;
@@ -516,6 +525,7 @@ const ContainerBlock = memo(function ContainerBlock({
       style={style}
       className={`epx-container-block epx-theme--${(section.config.theme as string) || "light"}${isSelected ? " is-selected" : ""}`}
       onClick={(e) => { e.stopPropagation(); onSelect(section.id); }}
+      onContextMenu={(e) => onBlockContextMenu?.(e, section.id)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -578,6 +588,7 @@ const ContainerBlock = memo(function ContainerBlock({
                   dropIndicatorId={dropIndicatorId}
                   onAddAfter={onAddAfter}
                   containerId={section.id}
+                  onBlockContextMenu={onBlockContextMenu}
                 />
               ) : (
                 <SortableBlock
@@ -590,6 +601,7 @@ const ContainerBlock = memo(function ContainerBlock({
                   onRemove={() => onRemove(child.id)}
                   isDropTarget={child.id === dropIndicatorId}
                   onAddAfter={(type) => onAddAfter(child.id, type)}
+                  onBlockContextMenu={onBlockContextMenu}
                 />
               )
             )
