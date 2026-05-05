@@ -7,110 +7,104 @@ Server-rendered Astro components that render blocks to HTML. Zero client-side Ja
 
 ```
 src/components/
-├─ index.ts              # Exports all block components
-├─ BlockRenderer.astro   # Root layout renderer + style injection
-├─ styleUtils.ts         # CSS generation from config
-├─ db.ts                 # Database queries
-├─ [BlockName].astro     # Individual block components (13 total)
-└─ internal/
-   └─ [BlockName]UI.astro (optional internal components)
+├─ index.ts              # Exports: blockComponents map, getBuilderLayout, LayoutRenderer, BuilderWrapper
+├─ BlockRenderer.astro   # Root block dispatcher (renders one block by type)
+├─ LayoutRenderer.astro  # Iterates sections, calls BlockRenderer per block
+├─ BuilderWrapper.astro  # Wrapper for builder-enabled pages
+├─ styleUtils.ts         # CSS generation from block config
+├─ db.ts                 # getBuilderLayout() database query
+├─ Testimonials.astro    # testimonials block
+├─ FaqSection.astro      # faq block
+├─ PricingSection.astro  # pricing block
+├─ SpacerSection.astro   # spacer block
+└─ SectionContainer.astro # container block (renders children)
 ```
 
-## BlockRenderer (root)
+## blockComponents map (index.ts)
 
-Receives `PageLayout` and renders all sections:
+```ts
+export const blockComponents: Record<string, unknown> = {
+  testimonials: Testimonials,
+  faq: FaqSection,
+  pricing: PricingSection,
+  spacer: SpacerSection,
+};
+```
+
+Every `BlockType` must have an entry here.
+
+## LayoutRenderer (root)
+
+Iterates `layout.sections` and renders each block:
 
 ```astro
 ---
-import { PageLayout, SectionBlock } from "../types";
-import * as Blocks from "./index";
+import type { PageLayout } from "../types";
+import BlockRenderer from "./BlockRenderer.astro";
 
-export interface Props {
-  layout: PageLayout;
-}
-
+interface Props { layout: PageLayout; }
 const { layout } = Astro.props;
 ---
-
-<div class="epx-layout">
-  {layout.sections.map((section) => (
-    <Blocks[section.type] block={section} />
-  ))}
-</div>
-
-<style define:vars={generateCSSVars(layout)}>
-  /* Global CSS for layout + theme */
-</style>
+{layout.sections.map((section) => (
+  <BlockRenderer block={section} />
+))}
 ```
 
-## Block Components
+## BlockRenderer (dispatcher)
 
-Each block is an Astro component receiving a `SectionBlock`:
+Routes to the correct Astro component by `block.type`:
 
 ```astro
 ---
-import type { TestimonialsConfig, SectionBlock } from "../types";
+import type { SectionBlock } from "../types";
+import Testimonials from "./Testimonials.astro";
+import FaqSection from "./FaqSection.astro";
+// ... etc
 
-interface Props {
-  block: SectionBlock & { type: "testimonials" };
-}
+interface Props { block: SectionBlock; }
+const { block } = Astro.props;
+---
+{block.type === "testimonials" && <Testimonials block={block} />}
+{block.type === "faq" && <FaqSection block={block} />}
+...
+```
 
+## Block Component Pattern
+
+```astro
+---
+import type { SectionBlock, TestimonialsConfig } from "../types";
+import { generateBlockStyles } from "./styleUtils";
+
+interface Props { block: SectionBlock; }
 const { block } = Astro.props;
 const config = block.config as TestimonialsConfig;
 const styles = generateBlockStyles(block);
 ---
 
-<section [data-epx-block]={block.id} [style]={styles}>
-  {/* Render testimonials */}
+<section data-epx-block={block.id} style={styles}>
+  {/* Render using config values */}
 </section>
-
-<style define:vars={generateThemeVars(config.theme)}>
-  /* Component CSS */
-</style>
 ```
 
-### Props Pattern
+### Props Pattern Rules
 - Every block receives its full `SectionBlock`
-- Config is strongly typed (via `as ConfigType`)
-- Styles are injected via `define:vars`
-- Use `data-epx-block` attribute for CSS selectors
-
-## Current Components (13)
-
-1. **Testimonials.astro** — Quote carousel/grid
-2. **Faq.astro** — Accordion
-3. **Pricing.astro** — Pricing grid
-4. **Spacer.astro** — Vertical spacing
-5. **Container.astro** — Generic container (renders children)
-6. **Section.astro** — Section wrapper
-7. **Columns.astro** — Column grid (renders slots)
-8. **Hero.astro** — Hero section
-9. **Features.astro** — Feature cards
-10. **ImageText.astro** — Side-by-side
-11. **Cta.astro** — Call-to-action
-12. **Stats.astro** — Statistics grid
-13. **Gallery.astro** — Image gallery
-
-(Also: Video.astro)
+- Config is typed via `as ConfigType`
+- Inline styles from `generateBlockStyles(block)`
+- `data-epx-block` attribute for CSS selectors / custom CSS targeting
 
 ## Nested Rendering
 
 ### Container block
-Has `children: SectionBlock[]`. Render via:
 ```astro
-{block.children.map((child) => (
-  <Blocks[child.type] block={child} />
-))}
+{block.children?.map((child) => <BlockRenderer block={child} />)}
 ```
 
-### Columns block
-Has `slots: SectionBlock[][]`. Render via:
+### Columns block (future)
 ```astro
-{block.slots.map((col, i) => (
+{block.slots?.map((col) => (
   <div class="epx-column">
-    {col.map((child) => (
-      <Blocks[child.type] block={child} />
-    ))}
+    {col.map((child) => <BlockRenderer block={child} />)}
   </div>
 ))}
 ```
@@ -121,75 +115,89 @@ Has `slots: SectionBlock[][]`. Render via:
 Returns inline style string from `block.config.style` + `block.config.advanced`.
 
 Maps config keys to CSS:
-- `paddingTop` → `padding-top`
-- `marginBottom` → `margin-bottom`
-- `borderRadius` → `border-radius`
-- Custom CSS from `advanced.customCss` (scoped to block selector)
+- `paddingTop` → `padding-top: Xpx`
+- `marginBottom` → `margin-bottom: Xpx`
+- `borderTopLeftRadius` → `border-top-left-radius: Xpx`
+- `boxShadow` → `box-shadow: ...`
+- `backgroundColor` → `background-color: ...`
+- etc.
 
-### generateThemeVars(theme)
-CSS custom properties for theme colors (light/dark/accent).
+Position/offset from `advanced`: `position`, `top`, `right`, `bottom`, `left`, `zIndex`
+Dimensions from `style`: `width`, `height`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight`
 
-## Database Query (db.ts)
+Custom CSS from `advanced.customCss` is injected as scoped `<style>` block.
 
-### getBuilderLayout(pageId)
-Fetch layout for a page from `empixel_builder_layouts` table.
+### generateBreakpointStyles(block)
+Returns `<style>` block with media queries from `block.config.styleBreakpoints`:
 
-```ts
-import type { PageLayout } from "../types";
-
-export async function getBuilderLayout(pageId: string): Promise<PageLayout | null> {
-  // Query SQLite, deserialize layout JSON, return
+```css
+@media (max-width: 992px) {
+  [data-epx-block="<id>"] {
+    padding-top: 8px;
+    /* ... */
+  }
 }
 ```
 
-Called by pages that use builder-enabled content.
+Also handles hover breakpoints from `block.config.styleHoverBreakpoints`.
+
+## Database Query (db.ts)
+
+### getBuilderLayout(pageId, collection)
+```ts
+export async function getBuilderLayout(pageId: string, collection: string): Promise<PageLayout | null>
+```
+- Queries `empixel_builder_layouts` WHERE `collection = ? AND entry_id = ?`
+- Resolves slug ↔ ULID same as backend API
+- Deserializes `sections` JSON string → `SectionBlock[]`
+- Returns `{ sections, updatedAt }` or `null`
 
 ## Image Fields
 
 Image fields are objects: `{ src, alt }`.
 
 Use EmDash `<Image>` component:
-
 ```astro
 import { Image } from "emdash/ui";
-
 <Image image={config.backgroundImage} />
 ```
 
-Never use raw `<img>` tag.
+Never use raw `<img>`. Never assume image is a string.
 
-## Props Flow
+## Props Flow (Page → Blocks)
 
-1. Page queries content entry
-2. Entry has `layout: PageLayout` field (stored as JSON)
-3. Page renders `<BlockRenderer layout={layout} />`
-4. BlockRenderer recursively renders all blocks
-5. Block components read `block.config`, type as ConfigType, render
-
-Example:
 ```astro
 ---
-const entry = await getEntry(collection, slug);
+// In an Astro page:
+import { getBuilderLayout, LayoutRenderer } from "empixel-builder/components";
+
+const layout = await getBuilderLayout(entry.id, collection);
+Astro.cache.set(cacheHint);
 ---
 
-<BlockRenderer layout={entry.data.layout} />
+{layout && <LayoutRenderer layout={layout} />}
 ```
+
+## BuilderWrapper
+
+Wraps pages with builder-related metadata/attributes. Usage TBD.
 
 ## Rules
 
-- All components are **server-rendered** (no client JS)
+- All components are **server-rendered** (no client JS, no `client:*` directives)
 - **Image fields** are objects `{ src, alt }`, not strings
-- **Props come directly from block.config** — no prop mapping logic
-- **Use define:vars for theming** (CSS custom properties injected into `<style>`)
+- **Use `generateBlockStyles(block)`** for inline styles
+- **Use `data-epx-block` attribute** on root element of each block
 - **No duplicate logic** between admin previews and frontend components
-- **Use data-epx-block attribute** for styling/identification
-- **Cache pages** that query layouts (call `Astro.cache.set()`)
+- **Cache pages** that query layouts (`Astro.cache.set(cacheHint)`)
 
 ## TODO
 
-- [ ] Audit all components — verify all type fields are wired
+- [ ] Add Astro components for all remaining block types (hero, features-grid, etc.)
+- [ ] Register new components in `blockComponents` and `BlockRenderer.astro`
+- [ ] Implement `generateBreakpointStyles()` for responsive rendering
+- [ ] Apply hover CSS via `:hover` pseudo-selector from `styleHover`
+- [ ] Apply theme CSS from `styleDark` / `styleAccent` (scoped via `data-theme` attribute)
 - [ ] Add responsive image optimization
-- [ ] Add lazy loading for off-screen blocks
-- [ ] Add SEO metadata (og:image, schema.org markup)
-- [ ] Add analytics tracking hooks
+- [ ] Add SEO metadata (og:image, schema.org)
 - [ ] Test nested containers (3+ levels deep)

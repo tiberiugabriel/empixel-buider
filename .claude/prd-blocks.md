@@ -4,112 +4,170 @@
 Define all block types, their configuration schemas, and metadata. Single source of truth for editor UI and frontend rendering.
 
 ## Files
-- `src/types.ts` — TypeScript interfaces for block configs
-- `src/admin/blockDefinitions.ts` — BlockDef[] array with field schemas and defaults
+- `src/types.ts` — TypeScript `BlockType` union + all config interfaces
+- `src/admin/blockDefinitions.ts` — `BLOCK_DEFINITIONS: BlockDef[]` array
 
 ## Block Definition Schema
 
 ### BlockDef interface
 ```ts
-{
-  type: BlockType;                          // "testimonials", "faq", etc.
-  label: string;                            // "Testimonials"
-  icon: string;                             // "💬"
-  description: string;                      // User-facing description
-  category: "core" | "general";             // Palette grouping
-  defaultConfig: Record<string, any>;       // Initial config values
-  fields: FieldDef[];                       // Content field schema
-  styleFields?: FieldDef[];                 // Style-tab fields (optional)
+interface BlockDef {
+  type: BlockType;
+  label: string;
+  icon: string;
+  description: string;
+  category: "core" | "general";
+  defaultConfig: Record<string, any>;
+  fields: FieldDef[];
+  styleFields?: FieldDef[];   // Shown at top of Style tab
 }
 ```
 
 ### FieldDef interface
 ```ts
-{
-  key: string;                              // Block config key
-  label: string;                            // UI label
-  type: FieldType;                          // "text", "select", "json-array", etc.
-  options?: Array<{value, label}>;          // For select only
-  placeholder?: string;                     // Input hint
+interface FieldDef {
+  key: string;
+  label: string;
+  type: "text" | "url" | "textarea" | "number" | "select" | "toggle" | "json-array";
+  options?: Array<{ value: string; label: string }>;
+  placeholder?: string;
   required?: boolean;
-  itemFields?: FieldDef[];                  // For json-array: item schema
+  itemFields?: FieldDef[];   // For json-array: sub-field schema
 }
 ```
 
 ### FieldType values
-| Type | Rendered as | Stored in |
-|------|-------------|-----------|
-| `text` | `<input type="text">` | block.config[key] |
-| `url` | `<input type="url">` | block.config[key] |
-| `textarea` | `<textarea rows=3>` | block.config[key] |
-| `number` | `<input type="number">` | block.config[key] |
-| `select` | `<select>` with options | block.config[key] |
-| `toggle` | Checkbox + inline label | block.config[key] (boolean) |
-| `json-array` | Expandable item list | block.config[key] (array) |
+| Type | Rendered as | Value stored |
+|------|-------------|--------------|
+| `text` | `<input type="text">` | string |
+| `url` | `<input type="url">` | string |
+| `textarea` | `<textarea rows=3>` | string |
+| `number` | `<input type="number">` | number |
+| `select` | `<select>` | string |
+| `toggle` | checkbox + inline label | boolean |
+| `json-array` | JsonArrayField | array |
 
 ## Current Blocks (v0.5.0)
 
-### Defined
-1. **testimonials** — Quote carousel/grid
-   - Fields: headline, layout, theme, items (json-array)
-   - Items: quote, author, role, company, avatarUrl
+### BlockType union (src/types.ts)
+```ts
+export type BlockType = "testimonials" | "faq" | "pricing" | "spacer" | "container";
+```
 
-2. **faq** — Accordion
-   - Fields: headline, subheadline, theme, items (json-array)
-   - Items: question, answer
+### 1. testimonials
+- Category: general
+- Fields: headline, layout (grid/carousel), items (json-array)
+- Item fields: quote, author, role, company, avatarUrl
+- Default: `{ layout: "grid", theme: "light", items: [] }`
 
-3. **pricing** — Pricing grid
-   - Fields: headline, subheadline, theme, tiers (json-array)
-   - Tiers: name, price, period, description, features, ctaLabel, ctaUrl, highlighted
+### 2. faq
+- Category: general
+- Fields: headline, subheadline, items (json-array)
+- Item fields: question, answer
+- Default: `{ theme: "light", items: [] }`
 
-4. **spacer** — Vertical spacing
-   - Fields: height (sm/md/lg/xl), showDivider
+### 3. pricing
+- Category: general
+- Fields: headline, subheadline, tiers (json-array)
+- Tier fields: name, price, period, description, features, ctaLabel, ctaUrl, highlighted
+- Default: `{ theme: "light", tiers: [] }`
 
-5. **container** — Generic container
-   - Fields: none (layout-only)
-   - Contains: nested children blocks
+### 4. container
+- Category: core
+- Fields: none (layout-only block)
+- Default: `{ theme: "light", layout: "flex", style: { paddingTop/Right/Bottom/Left: "12px", columnGap/rowGap: "6px" } }`
+- Holds: `children: SectionBlock[]`
+- Extra fields tab controls: LayoutControl, GapControl, OverflowControl, HTML Tag, LinkControl (if tag = "a")
 
-### Planned (add definitions)
-- **hero** — Hero section (headline, subheadline, cta button, background image)
-- **features-grid** — Feature cards
-- **image-text** — Side-by-side image + text
-- **cta** — Call-to-action section
-- **stats** — Statistics/metrics grid
-- **gallery** — Image gallery
-- **video** — Embedded video
-- **columns** — Column grid (flex layout)
-- **heading** — Semantic heading (h1-h6)
-- **paragraph** — Rich paragraph text
-- **rich-text** — Full Portable Text editor
-- **html** — Raw HTML block
-- **image** — Single image with captions
+### 5. spacer
+- Category: core
+- Fields: height (sm/md/lg/xl), showDivider
+- Default: `{ height: "md", showDivider: false }`
 
-## Rules
-
-- **Every block type in types.ts must have a matching BlockDef**
-- **defaults must match type interface exactly** (no mismatches between field schema and config interface)
-- **Shared fields** (like `THEME_FIELD`) should be reused, not duplicated
-- **Preview components** must exist for every block (in `src/admin/previews/`)
-- **Astro components** must exist for every block (in `src/components/`)
-
-## Tree Structure
-
-Blocks form a tree: `sections: SectionBlock[]` at root, containers hold `children`.
+## SectionBlock (Tree Node)
 
 ```ts
 interface SectionBlock {
-  id: string;                    // Unique per layout
+  id: string;                    // UUID
   type: BlockType;
   config: Record<string, any>;   // Flat config object
-  children?: SectionBlock[];     // For containers
-  slots?: SectionBlock[][];      // For columns (col1, col2, ...)
+  children?: SectionBlock[];     // Container: child blocks
+  slots?: SectionBlock[][];      // Columns: col arrays
 }
 ```
 
+### Container types
+```ts
+export const CONTAINER_TYPES: BlockType[] = ["container"];
+export function isContainerType(type: BlockType): boolean;
+```
+
+Only container types can be placed at the top level of the canvas.
+Leaf blocks must be dropped inside a container.
+
+## Config Structure Conventions
+
+Each block's config may contain any combination of:
+- Block-specific keys (e.g. `items`, `tiers`, `layout`)
+- `theme` — "light" | "dark" | "accent"
+- `style` — CSS properties for normal/light state
+- `styleDark` — CSS properties for dark theme
+- `styleAccent` — CSS properties for accent theme
+- `styleHover` — CSS properties for hover state
+- `styleBreakpoints` — `{ [bpId]: { _px, ...cssProps } }` breakpoint overrides
+- `styleHoverBreakpoints` — `{ [bpId]: { _px, ...cssProps } }` hover breakpoint overrides
+- `advanced` — `{ position, top, right, bottom, left, zIndex, cssId, cssClasses, customCss }`
+- `htmlTag` — semantic HTML element for container
+- `linkHref`, `linkTarget` — for `<a>` containers
+
+## Helpers
+
+```ts
+export function parseItems<T>(json: unknown, fallback: T[] = []): T[]
+```
+Safely parses JSON array from DB (may be string or already array).
+
+## Rules
+
+- **Every `BlockType` in `types.ts` must have a matching `BlockDef` in `blockDefinitions.ts`**
+- **defaults must match type interface exactly**
+- **Shared field objects** (like a THEME_FIELD) should be factored out, not duplicated
+- **Preview component** must exist for every block
+- **Astro frontend component** must exist for every block
+
+## Adding a New Block
+
+1. Add `BlockType` to union in `src/types.ts`
+2. Add config interface to `src/types.ts`
+3. Add `BlockDef` entry to `BLOCK_DEFINITIONS` in `blockDefinitions.ts`
+4. Add preview component in `src/admin/previews/`
+5. Register in `src/admin/previews/index.ts` (`PREVIEW_COMPONENTS` map)
+6. Add Astro component in `src/components/`
+7. Register in `src/components/index.ts` (`blockComponents` map)
+8. Register in `src/components/BlockRenderer.astro`
+
+## Blocks To Add
+
+| Block | Category | Key fields |
+|-------|----------|------------|
+| `hero` | general | headline, subheadline, ctaLabel, ctaUrl, backgroundImage |
+| `features-grid` | general | headline, items (icon, title, description) |
+| `image-text` | general | headline, body, image, imagePosition |
+| `cta` | general | headline, subheadline, ctaLabel, ctaUrl |
+| `stats` | general | headline, items (label, value) |
+| `gallery` | general | images (src, alt, caption) |
+| `video` | general | videoUrl, posterUrl, autoplay |
+| `columns` | core | columnCount, slots |
+| `heading` | core | text, level (h1-h6), align |
+| `paragraph` | core | text, align |
+| `rich-text` | core | content (Portable Text) |
+| `html` | core | content (raw HTML) |
+| `image` | core | image (src, alt), caption, link |
+
 ## TODO
 
-- [ ] Write remaining 9 BlockDef entries
-- [ ] Add image field type + MediaPicker control
-- [ ] Add rich-text field type
-- [ ] Document block naming conventions
-- [ ] Add block categories (core vs general vs experimental)
+- [ ] Expand `BlockType` union with remaining block types
+- [ ] Write `BlockDef` for each new block
+- [ ] Add `image` field type to FieldDef (wires MediaPicker)
+- [ ] Add `rich-text` field type (Portable Text editor)
+- [ ] Consider block categories: core / general / experimental

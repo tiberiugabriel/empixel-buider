@@ -6,204 +6,235 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 
 | Module | File | Purpose |
 |--------|------|---------|
-| **Backend/API** | [prd-backend.md](prd-backend.md) | REST routes, hooks, database schema |
-| **Block System** | [prd-blocks.md](prd-blocks.md) | Block types, definitions, type interfaces |
-| **Admin Builder UI** | [prd-builder-ui.md](prd-builder-ui.md) | State management, Canvas, panels, tree ops |
-| **RightPanel Controls** | [prd-rightpanel.md](prd-rightpanel.md) | Field renderers, styling controls, CodeEditor |
+| **Backend/API** | [prd-backend.md](prd-backend.md) | REST routes, database schema, KV storage |
+| **Block System** | [prd-blocks.md](prd-blocks.md) | Block types, BlockDef schema, config interfaces |
+| **Admin Builder UI** | [prd-builder-ui.md](prd-builder-ui.md) | Builder, Canvas, state reducer, panels, tree ops |
+| **RightPanel Controls** | [prd-rightpanel.md](prd-rightpanel.md) | Field renderers, styling controls, hover states |
 | **Frontend Components** | [prd-frontend.md](prd-frontend.md) | Astro components, rendering, DB queries |
-| **Block Previews** | [prd-previews.md](prd-previews.md) | Live preview system, React components |
+| **Block Previews** | [prd-previews.md](prd-previews.md) | Live preview system, PREVIEW_COMPONENTS map |
+| **Breakpoints** | [prd-breakpoints.md](prd-breakpoints.md) | Breakpoint system, canvas resize, per-bp styles |
 
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Admin UI (BuilderPage)                     │
-├──────────────┬────────────────────────┬──────────────────────────┤
-│  LeftPanel   │     Canvas (dnd-kit)   │     RightPanel           │
-│ (Palette)    │  (Tree Rendering)      │  (Fields/Style/Advanced) │
-└──────────────┼────────────────────────┼──────────────────────────┘
-                       ↓
-        ┌─────────────────────────────┐
-        │   State (sections tree)     │
-        │   Reducer (actions)         │
-        └──────────┬──────────────────┘
-                   ↓
-        ┌─────────────────────────────┐
-        │   Backend API (/layout)     │
-        │   Routes (GET/POST/DELETE)  │
-        └──────────┬──────────────────┘
-                   ↓
-        ┌─────────────────────────────┐
-        │   Database (SQLite)         │
-        │   empixel_builder_layouts   │
-        └─────────────────────────────┘
-                   ↑
-        ┌─────────────────────────────┐
-        │  Frontend (Astro Pages)     │
-        │  BlockRenderer + Components │
-        └─────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                       Admin UI (Builder.tsx)                       │
+├──────────────┬─────────────────────────┬───────────────────────────┤
+│  LeftPanel   │  Canvas (@dnd-kit)      │  RightPanel + Structure   │
+│ (Palette +   │  (Tree Rendering +      │  (Fields / Style /        │
+│  Breakpoints)│   BlockOverlay)         │   Advanced + LayerTree)   │
+└──────────────┼─────────────────────────┼───────────────────────────┘
+                         ↓
+       ┌──────────────────────────────────┐
+       │   State (builderReducer.ts)      │
+       │   sections tree + dirty flags    │
+       └────────────┬─────────────────────┘
+                    ↓
+       ┌──────────────────────────────────┐
+       │   Backend API (plugin.ts)        │
+       │   /layout /breakpoints /entries  │
+       │   /collections /settings /toggle │
+       └────────────┬─────────────────────┘
+                    ↓
+       ┌──────────────────────────────────┐
+       │   Database (SQLite)              │
+       │   empixel_builder_layouts        │
+       │   (collection + entry_id PK)     │
+       └─────────────────────────────────┘
+                    ↑
+       ┌──────────────────────────────────┐
+       │  Frontend (Astro Pages)          │
+       │  LayoutRenderer → BlockRenderer  │
+       │  → Individual block components   │
+       └──────────────────────────────────┘
 ```
 
 ## Data Flow
 
 ### Editing
-1. User drags block from LeftPanel → Canvas
-2. Canvas dispatches `ADD_BLOCK` action
-3. Reducer updates state.sections
-4. Canvas re-renders tree with new block
-5. RightPanel shows properties for selected block
-6. User edits config → `UPDATE_BLOCK` action
-7. RightPanel previews update in real time
-8. User clicks Save → `SAVE_LAYOUT` action
-9. Backend POST /layout → SQLite updated
+1. Builder mounts → `GET /layout?pageId=&collection=` + `GET /breakpoints`
+2. User drags block from LeftPanel → Canvas dispatches `ADD_TO_CONTAINER` or `INSERT_AFTER`
+3. User selects block → `SELECT` action → RightPanel shows block properties
+4. User edits config → `UPDATE_BLOCK` action
+5. Style/hover/breakpoint changes → `UPDATE_BLOCK` with nested config patch
+6. User saves → `POST /layout` + (if dirty) `POST /breakpoints`
 
 ### Rendering
-1. Frontend page queries builder layout via `getBuilderLayout(pageId)`
-2. Layout loaded from SQLite
-3. Page renders `<BlockRenderer layout={layout} />`
-4. BlockRenderer recursively renders sections
-5. Each block renders via its Astro component
-6. Styles injected from block.config (colors, spacing, etc.)
+1. Astro page calls `getBuilderLayout(entryId, collection)` → queries SQLite
+2. Page renders `<LayoutRenderer layout={layout} />`
+3. LayoutRenderer iterates sections → `<BlockRenderer block={section} />`
+4. BlockRenderer dispatches to correct Astro component by `block.type`
+5. Block component reads `block.config`, applies `generateBlockStyles(block)`, renders HTML
 
 ## Key Concepts
 
 ### SectionBlock (Tree Node)
 ```ts
 {
-  id: string;                    // Unique per layout
-  type: BlockType;               // "testimonials", "container", etc.
-  config: Record<string, any>;   // Configuration object
-  children?: SectionBlock[];     // For nested blocks
-  slots?: SectionBlock[][];      // For columns
+  id: string;                            // UUID
+  type: BlockType;                       // "container", "testimonials", etc.
+  config: Record<string, any>;           // All block settings
+  children?: SectionBlock[];             // Container: nested blocks
+  slots?: SectionBlock[][];             // Columns: slot arrays
 }
 ```
 
-### BlockDef (Schema Definition)
+### BlockDef (Schema)
 ```ts
 {
   type: BlockType;
   label: string;
   icon: string;
+  description: string;
   category: "core" | "general";
-  defaultConfig: {};             // Default values
-  fields: FieldDef[];            // Content field schema
-  styleFields?: FieldDef[];      // Style field schema
+  defaultConfig: {};
+  fields: FieldDef[];
+  styleFields?: FieldDef[];
 }
 ```
 
-### State Reducer
-Actions: SELECT_BLOCK, ADD_BLOCK, REMOVE_BLOCK, UPDATE_BLOCK, MOVE_BLOCK, LOAD_LAYOUT, SAVE_LAYOUT, UNDO
+### Config Key Conventions
+| Key | Type | Purpose |
+|-----|------|---------|
+| `theme` | "light"\|"dark"\|"accent" | Active theme |
+| `style` | CSSProps | Desktop + light-theme styles |
+| `styleDark` | CSSProps | Dark-theme overrides |
+| `styleAccent` | CSSProps | Accent-theme overrides |
+| `styleHover` | CSSProps | Hover state styles |
+| `styleBreakpoints` | `{ [bpId]: {_px, ...CSSProps} }` | Per-breakpoint overrides |
+| `styleHoverBreakpoints` | `{ [bpId]: {_px, ...CSSProps} }` | Hover per-breakpoint |
+| `advanced` | AdvancedConfig | Position, z-index, CSS ID/class, custom CSS |
+| `htmlTag` | string | Semantic HTML element (container only) |
+
+### State (builderReducer.ts)
+```ts
+type State = {
+  sections: SectionBlock[];
+  selectedId: string | null;
+  isDirty: boolean;
+  isSaving: boolean;
+  isLoading: boolean;
+  error: string | null;
+  saveError: string | null;
+};
+```
+
+### Reducer Actions
+ADD_BLOCK, UPDATE_BLOCK, REMOVE_BLOCK, REORDER, SELECT,
+SAVE_START/SUCCESS/ERROR, LOAD_START/SUCCESS/ERROR,
+ADD_TO_CONTAINER, MOVE_BLOCK, REORDER_IN_CONTAINER,
+INSERT_AFTER, DUPLICATE_BLOCK, PASTE_SETTINGS
 
 ## File Organization
 
 ```
 src/
-├─ index.ts                         # Plugin descriptor (emdash integration)
-├─ plugin.ts                        # Routes + hooks
-├─ types.ts                         # All TypeScript interfaces
-├─ add.js                           # CLI install script
+├─ index.ts                              # Plugin descriptor
+├─ plugin.ts                             # Routes + hooks (6 routes)
+├─ types.ts                              # TypeScript interfaces + BreakpointDefs
+├─ add.js                                # CLI install script
 │
-├─ admin/                           # Builder UI (React)
-│  ├─ index.tsx                     # Plugin page entry
-│  ├─ BuilderPage.tsx               # Orchestrator + reducer
-│  ├─ Canvas.tsx                    # @dnd-kit canvas
-│  ├─ LeftPanel.tsx                 # Block palette
-│  ├─ RightPanel.tsx                # Properties editor
-│  ├─ BlockOverlay.tsx              # Hover/selection feedback
-│  ├─ SettingsPage.tsx              # Enable/disable per collection
-│  ├─ blockDefinitions.ts           # Block schemas (source of truth)
-│  ├─ treeUtils.ts                  # Tree operations
-│  ├─ epxVars.ts                    # CSS custom properties
+├─ admin/                                # Builder UI (React)
+│  ├─ index.tsx                          # Plugin page entry
+│  ├─ BuilderPage.tsx                    # Loader → Builder or SettingsPage
+│  ├─ Canvas.tsx                         # @dnd-kit canvas
+│  ├─ LeftPanel.tsx                      # Block palette + breakpoints config
+│  ├─ RightPanel.tsx                     # Properties editor (3 tabs)
+│  ├─ StructurePanel.tsx                 # Layer tree (collapsible)
+│  ├─ BlockOverlay.tsx                   # Hover/selection feedback
+│  ├─ ContextMenu.tsx                    # Right-click menu
+│  ├─ SettingsPage.tsx                   # Per-entry enable/disable
+│  ├─ blockDefinitions.ts                # Block schemas (source of truth)
+│  ├─ treeUtils.ts                       # Tree operations (immutable)
+│  ├─ epxVars.ts                         # CSS custom properties map
 │  │
-│  ├─ controls/                     # Styling/property controls
+│  ├─ builder/                           # Builder core (extracted from BuilderPage)
+│  │  ├─ Builder.tsx                     # Main orchestrator
+│  │  ├─ builderReducer.ts              # Pure reducer + State/Action types
+│  │  └─ BuilderStyles.tsx              # CSS injection
+│  │
+│  ├─ components/                        # Shared UI components
+│  │  ├─ ThemeToggle.tsx
+│  │  ├─ BreakpointSwitcher.tsx
+│  │  ├─ BreakpointIcons.tsx
+│  │  ├─ DragGhost.tsx
+│  │  └─ ToastContainer.tsx
+│  │
+│  ├─ controls/                          # Styling/property controls
 │  │  ├─ ColorPicker.tsx
 │  │  ├─ SpacingControl.tsx
 │  │  ├─ BorderRadiusControl.tsx
 │  │  ├─ BorderControl.tsx
+│  │  ├─ BoxShadowControl.tsx
 │  │  ├─ BackgroundControl.tsx
+│  │  ├─ GapControl.tsx
+│  │  ├─ LayoutControl.tsx
+│  │  ├─ OverflowControl.tsx
+│  │  ├─ LinkControl.tsx
 │  │  ├─ MediaPicker.tsx
+│  │  ├─ ThemeStyleToggle.tsx
 │  │  └─ FieldRow.tsx
 │  │
-│  ├─ fields/                       # Field renderers
-│  │  ├─ FieldRenderer.tsx          # Dispatcher
+│  ├─ fields/                            # Field renderers
+│  │  ├─ FieldRenderer.tsx
 │  │  ├─ JsonArrayField.tsx
 │  │  └─ PageBuilderField.tsx
 │  │
-│  └─ previews/                     # Live preview components
-│     ├─ index.ts                   # PREVIEW_MAP export
+│  └─ previews/                          # Live preview components
+│     ├─ index.ts                        # PREVIEW_COMPONENTS export
 │     ├─ TestimonialsPreview.tsx
 │     ├─ FaqPreview.tsx
 │     ├─ PricingPreview.tsx
 │     ├─ ContainerPreview.tsx
 │     └─ SpacerPreview.tsx
 │
-└─ components/                      # Frontend (Astro)
-   ├─ index.ts                      # Export all components
-   ├─ BlockRenderer.astro           # Root layout renderer
-   ├─ styleUtils.ts                 # CSS generation
-   ├─ db.ts                         # Database queries
+└─ components/                           # Frontend (Astro)
+   ├─ index.ts                           # Exports + blockComponents map
+   ├─ BlockRenderer.astro                # Block dispatcher
+   ├─ LayoutRenderer.astro               # Root layout renderer
+   ├─ BuilderWrapper.astro               # Builder-page wrapper
+   ├─ styleUtils.ts                      # CSS generation
+   ├─ db.ts                              # getBuilderLayout()
    ├─ Testimonials.astro
-   ├─ Faq.astro
-   ├─ Pricing.astro
-   ├─ Spacer.astro
-   ├─ Container.astro
-   └─ [13 total block components]
+   ├─ FaqSection.astro
+   ├─ PricingSection.astro
+   ├─ SpacerSection.astro
+   └─ SectionContainer.astro
 ```
 
 ## Roadmap
 
-### Immediate (v0.2.x)
-1. **Complete blockDefinitions.ts** — Add schemas for remaining 8 blocks
-2. **Create missing previews** — 8 preview components
-3. **Live preview wiring** — Preview components reflect real-time config changes
-4. **Canvas UI polish** — Overlay interactions, "add column" button, visual feedback
-5. **Undo/Redo** — History stack in reducer + UI buttons
+### Immediate (complete block coverage)
+1. Add BlockDef + type interface for: hero, features-grid, image-text, cta, stats, gallery, video, columns
+2. Create preview component per new block
+3. Create Astro component per new block
+4. Add `image` field type (wire MediaPicker into FieldRenderer)
 
-### Short-term (v0.3.x)
-- Responsive breakpoints (mobile/tablet/desktop overrides)
-- Rich-text field type (Portable Text editor)
-- Image field type + MediaPicker
+### Short-term
+- Undo/Redo (UNDO action + history stack + topbar buttons)
+- Rich-text field type (Portable Text)
+- Breakpoint style rendering on frontend (generateBreakpointStyles → media queries)
+- Hover CSS rendering (`:hover` from styleHover)
+- Theme CSS rendering (`styleDark` / `styleAccent` via data-theme)
 - Block search/filter in LeftPanel
-- Keyboard shortcuts (delete, duplicate, undo/redo)
 
-### Later (v0.4+)
+### Later
 - Layout templates/presets
-- Responsive visual editor
 - Export/import layouts
 - Version history / audit trail
 - Collaborative editing
-- Role-based access control
-
-## Rules (from rules.md)
-
-- **Output**: Short, no filler. Run tools first, show result, stop.
-- **Never rewrite files** — Edit specific lines only.
-- **No summaries** after changes.
-- **blockDefinitions.ts is source of truth** for editor
-- **Previews must be live** — Reflect config changes in real time
-- **No hardcoded values** in previews
-- **No duplicate logic** between admin and frontend
-- **Read file before editing**
-- **Never hallucinate emdash API** — Check plugin.ts first
-
-## Quick Start
-
-1. Understand block types → [prd-blocks.md](prd-blocks.md)
-2. Understand builder UI → [prd-builder-ui.md](prd-builder-ui.md)
-3. Understand controls → [prd-rightpanel.md](prd-rightpanel.md)
-4. Understand frontend → [prd-frontend.md](prd-frontend.md)
-5. Understand previews → [prd-previews.md](prd-previews.md)
-6. Understand backend → [prd-backend.md](prd-backend.md)
 
 ## Terms
 
-- **Block** — A page element (testimonials, faq, cta, etc.)
-- **Layout** — Tree of blocks for a page
-- **SectionBlock** — In-memory block representation (id, type, config, children)
-- **BlockDef** — Schema definition (fields, defaults, label)
-- **Canvas** — The drag-drop editor area
-- **Preview** — Live React component showing block in admin UI
-- **Component** — Astro server-rendered component for frontend
-- **Config** — Block-specific settings (colors, text, layout options)
-- **Style** — CSS properties (padding, margin, colors, etc.)
-- **Advanced** — Positioning, z-index, CSS classes, custom CSS
+| Term | Definition |
+|------|-----------|
+| Block | A page element (container, testimonials, etc.) |
+| Layout | Serialized tree of SectionBlocks for one page |
+| SectionBlock | In-memory block (id, type, config, children, slots) |
+| BlockDef | Schema definition (fields, defaults, label, icon) |
+| Canvas | The drag-drop editor area |
+| Preview | Live React component showing block in admin UI |
+| Component | Astro server-rendered component for frontend |
+| Config | Block-specific settings + style + advanced |
+| Breakpoint | Responsive viewport width preset |
+| StructurePanel | Layer tree showing block hierarchy |

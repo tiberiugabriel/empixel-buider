@@ -7,203 +7,239 @@ Reusable UI components for editing block properties: fields, controls, and styli
 
 ```
 RightPanel.tsx (3 tabs: Fields, Style, Advanced)
-├─ FieldRenderer.tsx (generic field UI)
-├─ JsonArrayField.tsx (expandable item list)
-├─ controls/ (specialized editors)
-│  ├─ ColorPicker.tsx
-│  ├─ SpacingControl.tsx (padding/margin/offset)
-│  ├─ BorderRadiusControl.tsx
-│  ├─ BorderControl.tsx
-│  ├─ BackgroundControl.tsx
-│  ├─ MediaPicker.tsx
-│  └─ FieldRow.tsx (NumberRow, TextRow, SelectRow)
-└─ fields/ (field types)
-   ├─ FieldRenderer.tsx (dispatcher for all types)
-   └─ PageBuilderField.tsx (drag-drop layout field)
+├─ fields/
+│  ├─ FieldRenderer.tsx         # Generic field dispatcher
+│  ├─ JsonArrayField.tsx        # Expandable item list
+│  └─ PageBuilderField.tsx      # Drag-drop layout field
+└─ controls/
+   ├─ ColorPicker.tsx
+   ├─ SpacingControl.tsx        # Padding / Margin / Offset
+   ├─ BorderRadiusControl.tsx
+   ├─ BorderControl.tsx
+   ├─ BoxShadowControl.tsx      # Box shadow (x, y, blur, spread, color, inset)
+   ├─ BackgroundControl.tsx     # Color / gradient / image
+   ├─ GapControl.tsx            # Column + row gap
+   ├─ LayoutControl.tsx         # Flex direction + wrap + align + justify
+   ├─ OverflowControl.tsx       # Overflow x/y
+   ├─ LinkControl.tsx           # href + target for <a> containers
+   ├─ MediaPicker.tsx           # Image/media selector (UI exists, not wired to FieldRenderer)
+   ├─ ThemeStyleToggle.tsx      # Light / Dark / Accent theme selector
+   └─ FieldRow.tsx              # NumberRow, TextRow, SelectRow, DimensionControl, FieldGroup
 ```
+
+## Tabs
+
+### Tab 1: Fields
+Block-specific content from `def.fields[]`.
+- Uses `FieldRenderer` to dispatch each field type
+- Container block adds: LayoutControl, GapControl, OverflowControl, HTML Tag selector, LinkControl
+
+### Tab 2: Style
+Visual styling. Each section has a **Normal / Hover state toggle** (IconStateNormal / IconStateHover).
+
+| Section | Controls | State toggle |
+|---------|----------|--------------|
+| Background | BackgroundControl + ThemeStyleToggle | ✅ Normal/Hover |
+| Border Radius | BorderRadiusControl | ✅ Normal/Hover |
+| Border | BorderControl | ✅ Normal/Hover |
+| Box Shadow | BoxShadowControl | ✅ Normal/Hover |
+
+Hover styles are written to `block.config.styleHover`.
+Theme styles are written to `block.config.style` / `block.config.styleDark` / `block.config.styleAccent` via `getThemeStyleKey(theme)`.
+Breakpoint styles are written to `block.config.styleBreakpoints[bpId]` / `block.config.styleHoverBreakpoints[bpId]`.
+
+### Tab 3: Advanced
+Layout & positioning. **No** Normal/Hover toggle here.
+
+| Control | Stored in |
+|---------|-----------|
+| DimensionControl (Width) | `block.config.style.width/minWidth/maxWidth` |
+| DimensionControl (Height) | `block.config.style.height/minHeight/maxHeight` |
+| SpacingControl (Padding) | `block.config.style.paddingTop/Right/Bottom/Left` |
+| SpacingControl (Margin) | `block.config.style.marginTop/Right/Bottom/Left` |
+| SelectRow (Position) | `block.config.advanced.position` |
+| SpacingControl (Offset) | `block.config.advanced.top/right/bottom/left` |
+| NumberRow (Z-Index) | `block.config.advanced.zIndex` |
+| TextRow (CSS ID) | `block.config.advanced.cssId` |
+| TextRow (CSS Classes) | `block.config.advanced.cssClasses` |
+| CodeEditor (Custom CSS) | `block.config.advanced.customCss` |
 
 ## FieldRenderer (fields/FieldRenderer.tsx)
 
-Generic renderer for `FieldDef[]`. Routes field type to appropriate UI:
+Routes `FieldDef.type` to appropriate input:
 
-| FieldDef.type | Component | Input | Notes |
-|---|---|---|---|
-| `text` | `<input type="text">` | String | Fallback default |
-| `url` | `<input type="url">` | String | Same as text, diff type attr |
-| `textarea` | `<textarea rows=3>` | String | Resizable via CSS |
-| `number` | `<input type="number">` | Number | |
-| `select` | `<select>` | String | Requires options array |
-| `toggle` | Checkbox + label | Boolean | Label inline, not above |
-| `json-array` | `JsonArrayField` | Array | Uses itemFields schema |
+| type | Component | Value |
+|------|-----------|-------|
+| `text` | `<input type="text">` | string |
+| `url` | `<input type="url">` | string |
+| `textarea` | `<textarea rows=3>` | string |
+| `number` | `<input type="number">` | number |
+| `select` | `<select>` | string |
+| `toggle` | checkbox + label | boolean |
+| `json-array` | JsonArrayField | array |
 
-## JsonArrayField (fields/JsonArrayField.tsx)
+## JsonArrayField
 
-Renders `FieldDef` with type `json-array`.
-- List of expandable items
-- Each item has sub-fields (from `itemFields`)
-- Add/remove item buttons
-- Stores as array in `block.config[key]`
+Expandable list of items. Each item is a collapsible card with sub-fields from `itemFields`.
+- Add / Remove item buttons
+- Stores as JSON array in `block.config[key]`
 
-Example: testimonials block → items array with quote/author/role/company/avatarUrl fields.
-
-## ColorPicker (controls/ColorPicker.tsx)
+## ColorPicker
 
 Floating color picker:
-- Hex, RGB, HSL format tabs
-- Eyedropper (optional)
+- Hex/RGB/HSL format tabs
+- Opacity slider
 - Recent colors
-- Opacity slider
-- Display format persisted alongside value
+- Format persisted alongside value
 
-Usage: fill controls, text color, border color.
+## SpacingControl
 
-## SpacingControl (controls/SpacingControl.tsx)
+4-side spacing editor (Padding, Margin, Offset):
 
-4-side spacing editor (padding, margin, offset):
+**Collapsed:** single scrub (all sides uniform). Shows "Mixed" if sides differ.
+**Expanded:** 2×2 grid, each side has label + scrub input + unit (px, rem, %).
 
-### Collapsed state
-- Single scrub input (applies to all sides uniformly)
-- Shows "Mixed" label when sides differ
-- Expand button (▾)
+Props: `label`, `value: SpacingValue`, `onChange`, `sides`, `forceExpanded`
 
-### Expanded state
-- 2×2 grid for 4 sides (Top/Right/Bottom/Left)
-- `SideInput`: scrub label + number input + unit dropdown (px, rem, %)
-- Reset button when any side is set
+CSS key mapping:
+- `padding` → `paddingTop/Right/Bottom/Left`
+- `margin` → `marginTop/Right/Bottom/Left`
+- `offset` → `top/right/bottom/left`
 
-### Modes
-- **Padding**: CSS keys `paddingTop/Right/Bottom/Left`
-- **Margin**: CSS keys `marginTop/Right/Bottom/Left`
-- **Offset**: CSS keys `top/right/bottom/left` (for positioned elements)
+## BorderRadiusControl
 
-### Props
-- `label` — "Padding", "Margin", "Offset"
-- `value` — current spacing object
-- `onChange` — callback with new spacing
-- `forceExpanded` — skip collapsed state (used for Offset)
+Corner radius editor. Collapsed (single) / Expanded (2×2 corners).
+Supports px, rem, %.
+CSS keys: `borderTopLeftRadius`, `borderTopRightRadius`, `borderBottomRightRadius`, `borderBottomLeftRadius`.
 
-## BorderRadiusControl (controls/BorderRadiusControl.tsx)
+Accepts `breakpointIndicator` prop (JSX icon shown in label when non-desktop breakpoint active).
 
-Corner radius editor:
+## BorderControl
 
-### Collapsed
-- Single "Radius" scrub input (applies to all corners equally)
-- Expand button
-
-### Expanded
-- 2×2 grid: top-left, top-right, bottom-right, bottom-left
-- Each is a scrub input with unit support (px, rem, %)
-- Reset button
-
-### CSS Keys
-- `borderTopLeftRadius`
-- `borderTopRightRadius`
-- `borderBottomRightRadius`
-- `borderBottomLeftRadius`
-
-## BorderControl (controls/BorderControl.tsx)
-
-Border editor:
-
-### Collapsed
-- Single "Border" width scrub input (all sides equally)
-- Expand button
-
-### Expanded
-- 2×2 grid of side widths (Top/Right/Bottom/Left)
+4-side border editor. Collapsed (single width) / Expanded (4 sides).
 - Style dropdown: none / solid / dashed / dotted / double
-- Color swatch (opens `ColorPicker`)
-- Reset button
+- Color via ColorPicker
+CSS keys: `borderTopWidth`, `borderRightWidth`, `borderBottomWidth`, `borderLeftWidth`, `borderStyle`, `borderColor`.
 
-### CSS Keys
-- `borderTopWidth`, `borderRightWidth`, `borderBottomWidth`, `borderLeftWidth`
-- `borderStyle`
-- `borderColor`
+Accepts `breakpointIndicator` prop.
 
-## BackgroundControl (controls/BackgroundControl.tsx)
+## BoxShadowControl
 
-Background styling:
+Box shadow editor:
+- X offset, Y offset, Blur radius, Spread radius (each SideInput with unit)
+- Color via ColorPicker
+- Inset toggle
+- Stored as CSS `box-shadow` string in `block.config.style.boxShadow` / `styleHover.boxShadow`
 
-- Solid color picker
-- Image upload (`MediaPicker`)
-- Background size select (cover / contain / repeat)
-- Background position select (center / top / bottom)
+Accepts `breakpointIndicator` prop.
+
+## BackgroundControl
+
+- Solid color picker (ColorPicker)
+- Gradient editor (via CSS gradient string)
+- Image picker (MediaPicker)
+- Background size: cover / contain / repeat
+- Background position: center / top / bottom / left / right
 - Opacity slider
 
-## MediaPicker (controls/MediaPicker.tsx)
+`allowedTypes` prop: restricts to subset (e.g. hover state restricts nothing, normal state allows all).
 
-Image/media selection:
-- Browse EmDash media library (or fetch from API)
-- Upload new image
-- Select from recent
-- Crop/resize (future)
+## GapControl
 
-Returns: `{ src, alt }` object.
+Column + row gap for flex/grid containers.
+- Single scrub (uniform) or expanded (column / row independently)
+CSS keys: `columnGap`, `rowGap`
 
-## FieldRow (controls/FieldRow.tsx)
+## LayoutControl
 
-Single-line control row for Advanced tab:
+Flex layout properties for container blocks:
+- Direction: row / column
+- Wrap: nowrap / wrap
+- Align items: start / center / end / stretch / baseline
+- Justify content: start / center / end / space-between / space-around / space-evenly
 
-### NumberRow
-- Scrub label + number input
-- Drag label to scrub value
-- Stored in `advanced`
+## OverflowControl
 
-### TextRow
-- Text input
-- Stored in `advanced`
+Overflow x/y selector: visible / hidden / scroll / auto
 
-### SelectRow
-- Custom dropdown (not `<select>`)
-- Options passed as prop
-- Stored in `advanced`
+## LinkControl
 
-All wrapped in `FieldGroup` (border + reset button).
+Link properties for `<a>` container blocks:
+- `href` text input
+- `target` select: _self / _blank / _parent / _top
 
-## Label Styling System
+Shown only when container's HTML Tag is `a`.
 
-All labels follow consistent visual rules:
+## ThemeStyleToggle
 
-| Context | Class | Color | Uppercase | Hover |
-|---|---|---|---|---|
-| Field label (above input) | `epx-field__label` | `--epx-text-faint` | no | none |
-| Row label (non-scrub) | `epx-side-input__label--row` | `--epx-text-faint` | no | none |
-| Row label (scrub) | `epx-side-input__label--scrub` | `--epx-text-faint` | no | blue accent |
-| Section header | `epx-row-label--section` | `--epx-text-faint` | YES | none |
-| Side label (T/R/B/L) | `epx-side-input__label` | `--epx-text-faint` | YES (9px) | blue accent |
-| Collapsed scrub | `epx-side-input__label--full` | `--epx-text-faint` | YES | blue accent |
-| Expanded section | `epx-spacing-ctrl__label` | `--epx-text-faint` 65% opacity | YES | none |
+Segmented toggle: Light / Dark / Accent
+Sets `block.config.theme` and determines which style key is written to:
+- `"light"` → `style`
+- `"dark"` → `styleDark`
+- `"accent"` → `styleAccent`
 
-### Dirty State
-When modified, label lightens toward white:
-```css
-color: color-mix(in srgb, var(--epx-text-faint), white 45%)
-```
+## DimensionControl (FieldRow.tsx)
 
-Applied via parent class `is-dirty` on control elements.
+Width or Height editor with 3 sub-fields: Fix / Min / Max.
+Each is a SideInput (scrub + number + unit).
+Reset button clears all 3.
+
+## FieldRow / FieldGroup
+
+Wrappers for Advanced tab rows:
+- `FieldGroup` — border + reset button, `isDirty` prop lightens label
+- `NumberRow` — scrub label + number input
+- `TextRow` — text input
+- `SelectRow` — custom dropdown
 
 ## CodeEditor (inline in RightPanel.tsx)
 
-Custom CSS editor:
-- Dark-only theme (Catppuccin Mocha)
+Custom CSS textarea:
+- Dark-only theme (Catppuccin Mocha palette via CSS vars)
 - Line numbers column (synced scroll)
 - Tab key inserts 4 spaces
-- Header shows block selector with copy button
-- Height: min 140px, no max, vertically resizable
+- Header shows CSS selector (`[data-epx-block="<id>"]`) with copy button
+- Height: min 140px, vertically resizable
 
-## Props Passed to Controls
+## Hover State System
 
-From `RightPanel`:
-- `value` — current config value
-- `onChange` — update handler
-- `isDirty` — whether field differs from default (for label color)
-- `block` — full SectionBlock (for preview context)
+Each stateful control (Background, Radius, Border, Shadow) has its own `mode: "normal" | "hover"` local state.
+- Mode resets to "normal" when selected block changes.
+- Normal writes to base style key (or breakpoint overlay key).
+- Hover writes to `styleHover` (or `styleHoverBreakpoints[bpId]`).
+
+## Breakpoint-Aware Writes
+
+When `activeBreakpoint !== "desktop"`:
+- Style reads from merged `{ ...activeStyle, ...bpStyleRaw }` (base + breakpoint override)
+- Writes go to `block.config.styleBreakpoints[bpId]` (includes `_px` for media query generation)
+- Hover writes go to `block.config.styleHoverBreakpoints[bpId]`
+
+See [prd-breakpoints.md](prd-breakpoints.md) for the full breakpoint architecture.
+
+## Label Styling System
+
+| Context | Class | Color | Uppercase |
+|---------|-------|-------|-----------|
+| Field label | `epx-field__label` | `--epx-text-faint` | no |
+| Row label (scrub) | `epx-side-input__label--scrub` | faint | no |
+| Section header | `epx-row-label--section` | faint | YES |
+| Side label (T/R/B/L) | `epx-side-input__label` | faint | YES (9px) |
+
+Dirty label: `color-mix(in srgb, var(--epx-text-faint), white 45%)`
+
+## Props Summary
+
+`RightPanel` receives:
+- `block: SectionBlock | null`
+- `onChange: (config: Record<string, any>) => void`
+- `activeBreakpoint: BreakpointId`
+- `breakpointsConfig: BreakpointsConfig`
 
 ## TODO
 
-- [ ] Add image field type + MediaPicker integration
+- [ ] Wire MediaPicker into FieldRenderer (`image` field type)
 - [ ] Add rich-text field type (Portable Text editor)
-- [ ] Add responsive breakpoint toggle (show mobile/tablet overrides)
-- [ ] Add gradient editor for backgrounds
 - [ ] Add typography control (font-family, weight, size, line-height)
-- [ ] Add shadow control (text-shadow, box-shadow)
+- [ ] Add gradient editor (currently only solid/image for hover mode)
+- [ ] Keyboard shortcuts within controls (Escape to cancel, Enter to confirm)
