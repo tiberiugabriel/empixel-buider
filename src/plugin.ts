@@ -50,7 +50,7 @@ function getDb(): SqliteDb {
 export function createPlugin() {
   return definePlugin({
     id: "empixel-builder",
-    version: "0.2.0",
+    version: "0.5.0",
     capabilities: ["read:content"],
     routes: {
       // GET  ?pageId=&collection=  → load layout
