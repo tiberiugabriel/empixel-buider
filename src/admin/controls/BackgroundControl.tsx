@@ -18,6 +18,7 @@ import { IconReset } from "./SpacingControl.js";
 import { MediaPicker } from "./MediaPicker.js";
 import type { MediaRef } from "./MediaPicker.js";
 export type { MediaRef } from "./MediaPicker.js";
+import { ImagePreviewCard } from "./ImagePreviewCard.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -754,26 +755,11 @@ export function BackgroundControl({ value, onChange, allowedTypes }: {
               </div>
 
               {(value.imageSrc ?? "media") === "media" && (
-                <div className="epx-bg-ctrl__media-row">
-                  {value.image?.storageKey ? (
-                    <img
-                      className="epx-bg-ctrl__thumb"
-                      src={`/_emdash/api/media/file/${value.image.storageKey}`}
-                      alt={value.image.alt ?? value.image.filename ?? ""}
-                    />
-                  ) : (
-                    <div className="epx-bg-ctrl__thumb-placeholder"><IconImage /></div>
-                  )}
-                  <span className="epx-bg-ctrl__media-name">{value.image?.filename ?? (value.image ? "Image selected" : "No image")}</span>
-                  <button type="button" className="epx-bg-ctrl__media-btn" onClick={() => setMediaPicker("image")}>
-                    {value.image ? "Change" : "Select"}
-                  </button>
-                  {value.image && (
-                    <button type="button" className="epx-bg-ctrl__stop-remove" onClick={() => onChange({ ...value, image: undefined })} title="Clear">
-                      <IconClose />
-                    </button>
-                  )}
-                </div>
+                <ImagePreviewCard
+                  image={value.image}
+                  onSelect={() => setMediaPicker("image")}
+                  onRemove={() => onChange({ ...value, image: undefined })}
+                />
               )}
 
               {value.imageSrc === "url" && (

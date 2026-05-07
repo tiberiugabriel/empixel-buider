@@ -1163,6 +1163,56 @@ export function BuilderStyles() {
       }
       .epx-bg-ctrl__media-btn:hover { color: var(--epx-accent); border-color: var(--epx-accent); }
 
+      .epx-media-card {
+        display: flex; flex-direction: column; gap: 6px;
+        padding: 8px; border-top: 1px solid var(--epx-border-subtle);
+      }
+      .epx-media-card--boxed {
+        border-top: none;
+        outline: 1px solid var(--epx-border); border-radius: 5px;
+        background: var(--epx-input-bg); width: 100%;
+      }
+      .epx-media-card__preview {
+        width: 100%; aspect-ratio: 16 / 10;
+        border-radius: 4px; border: 1px solid var(--epx-border);
+        background: var(--epx-surface-2);
+        overflow: hidden; display: flex; align-items: center; justify-content: center;
+        padding: 0;
+      }
+      .epx-media-card__preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .epx-media-card__preview--empty {
+        border: 1px dashed var(--epx-border);
+        cursor: pointer; color: var(--epx-text-faint);
+        transition: border-color 0.1s, color 0.1s, background 0.1s;
+      }
+      .epx-media-card__preview--empty:hover {
+        border-color: var(--epx-accent); color: var(--epx-accent);
+        background: var(--epx-accent-bg);
+      }
+      .epx-media-card__empty-inner {
+        display: flex; flex-direction: column; align-items: center; gap: 6px;
+      }
+      .epx-media-card__empty-label { font-size: 11px; font-weight: 600; }
+      .epx-media-card__name {
+        font-size: 11px; color: var(--epx-text-2);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .epx-media-card__actions { display: flex; align-items: center; gap: 6px; }
+      .epx-media-card__btn {
+        flex: 1; padding: 5px 0; border: 1px solid var(--epx-border);
+        border-radius: 4px; background: var(--epx-input-bg); color: var(--epx-text-mid);
+        font-size: 11px; font-weight: 600; cursor: pointer;
+        transition: color 0.1s, border-color 0.1s;
+      }
+      .epx-media-card__btn:hover { color: var(--epx-accent); border-color: var(--epx-accent); }
+      .epx-media-card__remove {
+        flex-shrink: 0; padding: 5px 8px;
+        background: none; border: 1px solid var(--epx-border); border-radius: 4px;
+        color: var(--epx-text-faint); cursor: pointer;
+        display: flex; align-items: center; transition: color 0.1s, border-color 0.1s;
+      }
+      .epx-media-card__remove:hover { color: #dc2626; border-color: #dc2626; }
+
       .epx-bg-ctrl__src-toggle {
         display: flex; gap: 4px; padding: 6px 8px;
         border-top: 1px solid var(--epx-border-subtle);

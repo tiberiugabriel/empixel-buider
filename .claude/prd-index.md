@@ -172,6 +172,7 @@ src/
 │  │  ├─ OverflowControl.tsx
 │  │  ├─ LinkControl.tsx
 │  │  ├─ MediaPicker.tsx
+│  │  ├─ ImagePreviewCard.tsx
 │  │  ├─ ThemeStyleToggle.tsx
 │  │  ├─ AlignControl.tsx
 │  │  ├─ TypographyControl.tsx

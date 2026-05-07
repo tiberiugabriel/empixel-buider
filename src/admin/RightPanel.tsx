@@ -15,6 +15,7 @@ import { LayoutControl, parseLayout } from "./controls/LayoutControl.js";
 import { OverflowControl, parseOverflow, serializeOverflow, type OverflowValue } from "./controls/OverflowControl.js";
 import { LinkControl, parseLink, serializeLink, type LinkValue } from "./controls/LinkControl.js";
 import { MediaPicker, type MediaRef } from "./controls/MediaPicker.js";
+import { ImagePreviewCard } from "./controls/ImagePreviewCard.js";
 import { ThemeStyleToggle, getThemeStyleKey } from "./controls/ThemeStyleToggle.js";
 import { AlignControl, parseAlign, serializeAlign, type AlignValue } from "./controls/AlignControl.js";
 import { TypographyControl, parseTypography, serializeTypography, type TypographyValue } from "./controls/TypographyControl.js";
@@ -719,37 +720,12 @@ export function RightPanel({ block, onChange, activeBreakpoint, breakpointsConfi
             const resolution = (block.config.resolution as string) ?? "full";
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <div className="epx-bg-ctrl__media-row">
-                  {img?.storageKey ? (
-                    <img
-                      className="epx-bg-ctrl__thumb"
-                      src={`/_emdash/api/media/file/${img.storageKey}`}
-                      alt={img.alt ?? img.filename ?? ""}
-                    />
-                  ) : (
-                    <div className="epx-bg-ctrl__thumb-placeholder">🖼️</div>
-                  )}
-                  <span className="epx-bg-ctrl__media-name">
-                    {img?.filename ?? (img ? "Image selected" : "No image")}
-                  </span>
-                  <button
-                    type="button"
-                    className="epx-bg-ctrl__media-btn"
-                    onClick={() => setImagePickerOpen(true)}
-                  >
-                    {img ? "Change" : "Select"}
-                  </button>
-                  {img && (
-                    <button
-                      type="button"
-                      className="epx-bg-ctrl__stop-remove"
-                      onClick={() => onChange({ image: undefined })}
-                      title="Clear"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
+                <ImagePreviewCard
+                  image={img}
+                  onSelect={() => setImagePickerOpen(true)}
+                  onRemove={() => onChange({ image: undefined })}
+                  boxed
+                />
 
                 <FieldGroup
                   isDirty={resolution !== "full"}

@@ -23,6 +23,7 @@ RightPanel.tsx (3 tabs: Fields, Style, Advanced)
    ├─ OverflowControl.tsx       # Overflow x/y
    ├─ LinkControl.tsx           # href, newTab, nofollow, customAttr
    ├─ MediaPicker.tsx           # Image/media picker (wired to image block + Background)
+   ├─ ImagePreviewCard.tsx      # Full-width image preview card (Select / Change / Remove)
    ├─ ThemeStyleToggle.tsx      # Light / Dark / Accent theme selector
    ├─ AlignControl.tsx          # Text-align (start/center/end/justify) — Text block
    ├─ TypographyControl.tsx     # Font family, size, weight, line-height, transform, etc — Text block
@@ -39,7 +40,7 @@ Block-specific content from `def.fields[]`.
 - Uses `FieldRenderer` to dispatch each field type
 - **Container** adds: LayoutControl, GapControl, OverflowControl, HTML Tag, LinkControl (if tag = "a")
 - **Text** adds: HTML Tag selector (default `p`, supports h1–h6, span, div, a), LinkControl (if tag = "a")
-- **Image** adds: MediaPicker thumbnail row, Resolution selector, LinkControl (always)
+- **Image** adds: `ImagePreviewCard` (full-width preview, filename below, Change + Remove buttons; opens MediaPicker on Select/Change), Resolution selector, LinkControl (always)
 
 ### Tab 2: Style — default (non-text, non-image)
 Visual styling. Each section has a **Normal / Hover state toggle** (IconStateNormal / IconStateHover).
@@ -163,7 +164,7 @@ Accepts `breakpointIndicator` prop.
 
 - Solid color picker (ColorPicker, with alpha)
 - Gradient editor (linear-gradient with multiple stops + angle)
-- Image picker (MediaPicker, with size / position / repeat / attachment)
+- Image picker — `ImagePreviewCard` (full-width preview, filename below, Change + Remove buttons; opens MediaPicker on Select/Change) + size / position / repeat / attachment
 - Slideshow (multiple images, frontend renders first slide as static background fallback)
 - Video (HTML5 file via MediaPicker, YouTube URL, or Vimeo URL — with start/end time, loop, fallback poster, size, position)
 - Opacity slider
