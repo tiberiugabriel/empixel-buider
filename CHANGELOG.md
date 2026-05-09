@@ -5,7 +5,6 @@ SemVer.
 
 ## Unreleased — 0.9.6 prep
 
-<<<<<<< HEAD
 - **F3.6.3 — Canvas now calls `buildBlockChromeCss` identically with the
   frontend `*.astro` components. Drift between admin preview and host
   render dies by construction.** Previously `Canvas.tsx`'s
