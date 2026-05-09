@@ -27,4 +27,6 @@ export const PREVIEW_COMPONENTS: Record<BlockType, React.ComponentType<PreviewPr
   icon: IconPreview as React.ComponentType<PreviewProps>,
   html: HtmlPreview as React.ComponentType<PreviewProps>,
   "divider-spacer": DividerSpacerPreview as React.ComponentType<PreviewProps>,
+  // F4.4 stub — real preview lands in the field-binding PR.
+  "field-binding": (() => null) as React.ComponentType<PreviewProps>,
 };

@@ -9,7 +9,8 @@ export type BlockType =
   | "button"
   | "icon"
   | "html"
-  | "divider-spacer";
+  | "divider-spacer"
+  | "field-binding";
 
 /** Block types that can contain other blocks */
 export const CONTAINER_TYPES: BlockType[] = ["container"];
@@ -43,6 +44,7 @@ export const BLOCK_TYPES: ReadonlySet<string> = new Set<BlockType>([
   "icon",
   "html",
   "divider-spacer",
+  "field-binding",
 ]);
 
 export function isKnownBlockType(type: string): type is BlockType {

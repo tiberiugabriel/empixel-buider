@@ -14,8 +14,8 @@ function any(b: unknown): SectionBlock {
 }
 
 describe("BLOCK_TYPES", () => {
-  it("contains exactly the 9 currently-supported block types", () => {
-    expect(BLOCK_TYPES.size).toBe(9);
+  it("contains exactly the 10 currently-supported block types", () => {
+    expect(BLOCK_TYPES.size).toBe(10);
     expect(BLOCK_TYPES.has("container")).toBe(true);
     expect(BLOCK_TYPES.has("text")).toBe(true);
     expect(BLOCK_TYPES.has("image")).toBe(true);
@@ -25,6 +25,7 @@ describe("BLOCK_TYPES", () => {
     expect(BLOCK_TYPES.has("icon")).toBe(true);
     expect(BLOCK_TYPES.has("html")).toBe(true);
     expect(BLOCK_TYPES.has("divider-spacer")).toBe(true);
+    expect(BLOCK_TYPES.has("field-binding")).toBe(true);
   });
 
   it("does not contain removed legacy block types", () => {
