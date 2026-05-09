@@ -1,6 +1,7 @@
 ---
 import type { HtmlConfig } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   value: HtmlConfig;
@@ -25,7 +26,8 @@ function buildSrcdoc(code: string): string {
 
 const srcdoc = buildSrcdoc(rawCode);
 
-const chromeCss = buildBlockChromeCss(cfg, blockId);
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const chromeCss = buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver });
 
 // Hard-override sizing so the iframe always takes full width regardless of
 // surrounding flex/grid context, has no border, and has no internal scroll.

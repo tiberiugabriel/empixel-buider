@@ -1,6 +1,7 @@
 ---
 import type { ImageConfig } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   value: ImageConfig;
@@ -54,7 +55,10 @@ if (linkCustomAttr) {
 const dims = RESOLUTION_DIMS[resolution];
 const imgWidthAttr  = dims?.w;
 const imgHeightAttr = dims?.h;
-const imgSrc = image?.storageKey ? `/_emdash/api/media/file/${image.storageKey}` : undefined;
+// Storage-agnostic URL resolution (F2.2). The plugin persists `storageKey`
+// references in layout JSON; EmDash's active storage adapter (local/S3/R2)
+// turns those into fetchable URLs via Astro.locals.emdash.getPublicMediaUrl.
+const imgSrc = resolveMediaUrl(image?.storageKey, { locals: Astro.locals }) ?? undefined;
 const imgAlt = image?.alt ?? image?.filename ?? "";
 
 const imgStyleCfg = (cfg.imgStyle ?? {}) as Record<string, string | undefined>;
@@ -78,7 +82,11 @@ const imgInline = (() => {
 })();
 
 const config = value as Record<string, unknown>;
-const chromeCss = buildBlockChromeCss(config, blockId, { imgScoped: true });
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const chromeCss = buildBlockChromeCss(config, blockId, {
+  imgScoped: true,
+  resolveMediaUrl: resolver,
+});
 
 const styleCfg = (cfg.style ?? {}) as Record<string, string | undefined>;
 const alignVal = (styleCfg.textAlign || "").trim();

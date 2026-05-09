@@ -2,6 +2,7 @@
 import type { SectionBlock } from "../types.js";
 import BlockRenderer from "./BlockRenderer.astro";
 import { buildBlockStyle, wrapBlockCss, buildHoverCss, buildBreakpointCss, buildBreakpointHoverCss, getVideoInfo, buildYouTubeEmbedUrl, buildVimeoEmbedUrl, getBlockId, getBlockClass, getCustomCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -11,6 +12,10 @@ interface Props {
 }
 
 const { value, children = [], blockId = "" } = Astro.props;
+
+// Storage-agnostic URL resolution (F2.2). Threaded into every helper that
+// consults a `storageKey` field — backgrounds, video src, video poster, etc.
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
 
 const style = (value.style ?? {}) as Record<string, unknown>;
 
@@ -33,7 +38,7 @@ const paddingLeft   = resolveSpacing(style.paddingLeft,   "");
 
 // Build all other styles (background, margin, border, width, height, etc.)
 // via buildBlockStyle, then override padding with resolved values
-const fullStyle = buildBlockStyle(value);
+const fullStyle = buildBlockStyle(value, { resolveMediaUrl: resolver });
 
 // Compose final inline style — buildBlockStyle may include paddingTop etc.
 // but we override below with our resolved values that respect both systems
@@ -78,11 +83,11 @@ if (isGrid) {
 }
 const layoutStyle = layoutParts.join(";");
 
-const videoInfo  = getVideoInfo(value);
+const videoInfo  = getVideoInfo(value, { resolveMediaUrl: resolver });
 const extraId    = getBlockId(value);
 const extraClass = getBlockClass(value);
 const customCss  = blockId ? getCustomCss(value, blockId) : "";
-const hoverCss   = blockId ? buildHoverCss(value, blockId) : "";
+const hoverCss   = blockId ? buildHoverCss(value, blockId, { resolveMediaUrl: resolver }) : "";
 const videoLayoutSel = videoInfo && blockId ? `[data-epx-block="${blockId}"]>div` : undefined;
 const breakpointCss = blockId ? buildBreakpointCss(value, blockId, videoLayoutSel) : "";
 const breakpointHoverCss = blockId ? buildBreakpointHoverCss(value, blockId) : "";
@@ -103,7 +108,7 @@ const videoPosition    = (style.backgroundVideoPosition    as string)  || "cente
 const videoStartTime   = style.backgroundVideoStartTime   as number | undefined;
 const videoEndTime     = style.backgroundVideoEndTime     as number | undefined;
 const videoFallbackKey = style.backgroundVideoFallbackStorageKey as string | undefined;
-const videoPoster      = videoFallbackKey ? `/_emdash/api/media/file/${videoFallbackKey}` : undefined;
+const videoPoster      = resolveMediaUrl(videoFallbackKey, { locals: Astro.locals }) ?? undefined;
 const hasVideoTiming   = videoInfo?.type === "html5" && (videoStartTime !== undefined || videoEndTime !== undefined);
 
 // Build embed URLs for YouTube / Vimeo

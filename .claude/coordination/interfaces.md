@@ -12,14 +12,14 @@ Contracts between domains. The owner exposes the symbol; consumers import it. Ad
 
 | Interface | Owner | Consumers | Defined in | Status |
 |-----------|-------|-----------|------------|--------|
-| `resolveMediaUrl(key, opts?)` | B | A (admin route URL building) | `src/components/media.ts` | 🆕 F2.2 — not implemented yet |
+| `resolveMediaUrl(key: string \| null \| undefined, opts?: { locals?: { emdash?: { getPublicMediaUrl?: (k: string) => string \| undefined } } }) => string \| null` | B | A (admin route URL building), C (admin previews) | `src/components/media.ts` | ✅ stable — F2.2 shipped 2026-05-09 |
 | `getBuilderLayout(...)` | B | EmDash host site | `src/components/db.ts` | ✅ exists; F2.4 changes return shape to `{ sections, cacheHint }`; F3.4 changes signature to `(Astro, collection, entryId)` |
 | `getBuilderLayoutFromContext(Astro, collection, entryId)` | B | EmDash host site | `src/components/db.ts` | 🆕 F3.4 — replaces direct better-sqlite3 use |
 | `SectionBlock`, `BlockType`, `StyleSection`, `AdvancedConfig`, breakpoint types | 🔒 Orchestrator | A, B, C | `src/types.ts` | ✅ partially exists; `StyleSection` added in F3.5 via proposal |
 | `StorageLayoutsCollection` (ctx.storage shape) | A | B (frontend reader) | `src/storage-types.ts` | 🆕 F3.1 — not implemented yet |
 | `BlockDef`, `FieldDef` | C | A (validation at save), B (rendering hint, optional) | `src/admin/blockDefinitions.ts` (re-export base types from `src/types.ts`) | ✅ exists; extended in F3.5 |
 | `buildBlockChromeCss(config, blockId, opts)` | B | C (Canvas uses identical helper) | `src/components/styleUtils.ts` | ✅ partial — needs export surface review in F3.6.3 |
-| `buildBlockCss`, `buildHoverCss`, `buildBreakpointCss`, `buildBreakpointHoverCss`, `getCustomCss`, `getEffectiveStyle` | B | C (Canvas), B itself (Astro) | `src/components/styleUtils.ts` | ✅ exists |
+| `buildBlockCss`, `buildHoverCss`, `buildBreakpointCss`, `buildBreakpointHoverCss`, `getCustomCss`, `getEffectiveStyle` | B | C (Canvas), B itself (Astro) | `src/components/styleUtils.ts` | ✅ exists; `buildBackgroundCss` / `buildBlockStyle` / `buildDarkBlockStyle` / `buildBlockCss` / `buildHoverCss` / `buildBlockChromeCss` / `getVideoBackground` / `getVideoInfo` opts now extend `MediaUrlOptions` (F2.2) — pass `{ resolveMediaUrl }` to route storage keys through the host's storage adapter |
 | `darkBlockSelector(blockId)` | B | B internally | `src/components/styleUtils.ts` | ✅ exists; F1.2 rewrites it to cover `html.dark`, `[data-theme="dark"]`, `[data-mode="dark"]`, self |
 | `BASE_DEFAULTS` + `getDefaultBlockConfig(type)` | C | C (reducer ADD_BLOCK + load), tests | `src/admin/blockDefinitions.ts` | 🆕 F3.6.2 |
 | `runSpacerMigration` (existing pattern) / `runLegacySpacingMigration_v1` | A | A internally (cold start) | `src/plugin.ts` (or `src/migrations/*`) | ✅ pattern exists; new migration in F3.6.4 |

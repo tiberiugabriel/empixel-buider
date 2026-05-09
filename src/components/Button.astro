@@ -1,6 +1,7 @@
 ---
 import type { ButtonConfig } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   value: ButtonConfig;
@@ -16,9 +17,8 @@ const cssClasses = advanced?.cssClasses || undefined;
 
 const text = value.text || "Click me";
 const icon = value.icon ?? {};
-const iconSrc = icon.iconSrc?.storageKey
-  ? `/_emdash/api/media/file/${icon.iconSrc.storageKey}`
-  : undefined;
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const iconSrc = resolveMediaUrl(icon.iconSrc?.storageKey, { locals: Astro.locals }) ?? undefined;
 const iconAlt = icon.iconSrc?.alt ?? "";
 const iconSize = icon.iconSize || "16px";
 const iconPos = icon.iconPosition ?? "left";
@@ -52,7 +52,7 @@ const flexDir = (() => {
   return "row";
 })();
 
-const chromeCss = buildBlockChromeCss(cfg, blockId);
+const chromeCss = buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver });
 
 const flexCss = blockId
   ? `[data-epx-block="${blockId}"]{display:inline-flex;align-items:center;gap:6px;flex-direction:${flexDir};text-decoration:none;}`

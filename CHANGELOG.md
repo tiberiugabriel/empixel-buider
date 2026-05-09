@@ -13,6 +13,18 @@ SemVer.
   ALTER failure is logged via `logCaught`. The collection name still
   passes through `isValidCollection(...)` before the DDL — never raw
   user input into a SQL identifier (issue: report C2/Q5).
+- `resolveMediaUrl(key, { locals })` helper in `src/components/media.ts`.
+  Replaces hardcoded `/_emdash/api/media/file/...` URLs everywhere on the
+  frontend; routes through EmDash's storage adapter
+  (`Astro.locals.emdash.getPublicMediaUrl`) so layouts work under
+  `local()`, `s3()`, R2, etc. Background and video storage-key references
+  in `styleUtils.ts` accept an optional `resolveMediaUrl` callback so CSS
+  generation stays synchronous; Astro components build the closure from
+  `Astro.locals` once and thread it through. Re-exported from
+  `empixel-builder/components` for use by admin and external consumers.
+  Legacy `/_emdash/api/media/file/<key>` URL retained as the fallback
+  inside `media.ts` for hosts that haven't wired the public URL builder
+  yet.
 
 ## 0.7.1 — 2026-05-09
 

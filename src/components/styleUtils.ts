@@ -1,4 +1,29 @@
+import type { MediaUrlResolver } from "./media.js";
+import { resolveMediaUrl } from "./media.js";
+
 type GradStop = { color: string; alpha: number; pos: number };
+
+/**
+ * Options threaded through the chrome / background helpers so they can
+ * resolve `storageKey` references without hardcoding the local-runtime
+ * URL pattern. CSS generation is sync — callers build the resolver from
+ * `Astro.locals` once and pass it down.
+ *
+ * `resolveMediaUrl` defaults to the legacy fallback (no adapter), so
+ * existing call sites that haven't been wired through yet still work.
+ */
+export interface MediaUrlOptions {
+  resolveMediaUrl?: MediaUrlResolver;
+}
+
+function defaultResolver(key: string): string | null {
+  // No `locals` — `resolveMediaUrl` returns the legacy fallback URL.
+  return resolveMediaUrl(key);
+}
+
+function pickResolver(opts?: MediaUrlOptions): MediaUrlResolver {
+  return opts?.resolveMediaUrl ?? defaultResolver;
+}
 
 // Light-variant style. Dark is a separate variant emitted as its own scoped
 // rule (see buildBlockCss / darkBlockSelector). config.theme is purely an
@@ -30,7 +55,7 @@ function cssStr(v: unknown): string {
 
 // ─── Background ───────────────────────────────────────────────────────────────
 
-export function buildBackgroundCss(style: Record<string, unknown>): string {
+export function buildBackgroundCss(style: Record<string, unknown>, opts?: MediaUrlOptions): string {
   const type = style.backgroundType as string | undefined;
   if (!type) return "";
 
@@ -52,11 +77,16 @@ export function buildBackgroundCss(style: Record<string, unknown>): string {
     return `background:linear-gradient(${angle}deg,${parts});`;
   }
 
+  const resolve = pickResolver(opts);
+
   if (type === "image") {
     const src    = style.backgroundImageSrc as string | undefined;
     const imgUrl = src === "url"
       ? (style.backgroundImageUrl as string | undefined)
-      : (() => { const k = style.backgroundImageStorageKey as string | undefined; return k ? `/_emdash/api/media/file/${k}` : undefined; })();
+      : (() => {
+          const k = style.backgroundImageStorageKey as string | undefined;
+          return k ? (resolve(k) ?? undefined) : undefined;
+        })();
     if (!imgUrl) return "";
     const size       = (style.backgroundImageSize       as string) || "cover";
     const position   = (style.backgroundImagePosition   as string) || "center";
@@ -75,8 +105,10 @@ export function buildBackgroundCss(style: Record<string, unknown>): string {
     let slides: Array<{ storageKey?: string }> = [];
     try { slides = JSON.parse((style.backgroundSlides as string) ?? "[]"); } catch { /**/ }
     const first = slides[0];
-    if (first?.storageKey)
-      return `background:url(/_emdash/api/media/file/${first.storageKey}) center/cover no-repeat;`;
+    if (first?.storageKey) {
+      const url = resolve(first.storageKey);
+      if (url) return `background:url(${url}) center/cover no-repeat;`;
+    }
   }
 
   // video: handled via <video> element overlay — no CSS background
@@ -119,13 +151,13 @@ const IMG_VISUAL_PROP_SET: Set<string> = new Set(IMG_VISUAL_PROPS);
 function buildStyleBodyFromObject(
   style: Record<string, unknown>,
   advanced: Record<string, unknown>,
-  opts?: { imgScoped?: boolean },
+  opts?: { imgScoped?: boolean } & MediaUrlOptions,
 ): string {
   const imgScoped = !!opts?.imgScoped;
   const parts: string[] = [];
 
   // Background
-  const bg = buildBackgroundCss(style);
+  const bg = buildBackgroundCss(style, opts);
   if (bg) parts.push(bg.replace(/;$/, ""));
 
   // Border style + color (applied together when borderStyle is not "none")
@@ -231,7 +263,7 @@ function buildStyleBodyFromObject(
   return parts.join(";");
 }
 
-export function buildBlockStyle(config: Record<string, unknown>, opts?: { imgScoped?: boolean }): string {
+export function buildBlockStyle(config: Record<string, unknown>, opts?: { imgScoped?: boolean } & MediaUrlOptions): string {
   const style    = getEffectiveStyle(config);
   const advanced = (config.advanced ?? {}) as Record<string, unknown>;
   return buildStyleBodyFromObject(style, advanced, opts);
@@ -243,7 +275,7 @@ export function buildBlockStyle(config: Record<string, unknown>, opts?: { imgSco
  * and is intentionally NOT repeated here — the dark rule only carries the
  * declarations that change between modes.
  */
-export function buildDarkBlockStyle(config: Record<string, unknown>, opts?: { imgScoped?: boolean }): string {
+export function buildDarkBlockStyle(config: Record<string, unknown>, opts?: { imgScoped?: boolean } & MediaUrlOptions): string {
   const styleDark = (config.styleDark ?? {}) as Record<string, unknown>;
   if (Object.keys(styleDark).length === 0) return "";
   return buildStyleBodyFromObject(styleDark, {}, opts);
@@ -299,7 +331,7 @@ export function buildImgVisualHoverCss(config: Record<string, unknown>, blockId:
 
 // ─── Video background: storage key or URL ────────────────────────────────────
 
-export function getVideoBackground(config: Record<string, unknown>): string | null {
+export function getVideoBackground(config: Record<string, unknown>, opts?: MediaUrlOptions): string | null {
   const style = getEffectiveStyle(config);
   if (style.backgroundType !== "video") return null;
 
@@ -307,7 +339,7 @@ export function getVideoBackground(config: Record<string, unknown>): string | nu
   if (src === "url") return (style.backgroundVideoUrl as string) ?? null;
 
   const key = style.backgroundVideoMediaStorageKey as string | undefined;
-  return key ? `/_emdash/api/media/file/${key}` : null;
+  return key ? pickResolver(opts)(key) : null;
 }
 
 export type VideoType = "youtube" | "vimeo" | "html5";
@@ -318,8 +350,8 @@ export interface VideoInfo {
   videoId?: string;
 }
 
-export function getVideoInfo(config: Record<string, unknown>): VideoInfo | null {
-  const rawUrl = getVideoBackground(config);
+export function getVideoInfo(config: Record<string, unknown>, opts?: MediaUrlOptions): VideoInfo | null {
+  const rawUrl = getVideoBackground(config, opts);
   if (!rawUrl) return null;
 
   const yt = rawUrl.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
@@ -358,13 +390,13 @@ const HOVER_STYLE_PROPS = [
   "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
 ] as const;
 
-export function buildHoverCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean }): string {
+export function buildHoverCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean } & MediaUrlOptions): string {
   const styleHover = (config.styleHover ?? {}) as Record<string, unknown>;
   const imgScoped = !!opts?.imgScoped;
   const parts: string[] = [];
 
   // Background
-  const bg = buildBackgroundCss(styleHover);
+  const bg = buildBackgroundCss(styleHover, opts);
   if (bg) parts.push(bg.replace(/;$/, "") + " !important");
 
   // Border style + color
@@ -437,7 +469,7 @@ function darkBlockSelector(blockId: string): string {
   return `:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="${blockId}"],[data-epx-block="${blockId}"][data-theme="dark"]`;
 }
 
-export function buildBlockCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean }): string {
+export function buildBlockCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean } & MediaUrlOptions): string {
   if (!blockId) return "";
   const lightRule = wrapBlockCss(buildBlockStyle(config, opts), blockId);
   const darkBody = buildDarkBlockStyle(config, opts);
@@ -609,10 +641,16 @@ export function buildBreakpointCss(
 // + getCustomCss in the same order. Some components missed one or two helpers
 // — Text and Image notably skipped breakpoint variants — leading to silent
 // parity drift with the canvas (audit H2). Use this helper everywhere instead.
+//
+// `opts.resolveMediaUrl` is forwarded into the background helpers so storage
+// keys (`style.backgroundImageStorageKey`, `backgroundSlides[*].storageKey`)
+// resolve through the host's storage adapter. Astro components build the
+// resolver from `Astro.locals` and pass it once. When omitted, the helpers
+// fall back to the legacy `/_emdash/api/media/file/<key>` URL.
 export function buildBlockChromeCss(
   config: Record<string, unknown>,
   blockId: string | undefined,
-  opts?: { imgScoped?: boolean },
+  opts?: { imgScoped?: boolean } & MediaUrlOptions,
 ): string {
   if (!blockId) return "";
   const parts = [

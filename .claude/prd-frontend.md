@@ -169,15 +169,32 @@ export async function getBuilderLayout(pageId: string, collection: string): Prom
 
 ## Image Fields
 
-Image fields are objects: `{ src, alt }`.
+Image fields are `ImageMediaRef` objects: `{ id, storageKey, alt?, filename? }`.
 
-Use EmDash `<Image>` component:
+To turn a `storageKey` into a fetchable URL, use `resolveMediaUrl` from
+`empixel-builder/components` (or `./media.js` from inside the package):
+
 ```astro
-import { Image } from "emdash/ui";
-<Image image={config.backgroundImage} />
+---
+import { resolveMediaUrl } from "./media.js";
+const src = resolveMediaUrl(image?.storageKey, { locals: Astro.locals });
+---
+<img src={src ?? undefined} alt={image?.alt ?? ""} />
 ```
 
-Never use raw `<img>`. Never assume image is a string.
+The host's storage adapter (`local()` / `s3()` / `r2()` / …) determines the
+final URL. Never construct `/_emdash/api/media/file/<key>` by hand — that
+pattern only works for the local-runtime adapter and is the exact bug F2.2
+fixes. See "Storage-agnostic media URL resolution (F2.2)" above.
+
+EmDash also ships an `<Image image={...} />` component in `emdash/ui` for
+fields shaped as the EmDash `MediaValue` type (`{ id, src, meta?, … }`).
+Plugin layouts persist the older `ImageMediaRef` shape (no `src`/`meta`),
+so swapping `<img>` for `<Image>` directly would require a normalization
+pass. Pending that, every block component uses raw `<img>` driven by
+`resolveMediaUrl` — same end result, fewer moving parts.
+
+Never use raw hand-built `/_emdash/api/...` URLs. Never assume image is a string.
 
 ## Props Flow (Page → Blocks)
 
@@ -200,11 +217,71 @@ Wraps pages with builder-related metadata/attributes. Usage TBD.
 ## Rules
 
 - All components are **server-rendered** (no client JS, no `client:*` directives) — except a tiny inline `<script>` in `SectionContainer.astro` for HTML5 video start/end time control
-- **Image fields** for the image block are `ImageMediaRef` objects with `storageKey`; URL is `/_emdash/api/media/file/${storageKey}`
+- **Image fields** for the image block are `ImageMediaRef` objects with `storageKey`. URLs are produced by `resolveMediaUrl(key, { locals: Astro.locals })` from [`src/components/media.ts`](../src/components/media.ts) — never hand-built (see "Storage-agnostic media URL resolution (F2.2)" below).
 - **Use `buildBlockCss(config, blockId)`** plus `<style set:html is:global>` — never raw inline `style=""` for block-level CSS (inline is only used for runtime overrides like image `imgStyle`)
 - **Use `data-epx-block` attribute** on root element of each block
 - **No duplicate logic** between admin previews and frontend components
 - **Cache pages** that query layouts (`Astro.cache.set(cacheHint)`)
+
+## Storage-agnostic media URL resolution (F2.2)
+
+EmDash core does NOT hardcode a single storage backend. Sites can configure
+`local()` (default), `s3()`, `r2()`, or any other adapter that implements
+the storage interface; URLs differ across adapters. The plugin therefore
+must NOT build `/_emdash/api/media/file/<key>` by hand — that path only
+exists for the local-runtime adapter. Section 5 Q3 / Section 4 T4 of
+`raport-empixel-emdash.html` calls this out as a P0 portability bug.
+
+EmDash exposes a synchronous URL builder on the request locals:
+
+```
+Astro.locals.emdash.getPublicMediaUrl?(storageKey: string): string
+```
+
+The `resolveMediaUrl` helper (re-exported as
+`empixel-builder/components`) wraps this:
+
+```ts
+export function resolveMediaUrl(
+  key: string | undefined | null,
+  opts?: { locals?: { emdash?: { getPublicMediaUrl?: (k: string) => string | undefined } } },
+): string | null;
+```
+
+- `null` only when `key` is falsy.
+- Adapter-resolved URL when `Astro.locals.emdash.getPublicMediaUrl` is wired.
+- Otherwise falls back to the legacy `/_emdash/api/media/file/<key>` URL
+  (with `encodeURIComponent`) so transitional setups don't break.
+
+### Sync-vs-async decision in `styleUtils.ts`
+
+`styleUtils.ts` is the only place that consumes a `storageKey` *during CSS
+generation* (rather than from a single Astro frontmatter field). Two paths
+are involved:
+- `style.backgroundImageStorageKey` — image background URL embedded in
+  `background-image:url(...)`.
+- `backgroundSlides[*].storageKey` — first slide URL for slideshow.
+- `style.backgroundVideoMediaStorageKey` — video src for `getVideoBackground`
+  / `getVideoInfo`.
+
+Making these helpers `async` would force every `*.astro` consumer to `await`
+them and would cascade into the canvas (admin) which calls the same helpers
+synchronously inside React render. KISS: keep the helpers **sync** and pass
+a sync `resolveMediaUrl: (key) => string | null` callback through the opts
+bag (`MediaUrlOptions`). Astro components build the closure from
+`Astro.locals` once at the top of the frontmatter and thread it via
+`buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver })`. When no
+resolver is supplied (e.g. a unit test), the helpers fall through to the
+legacy local route via the same `resolveMediaUrl` shipped in `media.ts` —
+behavior is byte-identical to pre-F2.2 for hosts on the local adapter.
+
+This was Option (b) from the F2.2 spec ("resolve URLs upfront at the call
+site and pass them in"). The single threading point is `MediaUrlOptions`,
+re-used by `buildBackgroundCss`, `buildBlockStyle`, `buildDarkBlockStyle`,
+`buildBlockCss`, `buildHoverCss`, `buildBlockChromeCss`,
+`getVideoBackground`, and `getVideoInfo`. `buildBreakpointCss` /
+`buildBreakpointHoverCss` do NOT consult backgrounds, so they don't need
+the option.
 
 ## v0.7 — Theme model
 

@@ -1,6 +1,7 @@
 ---
 import type { TextConfig } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   value: TextConfig;
@@ -40,7 +41,8 @@ if (linkCustomAttr) {
 }
 
 const config = value as Record<string, unknown>;
-const allCss = buildBlockChromeCss(config, blockId);
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const allCss = buildBlockChromeCss(config, blockId, { resolveMediaUrl: resolver });
 ---
 
 <Tag

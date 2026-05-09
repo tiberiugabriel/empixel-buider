@@ -147,4 +147,32 @@ describe("buildBlockChromeCss", () => {
   it("returns empty string when no blockId", () => {
     expect(buildBlockChromeCss({ style: { paddingTop: "8px" } }, undefined)).toBe("");
   });
+
+  it("routes background storage keys through opts.resolveMediaUrl when provided (F2.2)", () => {
+    const config = {
+      style: {
+        backgroundType: "image",
+        backgroundImageSrc: "media",
+        backgroundImageStorageKey: "bg-key.png",
+      },
+    };
+    const css = buildBlockChromeCss(config, "B1", {
+      resolveMediaUrl: (key) => `https://cdn.example.com/${key}`,
+    });
+    expect(css).toContain("background-image:url(https://cdn.example.com/bg-key.png)");
+    // Legacy local route MUST NOT appear when a resolver is supplied.
+    expect(css).not.toContain("/_emdash/api/media/file/");
+  });
+
+  it("falls back to the legacy local URL when no resolver is supplied (F2.2)", () => {
+    const config = {
+      style: {
+        backgroundType: "image",
+        backgroundImageSrc: "media",
+        backgroundImageStorageKey: "bg-key.png",
+      },
+    };
+    const css = buildBlockChromeCss(config, "B1");
+    expect(css).toContain("background-image:url(/_emdash/api/media/file/bg-key.png)");
+  });
 });

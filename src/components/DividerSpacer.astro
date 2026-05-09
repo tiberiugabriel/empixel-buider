@@ -1,6 +1,7 @@
 ---
 import type { DividerSpacerConfig, DividerConfig, IconGroupValue, DividerGradient } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   value: DividerSpacerConfig;
@@ -19,9 +20,8 @@ const divider = (value.divider ?? {}) as DividerConfig;
 const dividerActive = divider.style && divider.style !== "none";
 const icon = (divider.icon ?? {}) as IconGroupValue;
 
-const iconUrl = icon.iconSrc?.storageKey
-  ? `/_emdash/api/media/file/${icon.iconSrc.storageKey}`
-  : undefined;
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const iconUrl = resolveMediaUrl(icon.iconSrc?.storageKey, { locals: Astro.locals }) ?? undefined;
 const iconSize = icon.iconSize || "20px";
 const iconColor = icon.iconColor;
 const iconColorAlpha = icon.iconColorAlpha ?? 1;
@@ -151,7 +151,7 @@ const iconImgCss = blockId && iconUrl && isSvgIcon && iconColor
     }`
   : "";
 
-const chromeCss = buildBlockChromeCss(cfg, blockId);
+const chromeCss = buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver });
 const allCss = [noDividerWrapperCss, wrapperCss, lineCss, iconImgCss, chromeCss].filter(Boolean).join("");
 
 // Layout matrix (children order):

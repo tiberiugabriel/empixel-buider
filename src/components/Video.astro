@@ -1,6 +1,7 @@
 ---
 import type { VideoConfig, VideoSourceValue, VideoOverlayValue } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   value: VideoConfig;
@@ -29,9 +30,10 @@ const aspectRatioCss = aspect === "custom"
   ? `${value.aspectRatioCustomW || "16"} / ${value.aspectRatioCustomH || "9"}`
   : aspectMap[aspect] ?? "16 / 9";
 
-// Resolve video URL.
+// Resolve video URL through the host's storage adapter.
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
 const videoUrl: string | undefined = video.src === "media" && video.media?.storageKey
-  ? `/_emdash/api/media/file/${video.media.storageKey}`
+  ? (resolveMediaUrl(video.media.storageKey, { locals: Astro.locals }) ?? undefined)
   : video.url;
 
 function detectProvider(url: string | undefined): "youtube" | "vimeo" | "custom" | null {
@@ -83,9 +85,7 @@ function buildVimeoUrl(id: string, v: VideoSourceValue): string {
   return `https://player.vimeo.com/video/${id}?${p}`;
 }
 
-const overlayUrl: string | undefined = overlay.image?.storageKey
-  ? `/_emdash/api/media/file/${overlay.image.storageKey}`
-  : undefined;
+const overlayUrl: string | undefined = resolveMediaUrl(overlay.image?.storageKey, { locals: Astro.locals }) ?? undefined;
 const overlayAlt: string = overlay.image?.alt ?? overlay.image?.filename ?? "";
 const overlaySize: string = overlay.size ?? "cover";
 const overlayPosition: string = overlay.position ?? "center";
@@ -95,7 +95,7 @@ const vimeoUrl = provider === "vimeo" && videoUrl ? (() => { const id = vimeoId(
 
 const lazy = video.lazyLoad ?? true;
 
-const chromeCss = buildBlockChromeCss(cfg, blockId);
+const chromeCss = buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver });
 
 const wrapperCss = blockId
   ? `[data-epx-block="${blockId}"]{position:relative;width:100%;aspect-ratio:${aspectRatioCss};overflow:hidden;}

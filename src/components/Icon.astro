@@ -1,6 +1,7 @@
 ---
 import type { IconConfig } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   value: IconConfig;
@@ -15,9 +16,8 @@ const cssId = advanced?.cssId || undefined;
 const cssClasses = advanced?.cssClasses || undefined;
 
 const icon = value.icon ?? {};
-const iconSrcUrl = icon.iconSrc?.storageKey
-  ? `/_emdash/api/media/file/${icon.iconSrc.storageKey}`
-  : undefined;
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const iconSrcUrl = resolveMediaUrl(icon.iconSrc?.storageKey, { locals: Astro.locals }) ?? undefined;
 const iconAlt = icon.iconSrc?.alt ?? "";
 const filename = icon.iconSrc?.filename ?? "";
 const isSvg = /\.svg(\?|$)/i.test(filename);
@@ -56,7 +56,7 @@ if (value.linkCustomAttr) {
   }
 }
 
-const chromeCss = buildBlockChromeCss(cfg, blockId);
+const chromeCss = buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver });
 
 const wrapperCss = blockId
   ? `[data-epx-block="${blockId}"]{display:flex;justify-content:${justify};}`

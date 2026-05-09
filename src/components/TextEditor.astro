@@ -2,6 +2,7 @@
 import type { TextEditorConfig } from "../types.js";
 import { buildBlockChromeCss } from "./styleUtils.js";
 import PortableTextImage from "./PortableTextImage.astro";
+import { resolveMediaUrl } from "./media.js";
 
 interface Props {
   value: TextEditorConfig;
@@ -52,7 +53,8 @@ const columnsCss = blockId
   ? `[data-epx-block="${blockId}"]{column-count:${columnCount};column-gap:${columnsGap};}`
   : "";
 
-const chromeCss = buildBlockChromeCss(cfg, blockId);
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const chromeCss = buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver });
 
 // Per-breakpoint emission for text-editor-specific config + dropCap settings.
 let textEditorBpCss = "";
