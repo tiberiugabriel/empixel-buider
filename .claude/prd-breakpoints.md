@@ -164,6 +164,76 @@ Frontend emission walks the union of `styleBreakpoints` + `configBreakpoints` ke
 
 Currently used by: `text-editor` block (`dropCap`, `columns`, `columnsCustom`, `columnsGap`).
 
+## Active-breakpoint preview on Canvas (F3.6.3)
+
+`buildBreakpointCss` and `buildBreakpointHoverCss` emit `@media(max-width:Xpx)`
+queries that gate the per-bp overrides. On the frontend that's exactly right —
+the host site's viewport IS the user's viewport, so `@media` fires naturally.
+
+On Canvas the situation is different: the canvas viewport is the actual
+browser window (the `.epx-canvas--preview` frame just visually constrains the
+preview via `max-width`, but `@media` still checks the WINDOW width). So when
+the editor switches to `mobile-portrait` (575px), the underlying `@media(max-width:575px)`
+rule does NOT fire on a 1920px laptop screen, even though the preview frame
+is 575px wide.
+
+F3.6.3 resolves this with a **stacked preview overlay**: Canvas emits the
+exact same frontend bundle (so drift dies — `buildBlockChromeCss` is the same
+helper Astro components call), then layers a non-`@media` duplicate of the
+active bp's declarations AFTER the bundle. Selector specificity is identical
+(both rules target `[data-epx-block="<id>"]`), so cascade order picks the
+later rule — the overlay wins.
+
+Mechanism (in `src/admin/Canvas.tsx`):
+
+```ts
+function buildActiveBpPreviewCss(block, activeBreakpoint): string {
+  if (activeBreakpoint === "desktop") return "";
+  const styleBp      = config.styleBreakpoints?.[activeBreakpoint];
+  const styleHoverBp = config.styleHoverBreakpoints?.[activeBreakpoint];
+  if (!styleBp && !styleHoverBp) return "";
+
+  // Pseudo-merge the active bp into a synthetic config, then call the same
+  // `buildBlockCss` / `buildHoverCss` (+ image-visual variants when
+  // `imgScoped`) helpers the frontend uses. The result is a non-`@media`
+  // rule that matches what the frontend's @media query would render at this
+  // width.
+  const cfg = {
+    ...config,
+    style:      { ...config.style,      ...styleBp      },
+    styleHover: { ...config.styleHover, ...styleHoverBp },
+  };
+  return buildBlockCss(cfg, blockId, opts) + buildHoverCss(cfg, blockId, opts) + …;
+}
+
+export function buildCanvasBlockCss(block, activeBreakpoint): string {
+  const chrome  = buildBlockChromeCss(config, blockId, opts);   // FULL frontend bundle
+  const preview = buildActiveBpPreviewCss(block, activeBreakpoint);
+  return chrome + preview;                                       // overlay wins cascade
+}
+```
+
+Why not `@container` queries (spec option a)?
+- Would require rewriting `buildBreakpointCss` to emit `@container` instead
+  of `@media`. That helper is in Agent B's column (`src/components/styleUtils.ts`)
+  — out of scope for an Agent C task.
+- Would also force every host site to opt into a `container-type: inline-size`
+  ancestor, which is a frontend behavior change beyond F3.6's "drift fix"
+  scope. F4 can revisit.
+
+Why not CSS variable + `:where(...)` (spec option b)?
+- CSS variables can't gate `@media` evaluation. The browser checks the actual
+  viewport regardless of an author CSS var. There's no `@media(--epx-active-bp-width <= 575px)`
+  syntax.
+- A `:where(...)` shim wrapper would have the same problem — selector
+  conditions don't trigger `@media`.
+
+Trade-off: when active-bp overrides exist, the resulting stylesheet contains
+two rules with the same declarations (one inside the `@media` query, one
+outside). Stylesheet size grows by the active-bp's declaration footprint
+per block, but the canvas is admin-only and the duplication is one rule
+per block — negligible impact.
+
 ## Breakpoint indicator — convention
 
 Bp-aware controls render the `breakpointIndicator` (`<span class="epx-bp-label-icon">…<getBpIcon(activeBreakpoint)/></span>`) on every breakpoint, including `desktop`. Do NOT gate on `isNonDesktop`. Icon doubles as a "this control is bp-aware" affordance.

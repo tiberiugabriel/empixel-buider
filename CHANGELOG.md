@@ -5,6 +5,61 @@ SemVer.
 
 ## Unreleased — 0.9.6 prep
 
+- **F3.6.3 — Canvas now calls `buildBlockChromeCss` identically with the
+  frontend `*.astro` components. Drift between admin preview and host
+  render dies by construction.** Previously `Canvas.tsx`'s
+  `buildEffectiveBlockCss` only called a subset (`buildBlockCss` +
+  `buildHoverCss` + `getCustomCss` + `buildImgVisualCss/Hover` for image
+  blocks) and pseudo-merged `styleBreakpoints[bp]` into `style` to fake
+  the active breakpoint. That subset silently dropped `buildBreakpointCss`
+  and `buildBreakpointHoverCss`, so a config with hover + breakpoint +
+  dark variants rendered one way on Canvas, another on the host site
+  (audit M2 / H1 follow-up). After F3.6.3, Canvas's per-block CSS path
+  is one call to the same `buildBlockChromeCss` helper every leaf Astro
+  block (`Text.astro`, `Image.astro`, `Button.astro`, `Icon.astro`,
+  `TextEditor.astro`, `Video.astro`, `Html.astro`, `DividerSpacer.astro`)
+  uses — so the FULL chain (block + hover + `@media` breakpoint + `@media`
+  breakpoint-hover + custom + image-visual variants when `imgScoped`)
+  emits identically in both worlds.
+  - **Active-breakpoint preview mechanism** — Canvas viewport is the
+    actual browser window, so `@media(max-width:Xpx)` queries from
+    `buildBreakpointCss` don't fire when previewing a 575px mobile bp on
+    a 1920px screen. Spec option (a) `@container` queries was rejected
+    because rewriting `buildBreakpointCss` falls in Agent B's column;
+    spec option (b) CSS variable + `:where(...)` was rejected because
+    CSS variables can't gate `@media` evaluation (the browser checks
+    actual viewport regardless of an author CSS var). KISS fallback per
+    F3.6.3 spec: emit a **stacked preview overlay** — a non-`@media`
+    duplicate of the active bp's declarations (scoped to
+    `[data-epx-block="<id>"]` for visual, `[…]:hover` for hover,
+    `[…] img` when `imgScoped`) layered AFTER the frontend bundle so it
+    wins in cascade order. Frontend stays untouched. F4 can revisit if
+    `@container` becomes viable across all block components.
+  - New exported helper from `src/admin/Canvas.tsx`:
+    `buildCanvasBlockCss(block, activeBreakpoint)` — full frontend
+    bundle + active-bp overlay. Exported only for testing
+    (`tests/canvasCss.test.ts`); the inline reducer's `walk(sections)`
+    is the only production caller.
+  - Imports in `Canvas.tsx`: `buildBlockChromeCss` added; `getCustomCss`
+    dropped (now folded into `buildBlockChromeCss`). `buildBlockCss` /
+    `buildHoverCss` / `buildImgVisualCss` / `buildImgVisualHoverCss`
+    kept — used by the overlay path.
+  - Tests: new `tests/canvasCss.test.ts` (11 tests) — desktop output
+    equals the frontend's `buildBlockChromeCss` exactly for each
+    representative shape (text, image with `imgScoped`, dark variant,
+    full bundle); active-bp preview overlay layers AFTER the frontend
+    bundle (string prefix), only fires when active bp has overrides,
+    routes images through `imgScoped`, wins cascade order. Total
+    242 → 253 (+11 new).
+  - LOC: `Canvas.tsx` 596 → 631 (+35) — the new
+    `buildCanvasBlockCss` + `buildActiveBpPreviewCss` pair plus the
+    F3.6.3 doc comment block. The pseudo-merge logic moved into the
+    overlay function but no longer pollutes the main code path.
+  - Files: `src/admin/Canvas.tsx`, `tests/canvasCss.test.ts` (new),
+    `CHANGELOG.md`, `.claude/prd-builder-ui.md`,
+    `.claude/prd-breakpoints.md`,
+    `.claude/coordination/status/agent-c.md`.
+
 - **F3.6.2 — `getDefaultBlockConfig(type)` helper exported from
   `blockDefinitions.ts`. `ADD_BLOCK` + `LOAD_SUCCESS` (plus
   `ADD_TO_CONTAINER` and `INSERT_AFTER` for consistency) fill missing

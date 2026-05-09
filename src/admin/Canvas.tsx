@@ -12,11 +12,11 @@ import { PREVIEW_COMPONENTS } from "./previews/index.js";
 import { BlockOverlay } from "./BlockOverlay.js";
 import { BlockErrorBoundary } from "./components/BlockErrorBoundary.js";
 import {
+  buildBlockChromeCss,
   buildBlockCss,
   buildHoverCss,
   buildImgVisualCss,
   buildImgVisualHoverCss,
-  getCustomCss,
 } from "../components/styleUtils.js";
 
 export const CANVAS_DROP_ID = "canvas-drop";
@@ -46,34 +46,49 @@ export type EmptyZoneData = {
 // inline because it's specific to admin canvas mounting and isn't represented
 // in styleUtils' selector output.
 //
-// To preview a non-desktop breakpoint, `buildEffectiveBlockCss` synthetically
-// merges `styleBreakpoints[bp]` into `style` (and the hover counterpart) so the
-// emitted rule matches what the frontend's @media query would render — but the
-// canvas itself remains at full window width, so we can't rely on the actual
-// @media to fire.
+// **F3.6.3** — Canvas now calls `buildBlockChromeCss` exactly the same way the
+// frontend `*.astro` components do (Text, Image, Button, Icon, …). That helper
+// owns the full chain — `buildBlockCss` + `buildHoverCss` + `buildBreakpointCss`
+// + `buildBreakpointHoverCss` + `getCustomCss` (+ image-visual variants when
+// `imgScoped: true`). Drift between admin preview and host render dies by
+// construction: a config with hover + breakpoint + dark variants now renders
+// the same way in both worlds.
+//
+// **Active-breakpoint preview** — `buildBreakpointCss` emits `@media(max-width)`
+// rules; the canvas <iframe-less> viewport is the actual browser window, so
+// those `@media` queries don't fire when previewing a 575px mobile bp on a
+// 1920px screen. To still show the per-bp variant on canvas we layer a
+// **preview overlay** on top of the frontend bundle: a non-`@media` duplicate
+// of the active bp's declarations (scoped to `[data-epx-block="<id>"]` and
+// `:hover`) that cascades AFTER the frontend bundle and therefore wins. The
+// frontend bundle stays identical to what the host site emits — the overlay is
+// a Canvas-only addition. Spec option (a) `@container` queries would have
+// required rewriting `buildBreakpointCss` (Agent B's column); spec option (b)
+// CSS-variable + `:where(...)` can't work because CSS vars don't gate `@media`
+// evaluation. KISS fallback per F3.6.3 spec.
 
-function buildEffectiveBlockCss(
+function buildActiveBpPreviewCss(
   block: SectionBlock,
   activeBreakpoint: BreakpointId,
 ): string {
+  if (activeBreakpoint === "desktop") return "";
   const config = block.config as Record<string, unknown>;
+  const styleBp = (config.styleBreakpoints as Record<string, Record<string, unknown>> | undefined)?.[activeBreakpoint];
+  const styleHoverBp = (config.styleHoverBreakpoints as Record<string, Record<string, unknown>> | undefined)?.[activeBreakpoint];
+  if (!styleBp && !styleHoverBp) return "";
+
   const isImage = block.type === "image";
   const opts = isImage ? { imgScoped: true } : undefined;
 
-  const styleBp = activeBreakpoint !== "desktop"
-    ? (config.styleBreakpoints as Record<string, Record<string, unknown>> | undefined)?.[activeBreakpoint]
-    : undefined;
-  const styleHoverBp = activeBreakpoint !== "desktop"
-    ? (config.styleHoverBreakpoints as Record<string, Record<string, unknown>> | undefined)?.[activeBreakpoint]
-    : undefined;
-
-  const cfg = (styleBp || styleHoverBp)
-    ? {
-        ...config,
-        style: { ...((config.style as Record<string, unknown>) ?? {}), ...(styleBp ?? {}) },
-        styleHover: { ...((config.styleHover as Record<string, unknown>) ?? {}), ...(styleHoverBp ?? {}) },
-      }
-    : config;
+  // Pseudo-merge active bp into style / styleHover so the helpers emit a
+  // non-`@media` rule that matches what the frontend's @media query would
+  // render at this width. Existing top-level keys win when the bp doesn't
+  // override them.
+  const cfg: Record<string, unknown> = {
+    ...config,
+    style: { ...((config.style as Record<string, unknown>) ?? {}), ...(styleBp ?? {}) },
+    styleHover: { ...((config.styleHover as Record<string, unknown>) ?? {}), ...(styleHoverBp ?? {}) },
+  };
 
   let out = buildBlockCss(cfg, block.id, opts);
   out += buildHoverCss(cfg, block.id, opts);
@@ -81,8 +96,28 @@ function buildEffectiveBlockCss(
     out += buildImgVisualCss(cfg, block.id);
     out += buildImgVisualHoverCss(cfg, block.id);
   }
-  out += getCustomCss(cfg, block.id);
   return out;
+}
+
+/**
+ * Per-block CSS for Canvas: full frontend bundle (drift-free) plus an
+ * active-breakpoint preview overlay layered on top. Exported for testing —
+ * keeps Canvas's CSS path inspectable without mounting the React tree.
+ */
+export function buildCanvasBlockCss(
+  block: SectionBlock,
+  activeBreakpoint: BreakpointId,
+): string {
+  const config = block.config as Record<string, unknown>;
+  const isImage = block.type === "image";
+  const opts = isImage ? { imgScoped: true } : undefined;
+
+  // Same call shape every frontend `*.astro` component uses — `buildBlockChromeCss`
+  // emits block + hover + breakpoint + breakpoint-hover + custom (+ image-visual
+  // variants when `imgScoped`).
+  const chrome = buildBlockChromeCss(config, block.id, opts);
+  const preview = buildActiveBpPreviewCss(block, activeBreakpoint);
+  return chrome + preview;
 }
 
 // ─── Canvas Props ─────────────────────────────────────────────────────────────
@@ -144,7 +179,7 @@ export function Canvas({
     function walk(list: SectionBlock[]): string {
       let out = "";
       for (const block of list) {
-        out += buildEffectiveBlockCss(block, activeBreakpoint);
+        out += buildCanvasBlockCss(block, activeBreakpoint);
         if (block.children) out += walk(block.children);
         if (block.slots) block.slots.forEach((slot) => { out += walk(slot); });
       }

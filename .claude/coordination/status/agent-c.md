@@ -21,6 +21,116 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-10 02:18 · F3.6.3 done
+
+Branch: `feature/agentC-F3.6.3`. Single commit (see git log).
+
+**Files changed**:
+- `src/admin/Canvas.tsx` — replaced `buildEffectiveBlockCss` with the
+  new `buildCanvasBlockCss(block, activeBreakpoint)` (exported) which
+  delegates to `buildBlockChromeCss(config, blockId, opts)` for the
+  full frontend bundle then layers a non-`@media` preview overlay on
+  top via the new `buildActiveBpPreviewCss` helper. Imports updated:
+  `buildBlockChromeCss` added; `getCustomCss` removed (folded into
+  the chrome helper); `buildBlockCss` / `buildHoverCss` /
+  `buildImgVisualCss` / `buildImgVisualHoverCss` retained for the
+  overlay path.
+- `tests/canvasCss.test.ts` — new. 11 tests across two describe
+  blocks: "frontend parity" (5 tests — desktop output equals
+  `buildBlockChromeCss` exactly for text/image/dark variants, full
+  bundle composition, empty-state) and "active-breakpoint preview
+  overlay" (6 tests — overlay layers AFTER bundle, hover overlay,
+  no overlay when active bp has no overrides, image `imgScoped`
+  routing, desktop returns no overlay, cascade order verified by
+  string index).
+- `CHANGELOG.md` — F3.6.3 entry above F3.6.2.
+- `.claude/prd-builder-ui.md` — replaced the F3.6.2-era pseudo-merge
+  description with the F3.6.3 unification (new `buildCanvasBlockCss`
+  helper, FULL chrome chain, drift dies, active-bp overlay).
+- `.claude/prd-breakpoints.md` — new "Active-breakpoint preview on
+  Canvas (F3.6.3)" section above "Breakpoint indicator — convention".
+  Documents why `@media` doesn't fire on Canvas, why spec options (a)
+  and (b) were rejected, the stacked-overlay mechanism with code
+  sketch, and the trade-off (rule duplication when overlay fires —
+  negligible since canvas is admin-only).
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test &&
+npm run build` all green. 253 tests pass (242 → 253, +11 new in
+`canvasCss.test.ts`).
+
+**Active-breakpoint mechanism chosen**: stacked preview overlay (KISS
+fallback per F3.6.3 spec). Spec option (a) `@container` queries
+rejected because rewriting `buildBreakpointCss` falls in Agent B's
+column. Spec option (b) CSS variable + `:where(...)` rejected because
+CSS variables can't gate `@media` evaluation (the browser checks
+actual viewport regardless). Overlay emits a non-`@media` duplicate
+of the active bp's declarations (scoped to `[data-epx-block="<id>"]`
++ `:hover` + `img` for `imgScoped`) layered AFTER the frontend
+bundle so cascade order picks it up. Trade-off documented in
+prd-breakpoints.md: when overlay fires, the stylesheet has two rules
+with identical declarations — rule duplication footprint is one rule
+per block per active-bp override, negligible since canvas is admin
+only and the overlay is identity-stable across renders (memoized via
+`useMemo`).
+
+**No new export from `styleUtils.ts` needed**: `buildBlockChromeCss`
+was already exported (per `interfaces.md` row "✅ partial — needs
+export surface review in F3.6.3"). After this PR the interface row
+moves from "partial" to "stable" — Agent C doesn't edit the file but
+flags this for orchestrator review.
+
+**LOC delta on Canvas.tsx**: 596 → 631 (+35). Most growth is the
+F3.6.3 doc-comment block (~20 LOC) explaining the unification + the
+preview-overlay mechanism. The pseudo-merge logic moved from the main
+`buildEffectiveBlockCss` path into `buildActiveBpPreviewCss` (gated
+on `activeBreakpoint !== "desktop"` and on the active-bp having any
+override) — desktop preview is now zero work beyond the chrome call.
+
+**Tests added**: `tests/canvasCss.test.ts` (new file, 11 tests).
+
+**No `src/types.ts` proposal**: no shared-type changes — all new code
+lives in `src/admin/Canvas.tsx` (Agent C's column) and the new test
+file.
+
+**No blockers.**
+
+## 2026-05-10 01:05 · F3.6.3 (Canvas → buildBlockChromeCss) started
+
+Branch: `feature/agentC-F3.6.3`. Worktree at latest `main` (`d777a5c`).
+Phase F3.6 round 3. Unifies Canvas's per-block CSS path with the
+frontend Astro components.
+
+Planned scope:
+- `src/admin/Canvas.tsx` — replace `buildEffectiveBlockCss` with a
+  call to `buildBlockChromeCss` (Agent B's exported helper). Canvas
+  emits the FULL frontend bundle now (including `@media` queries from
+  `buildBreakpointCss` / `buildBreakpointHoverCss`) instead of only
+  `buildBlockCss + buildHoverCss + getCustomCss`.
+- Active-breakpoint preview mechanism — chosen mechanism: **stacked
+  preview overlay**. Spec option (a) `@container` queries would force
+  Agent B to rewrite the `buildBreakpointCss` helper (out of scope —
+  not Agent C's column). Spec option (b) CSS variable + `:where(...)`
+  doesn't work because CSS variables can't gate `@media` evaluation
+  (the browser checks the actual viewport regardless of an author
+  CSS var). KISS fallback per the spec: keep the pseudo-merge for the
+  active bp, but layer it ON TOP of the full frontend bundle so non-
+  active breakpoints still emit identical to the host site. Preview
+  overlay is a non-`@media` duplicate of the active bp's declarations,
+  scoped to `[data-epx-block="<id>"]` (and `[…] :hover` for hover);
+  it cascades after the full bundle so it wins. Frontend stays
+  untouched. F4 can revisit if `@container` becomes viable across all
+  block components.
+- Tests — extend `tests/styleUtils.test.ts` with assertions that
+  `buildBlockChromeCss` output is the same shape Canvas emits, plus
+  a Canvas-specific test for the preview overlay path.
+- `CHANGELOG.md` — append F3.6.3 entry.
+- `.claude/prd-builder-ui.md`, `.claude/prd-breakpoints.md` — document
+  the unification + preview mechanism.
+
+No `src/types.ts` proposal expected. No new export from
+`styleUtils.ts` needed — `buildBlockChromeCss` is already public.
+
 ## 2026-05-10 00:10 · F3.6.2 (getDefaultBlockConfig + load-time fill) started
 
 Branch: `feature/agentC-F3.6.2`. Worktree at latest `main` (`0d9040e`).
