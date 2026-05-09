@@ -8,7 +8,15 @@ import Html from "./Html.astro";
 import DividerSpacer from "./DividerSpacer.astro";
 import LayoutRenderer from "./LayoutRenderer.astro";
 
-export { getBuilderLayout } from "./db.js";
+// Frontend reader for `(collection, entryId)` layouts. v0.9 (F3.4)
+// signature: `getBuilderLayout(astro, collection, entryId, enabled?)` —
+// async, takes Astro (or any context with `.locals.emdash`) as the
+// first arg, returns `Promise<BuilderLayoutResult>`. Re-exported here
+// (along with the result type and the cache-tag helper) so consumers
+// don't deep-import from `empixel-builder/components/db` (the F2.4
+// debt called out in `.claude/coordination/interfaces.md`).
+export { getBuilderLayout, builderLayoutCacheTag } from "./db.js";
+export type { BuilderCacheHint, BuilderLayoutContext, BuilderLayoutResult } from "./db.js";
 export { LayoutRenderer };
 export { default as BuilderWrapper } from "./BuilderWrapper.astro";
 // F2.2 — exposed so admin (Agent C) and any external consumer can resolve

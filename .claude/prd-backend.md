@@ -208,8 +208,13 @@ where ctx is available.
   from `empixel_builder_layouts` into `ctx.storage.layouts`. Flag stored
   in `ctx.kv`. Conflict resolution mirrors `runSlugToUlidMigration_v1`:
   newer `updated_at` wins.
-- F3.4 (Agent B) — frontend reader rewrite. `getBuilderLayout` reads
-  through `ctx.storage.layouts` instead of via `getDb()`.
+- F3.4 (Agent B) — **done 2026-05-09**. `getBuilderLayout` is now async,
+  takes `Astro` (or any `BuilderLayoutContext`) as the first argument,
+  and reads through the shared `_plugin_storage` table via
+  `Astro.locals.emdash.db` (Kysely) when available, falling back to the
+  legacy `empixel_builder_layouts` SQLite path via `getDb()` for one
+  version. The frontend reader is the new owner of `src/components/db.ts`
+  (handed off from Agent A — see `coordination/ownership.md`).
 - F3.5 — drop the legacy fallback in `readLayoutFromStorageOrLegacy` and
   `readLegacyEntryMetaForCollection`, drop the legacy DELETE in
   `content:afterDelete`, drop the `better-sqlite3` peer dep + the SQLite
@@ -467,11 +472,12 @@ documented in the README's "Caching builder layouts" section.
 1. SettingsPage calls `GET /entries?collection=`
 2. User toggles → `POST /toggle { entryId, collection, enabled }`
 
-### Rendering (frontend)
-1. Astro page calls `getBuilderLayout(collection, entryId, enabled?)`
-2. `db.ts` queries `empixel_builder_layouts`
-3. Returns `BuilderLayoutResult = { sections: SectionBlock[] | null; cacheHint: { tags?: string[]; lastModified?: Date } }` (v0.8 — F2.4)
-4. Host page passes the result through `<BuilderWrapper sections={…}>` (auto-plumbs `Astro.cache.set(cacheHint)`) or destructures + calls set manually
+### Rendering (frontend, v0.9 — F3.4)
+1. Astro page calls `await getBuilderLayout(Astro, collection, entryId, enabled?)` — async, takes the Astro request as the first arg.
+2. `db.ts` reads `_plugin_storage` via `Astro.locals.emdash.db` (Kysely) when available, partitioned under `plugin_id = "empixel-builder", collection = "layouts"`. F3.2 routes write rows here; F3.3 migrates legacy rows in.
+3. On a storage miss (no row yet, or pre-0.9 EmDash host without `db` on locals), the reader falls through to the legacy `empixel_builder_layouts` SQLite table via `getDb()` from `dbShared.ts`. Read-only fallback — kept until F3.5 drops the better-sqlite3 peer dependency.
+4. Returns `BuilderLayoutResult = { sections: SectionBlock[] | null; cacheHint: { tags?: string[]; lastModified?: Date } }`. Same contract as v0.8 (F2.4) — only the call shape changed.
+5. Host page passes the value (or the unawaited Promise) through `<BuilderWrapper sections={…}>` — wrapper resolves the Promise and auto-plumbs `Astro.cache.set(cacheHint)`. Manual consumers `await` and call set themselves.
 
 ## Non-Removable Breakpoints
 

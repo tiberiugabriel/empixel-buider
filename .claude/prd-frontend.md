@@ -158,28 +158,76 @@ All exports return CSS **strings** (selector-based rules), not inline declaratio
 
 ## Database Query (db.ts)
 
-### getBuilderLayout(collection, entryId, enabled?)
+### getBuilderLayout(astro, collection, entryId, enabled?) — v0.9 (F3.4)
 ```ts
+export interface BuilderLayoutContext {
+  locals?: {
+    emdash?: {
+      db?: unknown; // Kysely instance from Astro.locals.emdash.db
+      getPublicMediaUrl?: (storageKey: string) => string | undefined;
+    };
+  };
+}
+
 export interface BuilderLayoutResult {
   sections: SectionBlock[] | null;
   cacheHint: { tags?: string[]; lastModified?: Date };
 }
 
 export function getBuilderLayout(
+  astro: BuilderLayoutContext, // Astro itself, or any { locals } shape
   collection: string,
   entryId: string,
   enabled?: boolean,
-): BuilderLayoutResult;
+): Promise<BuilderLayoutResult>;
 ```
-- Queries `empixel_builder_layouts` WHERE `collection = ? AND entry_id = ?`
-- Resolves slug → ULID (single query — slug↔ULID fallback chain dropped in F2.3)
-- Deserializes `sections` JSON string → `SectionBlock[]`
-- Returns `{ sections, cacheHint }` (v0.8 — F2.4); `sections` is `null` when no row, builder disabled, or input rejected
-- The `cacheHint.tags` always carries `empixel:layout:<collection>:<entryId>` so
-  admin saves can invalidate the host page by tag. `cacheHint.lastModified`
-  is parsed from `updated_at` when the row exists. The hint is returned on
-  every code path so host pages can call `Astro.cache.set(cacheHint)`
-  unconditionally.
+
+**Async + Astro-aware (F3.4 breaking change).** Hosts must `await` the
+call and pass `Astro` (or any `{ locals: Astro.locals }` shape) as the
+first argument. `BuilderWrapper.astro` accepts both the resolved value
+and the unawaited Promise on its `sections` prop, so
+`<BuilderWrapper sections={getBuilderLayout(Astro, ...)}>` works
+without an explicit `await` at the page level.
+
+Read order:
+
+1. **Storage path (preferred).** When `Astro.locals.emdash.db` is
+   present (Kysely instance EmDash exposes since 0.9), the reader
+   queries the shared `_plugin_storage` table partitioned under
+   `plugin_id = "empixel-builder" AND collection = "layouts"` — the
+   same partitioning EmDash's internal `PluginStorageRepository` uses
+   for the typed `ctx.storage.layouts` handle. Rows live there once
+   F3.2 (route handlers) and F3.3 (one-shot migration) ship.
+   `PluginStorageRepository` itself is not exported from `emdash`
+   today, so the frontend reader queries the table directly via
+   Kysely with the same composite-key filter. No imports from
+   `kysely` — only the public `selectFrom(...).select(...).where(...)`
+   surface is consumed.
+2. **Legacy SQLite fallback.** When the storage path returns no row
+   (or the host hasn't upgraded EmDash yet, or `Astro.locals.emdash.db`
+   is unavailable), the reader falls through to the existing
+   `empixel_builder_layouts` SQLite table via `getDb()` from
+   `src/dbShared.ts`. Same query shape as F2.3/F2.4: slug → ULID
+   resolution at the boundary (only when needed), then a single
+   `SELECT sections, enabled, updated_at FROM empixel_builder_layouts
+   WHERE collection = ? AND entry_id = ?`. F3.5 drops this fallback
+   and the `better-sqlite3` peer dependency.
+
+Returns `{ sections, cacheHint }` (v0.8 — F2.4 contract preserved); `sections` is `null`
+when no row, builder disabled, input rejected, or both reads return
+empty. The `cacheHint.tags` always carries
+`empixel:layout:<collection>:<entryId>` so admin saves can invalidate
+the host page by tag. `cacheHint.lastModified` is parsed from the
+storage row's `updatedAt` (storage path) or the legacy row's
+`updated_at` column (fallback path); skipped when no row exists or
+parsing fails. The hint is returned on every code path so host pages
+can call `Astro.cache.set(cacheHint)` unconditionally.
+
+The `BuilderLayoutContext` interface is purposefully a structural
+subset of Astro: tests mock the `db` handle with a tiny stub, and a
+non-Astro consumer (e.g. a custom render path inside an EmDash
+plugin) can build the same context from any source that exposes
+the Kysely instance. Production passes `Astro` directly.
 
 #### `BuilderWrapper.astro` — automatic cacheHint plumbing (F2.4)
 
@@ -235,24 +283,31 @@ Never use raw hand-built `/_emdash/api/...` URLs. Never assume image is a string
 
 ```astro
 ---
-// In an Astro page:
+// In an Astro page (v0.9 — F3.4):
 import { getBuilderLayout, LayoutRenderer } from "empixel-builder/components";
 
-const { sections, cacheHint } = getBuilderLayout(collection, entry.data.id, entry.data.empixel_builder);
+const { sections, cacheHint } = await getBuilderLayout(
+  Astro,
+  collection,
+  entry.data.id,
+  entry.data.empixel_builder,
+);
 Astro.cache.set(cacheHint);
 ---
 
 {sections && <LayoutRenderer sections={sections} />}
 ```
 
-(Or use `<BuilderWrapper sections={builderLayout}>` and skip the manual
-`Astro.cache.set` call — the wrapper plumbs the hint automatically.)
+(Or use `<BuilderWrapper sections={getBuilderLayout(Astro, collection, entry.data.id, entry.data.empixel_builder)}>`
+and skip both the explicit `await` and the manual
+`Astro.cache.set` call — the wrapper accepts the unawaited Promise,
+resolves it, and plumbs the hint automatically.)
 
 ## BuilderWrapper
 
 Wraps a host page so the builder layout (when present) replaces the
-page's normal `<slot />` content. Pass the full `BuilderLayoutResult`
-returned by `getBuilderLayout` and the wrapper:
+page's normal `<slot />` content. Pass the value returned by
+`getBuilderLayout` (or the unawaited Promise — see below) and the wrapper:
 
 1. Renders `<LayoutRenderer sections={…}>` when sections exist.
 2. Renders `<slot />` (the host page's normal content) when no layout
@@ -260,11 +315,18 @@ returned by `getBuilderLayout` and the wrapper:
 3. Calls `Astro.cache.set(cacheHint)` itself so admin saves bust the
    host page's cache by tag — no manual call needed.
 
-The legacy `SectionBlock[] | null` shape is still accepted on the
-`sections` prop for transitional hosts (older `npx empixel-builder add`
-output), but in that path no automatic `Astro.cache.set` happens — the
-wrapper has nothing to plumb. New scaffolds should use the result
-object so caching is wired correctly.
+Three accepted shapes for the `sections` prop:
+
+- `BuilderLayoutResult` — the resolved value of v0.9 (F3.4)
+  `getBuilderLayout` AND the direct return of v0.8. Hosts that `await`
+  the call and pass the result land here.
+- `Promise<BuilderLayoutResult>` — convenience for hosts that omit the
+  `await`. The wrapper resolves it for you. New scaffolds default to
+  this shape so the host page never needs explicit `await`.
+- Legacy `SectionBlock[] | null` — pre-v0.8 frontmatter from older
+  `npx empixel-builder add` scaffolds. No `cacheHint` is plumbed because
+  the legacy shape never carried one. Update to the new shape to wire
+  caching correctly.
 
 ## Rules
 

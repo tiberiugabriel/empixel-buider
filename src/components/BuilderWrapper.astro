@@ -3,16 +3,38 @@ import type { SectionBlock } from "../types.js";
 import type { BuilderLayoutResult } from "./db.js";
 import LayoutRenderer from "./LayoutRenderer.astro";
 
-// `sections` accepts either the new `BuilderLayoutResult` ({ sections, cacheHint }
-// from `getBuilderLayout` v0.8) or the legacy `SectionBlock[] | null` shape so
-// pages that haven't migrated their `add.js`-generated frontmatter still work.
-// New code should pass the full `BuilderLayoutResult` so the wrapper can plumb
-// `cacheHint` straight into `Astro.cache.set(...)` automatically.
+// `sections` accepts three shapes for transitional compatibility:
+//
+//   1. `BuilderLayoutResult` ({ sections, cacheHint }) — the value
+//      returned by the v0.8 sync `getBuilderLayout` AND the resolved
+//      value of the v0.9 (F3.4) async `getBuilderLayout`. Hosts that
+//      `await getBuilderLayout(Astro, ...)` and pass the result straight
+//      through land here.
+//   2. `Promise<BuilderLayoutResult>` — convenience for hosts that
+//      forget the `await`. The wrapper resolves it for them. Wraps the
+//      v0.9 async signature so the most common slip ("I forgot to
+//      await") still renders.
+//   3. Legacy `SectionBlock[] | null` shape — pre-v0.8 frontmatter
+//      from `npx empixel-builder add` scaffolds. No `cacheHint` plumbed
+//      because the legacy shape never carried one.
 interface Props {
-  sections: BuilderLayoutResult | SectionBlock[] | null | undefined;
+  sections:
+    | BuilderLayoutResult
+    | Promise<BuilderLayoutResult>
+    | SectionBlock[]
+    | null
+    | undefined;
 }
 
-const { sections: prop } = Astro.props;
+const { sections: rawProp } = Astro.props;
+
+// Resolve the promise-shape up front so the rest of the file sees a
+// concrete `BuilderLayoutResult | SectionBlock[] | null`. Astro
+// frontmatter is allowed to `await`, so we lean on that here.
+const prop =
+  rawProp && typeof (rawProp as Promise<BuilderLayoutResult>).then === "function"
+    ? await (rawProp as Promise<BuilderLayoutResult>)
+    : rawProp;
 
 // Normalise to a `BuilderLayoutResult`-shaped object regardless of which
 // variant the host passed. The legacy array/null path leaves `cacheHint`

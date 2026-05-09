@@ -30,6 +30,31 @@ SemVer.
   the legacy meta table — they run synchronously inside `getDb()` and
   don't have access to async ctx — but the new helpers are exported for
   the F3.3 ctx.storage migration to use directly.
+- **Breaking** — `getBuilderLayout(...)` is now async and takes `Astro`
+  (or any context with `.locals.emdash`) as the first argument. The new
+  signature is
+  `getBuilderLayout(astro, collection, entryId, enabled?): Promise<BuilderLayoutResult>`.
+  The frontend reader routes through `ctx.storage.layouts` (EmDash's
+  multi-driver plugin storage abstraction) by querying the shared
+  `_plugin_storage` table via `Astro.locals.emdash.db` — partitioned
+  under `plugin_id = "empixel-builder", collection = "layouts"` — with a
+  read-only fallback to the legacy `empixel_builder_layouts` SQLite
+  table for one version while the F3.3 migration copies rows over. The
+  legacy fallback dispatches through `getDb()` from `dbShared.ts`
+  (`src/components/db.ts:275` — `readFromLegacyTable`). F3.5 drops the
+  fallback and the `better-sqlite3` peer dependency entirely. Hosts
+  importing `getBuilderLayout` directly need to (1) `await` the call
+  and (2) pass `Astro` as the first arg. `BuilderWrapper.astro` does
+  both for you when used as `<BuilderWrapper sections={getBuilderLayout(Astro, ...)}>`
+  — the wrapper accepts the resolved value, the awaited promise, and
+  the legacy `SectionBlock[] | null` shape from older
+  `npx empixel-builder add` scaffolds.
+- Re-export `getBuilderLayout`, `BuilderLayoutResult`,
+  `BuilderCacheHint`, `BuilderLayoutContext`, and
+  `builderLayoutCacheTag` from `empixel-builder/components` so consumers
+  don't deep-import from `empixel-builder/components/db.js`. This lifts
+  the F2.4 deep-import debt that was deferred when Agent A wasn't
+  allowed to touch `src/components/index.ts`.
 - Declare `storage.layouts` in `definePlugin` so EmDash provisions the
   layouts collection through its multi-driver storage abstraction. The
   collection is keyed on the composite `(collection, entryId)` pair via

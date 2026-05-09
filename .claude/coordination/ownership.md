@@ -9,7 +9,7 @@ Legend: ✅ exists today · 🆕 to be created during the refactor · 🔒 orche
 | File | Status | Notes |
 |------|--------|-------|
 | `src/plugin.ts` | ✅ | Routes, hooks, capabilities, server-side migrations |
-| `src/components/db.ts` | ✅ | Frontend reader — A owns until F3.4, then rewrite handed to B |
+| ~~`src/components/db.ts`~~ | ✅ | **Handed off to B at F3.4 (2026-05-09).** See Agent B section. |
 | `src/dbShared.ts` | 🆕 | F1.5 — singleton DB factory |
 | `src/migrations/toStorageV1.ts` | 🆕 | F3.3 — ctx.storage migration |
 | `src/migrations/legacySpacing.ts` | 🆕 | F3.6.4 — legacy `none/sm/md/lg/xl` → px |
@@ -25,6 +25,7 @@ Legend: ✅ exists today · 🆕 to be created during the refactor · 🔒 orche
 |------|--------|-------|
 | `src/components/BlockRenderer.astro` | ✅ | Leaf dispatcher |
 | `src/components/BuilderWrapper.astro` | ✅ | Wrapper used by host pages |
+| `src/components/db.ts` | ✅ | Frontend reader. **B — fully owned post-F3.4** (handoff complete 2026-05-09). Async, Astro-aware (`getBuilderLayout(astro, collection, entryId, enabled?) → Promise<BuilderLayoutResult>`). Storage-first via `Astro.locals.emdash.db`; legacy `empixel_builder_layouts` SQLite fallback via `getDb()` from `dbShared.ts`, kept until F3.5 drops it. |
 | `src/components/Button.astro` | ✅ | |
 | `src/components/DividerSpacer.astro` | ✅ | |
 | `src/components/Html.astro` | ✅ | |
