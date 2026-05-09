@@ -3,6 +3,17 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## 1.0.1 — 2026-05-09
+
+**P0 hotfix on top of 1.0.0** — F4.1 (CSS coalescing) reverted because the
+`Astro.locals` collect-then-IIFE-drain pattern in `LayoutRenderer.astro`
+didn't reliably see child-side pushes (parent JSX expression evaluation
+order vs. child component frontmatter execution). Frontend pages rendered
+builder blocks with zero styling. Each block component now emits its own
+inline `<style is:global>` again (pre-F4.1 behavior). `coalesceLayoutCss`
+helper stays exported in `styleUtils.ts` for a future redo with a reliable
+mechanism. 1.0.0 was never published — supersede it with 1.0.1.
+
 ## 1.0.0 — 2026-05-09
 
 **Phase F4 (Performance & Polish) shipped.** F4.9 (E2E Playwright) deferred to 1.0.x — needs host fixture infra design.
