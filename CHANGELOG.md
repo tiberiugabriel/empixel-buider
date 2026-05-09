@@ -5,6 +5,31 @@ SemVer.
 
 ## Unreleased — 0.9.0 prep
 
+- Refactor every plugin route handler to read/write layouts via
+  `ctx.storage.layouts` instead of direct SQL against the legacy
+  `empixel_builder_layouts` table. **Writes go only to ctx.storage**;
+  **reads try storage first** and fall back to the legacy table for one
+  version while F3.3 migrates rows. The fallback is encapsulated in two
+  helpers — `readLayoutFromStorageOrLegacy` for single-row reads
+  (`/layout` GET) and `readLegacyEntryMetaForCollection` for the
+  collection-wide listing (`/entries`) — so F3.5 can drop both in one
+  surgical edit after F3.3 ships and a release goes by. The
+  `content:afterDelete` hook deletes from BOTH layers because pre-F3.3
+  rows may live in either. Storage docs are keyed by the deterministic
+  composite id `${collection}::${entryId}` so direct point-lookups stay
+  O(1) without going through `query({ where })`. The legacy table
+  itself is **not dropped** — only its writes are; its reads remain as
+  a fallback during the transition.
+- Migration flag plumbing moved to `ctx.kv` (key prefix
+  `state:migration:`). New helpers `getMigrationFlag` and
+  `setMigrationFlag` read from KV first; if KV is empty but the legacy
+  `empixel_builder_meta` table has the flag, the legacy value is
+  trusted and synced forward to KV (so the next read skips the SQL
+  lookup entirely). Existing cold-start migrations
+  (`runSpacerMigration`, `runSlugToUlidMigration_v1`) keep writing to
+  the legacy meta table — they run synchronously inside `getDb()` and
+  don't have access to async ctx — but the new helpers are exported for
+  the F3.3 ctx.storage migration to use directly.
 - Declare `storage.layouts` in `definePlugin` so EmDash provisions the
   layouts collection through its multi-driver storage abstraction. The
   collection is keyed on the composite `(collection, entryId)` pair via
@@ -13,11 +38,7 @@ SemVer.
   shared `_plugin_storage` table (filtered by `plugin_id =
   "empixel-builder" AND collection = "layouts"`), which is separate
   from the legacy `empixel_builder_layouts` table — so the two
-  back-ends coexist while the migration is in flight. **Additive only**:
-  the existing SQL routes still read/write `empixel_builder_layouts`
-  unchanged. F3.2 will move the route handlers onto `ctx.storage`; F3.3
-  copies the legacy rows into the storage collection; F3.5 drops
-  the `better-sqlite3` peer dependency once the writers are off it.
+  back-ends coexist while the migration is in flight.
 - New `src/storage-types.ts` exposes `LayoutRow` and
   `StorageLayoutsCollection` (typed `StorageCollection<LayoutRow>`) so
   Agent B can consume the typed `ctx.storage.layouts` handle in F3.4

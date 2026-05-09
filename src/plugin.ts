@@ -3,9 +3,16 @@ import type { RouteContext, PluginContext, PluginStorageConfig } from "emdash";
 import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
 import { DEFAULT_BREAKPOINTS_CONFIG, stripUnknownBlocks } from "./types.js";
 import { getDb as getSharedDb, type SqliteDb } from "./dbShared.js";
+import type { LayoutRow, StorageLayoutsCollection } from "./storage-types.js";
 
 const KV_ENABLED = "settings:enabledCollections";
 const KV_BREAKPOINTS = "settings:breakpoints";
+
+// KV key prefix for one-shot migration flags. F3.2 moved migration flags off
+// the legacy `empixel_builder_meta` table; legacy values are still honored
+// during the transition and lazily synced to KV on first read (see
+// `getMigrationFlag`). F3.5 will drop the legacy table.
+const KV_MIGRATION_PREFIX = "state:migration:";
 
 const NON_REMOVABLE_BREAKPOINTS: BreakpointId[] = ["desktop", "tablet-portrait", "mobile-portrait"];
 
@@ -56,6 +63,221 @@ const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 function isUlid(value: unknown): value is string {
   return typeof value === "string" && ULID_RE.test(value);
+}
+
+/**
+ * Deterministic document id used for `ctx.storage.layouts.put / get / delete`.
+ * The storage collection takes a single string `id`; we encode the composite
+ * `(collection, entryId)` pair as `${collection}::${entryId}` so direct
+ * point-lookups stay O(1) without going through `query({ where })`. Composite
+ * indexes on `(collection, entryId)` (declared via `PLUGIN_STORAGE`) make
+ * `query` lookups cheap too — the doc-id encoding is a perf detail, not a
+ * correctness requirement.
+ *
+ * Exported for the F3.3 migration helper and unit tests.
+ */
+export function layoutDocId(collection: string, entryId: string): string {
+  return `${collection}::${entryId}`;
+}
+
+/**
+ * Narrow `ctx.storage.layouts` from EmDash's generic `PluginStorage<...>` map
+ * to the typed `StorageLayoutsCollection` we declared in
+ * `src/storage-types.ts`. The runtime shape is identical; this cast just
+ * carries the row-type through to the call site so writes and reads stay
+ * type-safe. PLUGIN_STORAGE guarantees the `layouts` key exists.
+ */
+function getLayouts(ctx: { storage: PluginContext["storage"] }): StorageLayoutsCollection {
+  return ctx.storage.layouts as StorageLayoutsCollection;
+}
+
+/**
+ * F3.2 read helper. Tries `ctx.storage.layouts.get(layoutDocId)` first; if the
+ * row is missing AND the legacy `empixel_builder_layouts` table is reachable,
+ * falls back to a single direct SELECT. Returns the typed `LayoutRow` shape so
+ * callers don't have to re-parse JSON or worry about `enabled` coercion.
+ *
+ * The legacy fallback is short-lived — F3.3 migrates rows out of the legacy
+ * table, F3.5 will drop the fallback altogether. Until then, hosts upgrading
+ * mid-version still read their old layouts correctly. The fallback is the
+ * single source of truth for legacy reads — every route handler that reads a
+ * layout goes through here.
+ *
+ * Exported for unit tests only.
+ */
+export async function readLayoutFromStorageOrLegacy(
+  ctx: { log: PluginContext["log"]; storage: PluginContext["storage"] },
+  db: SqliteDb,
+  collection: string,
+  entryId: string
+): Promise<LayoutRow | null> {
+  // Storage-first: F3.2 writes only land in `ctx.storage.layouts`, so a
+  // post-F3.2 row is always served from here.
+  let storageRow: LayoutRow | null = null;
+  try {
+    storageRow = await getLayouts(ctx).get(layoutDocId(collection, entryId));
+  } catch (err) {
+    logCaught(
+      ctx,
+      `readLayoutFromStorageOrLegacy: ctx.storage.layouts.get failed for ${collection}/${entryId}`,
+      err
+    );
+  }
+  if (storageRow) return storageRow;
+
+  // Legacy fallback. Pre-F3.3 rows live in `empixel_builder_layouts` only —
+  // until the migration runs we still need to serve them. After F3.3 lands and
+  // a release later F3.5 drops this branch, this function reduces to the
+  // storage-only path.
+  try {
+    const row = db
+      .prepare(
+        "SELECT sections, enabled, created_at, updated_at FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?"
+      )
+      .get(collection, entryId) as
+      | { sections: string; enabled: number; created_at: string | null; updated_at: string | null }
+      | undefined;
+    if (!row) return null;
+    let sections: SectionBlock[] = [];
+    try {
+      const parsed = JSON.parse(row.sections);
+      if (Array.isArray(parsed)) sections = parsed as SectionBlock[];
+    } catch (err) {
+      logCaught(
+        ctx,
+        `readLayoutFromStorageOrLegacy: failed to parse sections JSON for ${collection}/${entryId}`,
+        err
+      );
+    }
+    return {
+      collection,
+      entryId,
+      enabled: row.enabled === 1 ? 1 : 0,
+      sections,
+      createdAt: row.created_at ?? undefined,
+      updatedAt: row.updated_at ?? undefined,
+    };
+  } catch (err) {
+    logCaught(
+      ctx,
+      `readLayoutFromStorageOrLegacy: legacy SELECT failed for ${collection}/${entryId}`,
+      err
+    );
+    return null;
+  }
+}
+
+/**
+ * Per-entry metadata used by the `/entries` route to merge layout-side data
+ * with host-CMS rows. Subset of `LayoutRow` — we don't need `sections` here.
+ */
+interface LayoutEntryMeta {
+  entryId: string;
+  enabled: 0 | 1;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Read all `LayoutEntryMeta` rows for a collection from the legacy table.
+ * Encapsulated so F3.5 can drop the fallback in one place once F3.3 has
+ * copied every legacy row into ctx.storage. Errors are logged and treated as
+ * "no rows", so the entries route still serves storage-only data.
+ */
+function readLegacyEntryMetaForCollection(
+  ctx: { log: PluginContext["log"] },
+  db: SqliteDb,
+  collection: string
+): LayoutEntryMeta[] {
+  try {
+    const rows = db
+      .prepare(
+        "SELECT entry_id, created_at, updated_at, enabled FROM empixel_builder_layouts WHERE collection = ?"
+      )
+      .all(collection) as Array<{ entry_id: string; created_at: string; updated_at: string; enabled: number }>;
+    return rows.map((r) => ({
+      entryId: r.entry_id,
+      enabled: r.enabled === 1 ? 1 : 0,
+      createdAt: r.created_at ?? undefined,
+      updatedAt: r.updated_at ?? undefined,
+    }));
+  } catch (err) {
+    logCaught(ctx, `readLegacyEntryMetaForCollection: legacy SELECT failed for ${collection}`, err);
+    return [];
+  }
+}
+
+/**
+ * Read a one-shot migration flag. F3.2 moved migration flags into `ctx.kv`;
+ * legacy values in `empixel_builder_meta` are still honored during the
+ * transition. If the legacy meta says "migrated" but KV doesn't, sync the
+ * value to KV so future reads avoid the legacy lookup.
+ *
+ * Returns `true` if the migration has run. Errors are logged and treated as
+ * "not migrated" so the caller can re-run safely.
+ *
+ * Exported for the F3.3 ctx.storage migration helper, which gates on the
+ * `migration_to_storage_v1` flag.
+ */
+export async function getMigrationFlag(
+  ctx: { log: PluginContext["log"]; kv: PluginContext["kv"] },
+  db: SqliteDb,
+  key: string
+): Promise<boolean> {
+  try {
+    const kvValue = await ctx.kv.get<string>(KV_MIGRATION_PREFIX + key);
+    if (kvValue) return true;
+  } catch (err) {
+    logCaught(ctx, `getMigrationFlag: ctx.kv.get failed for ${key}`, err);
+  }
+
+  // Legacy fallback. If the meta table says "migrated" but KV doesn't, sync
+  // the flag forward so subsequent reads skip the SQL.
+  try {
+    const row = db
+      .prepare("SELECT value FROM empixel_builder_meta WHERE key = ?")
+      .get(key) as { value: string } | undefined;
+    if (row) {
+      try {
+        await ctx.kv.set(KV_MIGRATION_PREFIX + key, row.value ?? String(Date.now()));
+      } catch (err) {
+        logCaught(ctx, `getMigrationFlag: ctx.kv.set sync failed for ${key}`, err);
+      }
+      return true;
+    }
+  } catch (err) {
+    logCaught(ctx, `getMigrationFlag: legacy meta lookup failed for ${key}`, err);
+  }
+  return false;
+}
+
+/**
+ * Set a one-shot migration flag. Writes to `ctx.kv`. Mirrors the write to the
+ * legacy `empixel_builder_meta` table so cold-start migrations (which run
+ * synchronously inside `getDb()` without access to ctx) can still see the
+ * flag and short-circuit. The legacy mirror disappears in F3.5.
+ *
+ * Exported for the F3.3 migration that copies legacy rows into ctx.storage.
+ */
+export async function setMigrationFlag(
+  ctx: { log: PluginContext["log"]; kv: PluginContext["kv"] },
+  db: SqliteDb,
+  key: string,
+  value: string = String(Date.now())
+): Promise<void> {
+  try {
+    await ctx.kv.set(KV_MIGRATION_PREFIX + key, value);
+  } catch (err) {
+    logCaught(ctx, `setMigrationFlag: ctx.kv.set failed for ${key}`, err);
+  }
+  try {
+    db.prepare("INSERT OR REPLACE INTO empixel_builder_meta (key, value) VALUES (?, ?)").run(
+      key,
+      value
+    );
+  } catch (err) {
+    logCaught(ctx, `setMigrationFlag: legacy meta upsert failed for ${key}`, err);
+  }
 }
 
 function badRequest(message: string): Response {
@@ -494,12 +716,11 @@ export function createPlugin() {
               }
             }
 
-            const row = db
-              .prepare("SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
-              .get(collection, pageId) as { sections: string } | undefined;
-
+            // Storage-first read with legacy table fallback. F3.3 will copy
+            // legacy rows over once and F3.5 will drop the fallback.
+            const row = await readLayoutFromStorageOrLegacy(ctx, db, collection, pageId);
             if (!row) return { data: null };
-            const sections = stripUnknownBlocks(JSON.parse(row.sections) as SectionBlock[]);
+            const sections = stripUnknownBlocks(row.sections);
             return { data: { sections } };
           }
 
@@ -528,15 +749,25 @@ export function createPlugin() {
               }
             }
 
-            db
-              .prepare(`
-                INSERT INTO empixel_builder_layouts (collection, entry_id, sections, updated_at)
-                VALUES (?, ?, ?, current_timestamp)
-                ON CONFLICT(collection, entry_id) DO UPDATE SET
-                  sections = excluded.sections,
-                  updated_at = current_timestamp
-              `)
-              .run(collection, pageId, JSON.stringify(sections));
+            // Preserve the per-entry `enabled` flag if the row already exists
+            // (POST /toggle owns it, POST /layout shouldn't clobber it).
+            const existing = await readLayoutFromStorageOrLegacy(ctx, db, collection, pageId);
+            const enabled: 0 | 1 = existing && (existing.enabled === true || existing.enabled === 1) ? 1 : 0;
+            const now = new Date().toISOString();
+            const next: LayoutRow = {
+              collection,
+              entryId: pageId,
+              enabled,
+              sections,
+              createdAt: existing?.createdAt ?? now,
+              updatedAt: now,
+            };
+
+            // Storage-only write. F3.3 will migrate any leftover legacy rows
+            // into ctx.storage; F3.5 drops the legacy table entirely. Until
+            // then the legacy row is left in place — `readLayoutFromStorageOrLegacy`
+            // prefers the storage row, so the legacy one is shadowed.
+            await getLayouts(ctx).put(layoutDocId(collection, pageId), next);
             return { success: true };
           }
 
@@ -598,10 +829,54 @@ export function createPlugin() {
           }
 
           const db = getDb();
-          const rows = db
-            .prepare("SELECT entry_id, created_at, updated_at, enabled FROM empixel_builder_layouts WHERE collection = ?")
-            .all(collection);
-          const meta = Object.fromEntries((rows as { entry_id: string; created_at: string; updated_at: string; enabled: number }[]).map((r) => [r.entry_id, r]));
+
+          // Pull per-entry metadata (enabled flag + timestamps) from
+          // ctx.storage.layouts first; merge any legacy rows that haven't yet
+          // been migrated by F3.3. Storage rows win on conflict because F3.2
+          // writes only land there.
+          interface LayoutMeta {
+            created_at?: string;
+            updated_at?: string;
+            enabled: number;
+          }
+          const meta: Record<string, LayoutMeta> = {};
+
+          // Legacy rows first so storage rows overwrite them on collision.
+          // Wrapped in a helper so F3.5 can drop the fallback cleanly once
+          // F3.3 has copied every legacy row into ctx.storage.
+          for (const r of readLegacyEntryMetaForCollection(ctx, db, collection)) {
+            meta[r.entryId] = {
+              created_at: r.createdAt,
+              updated_at: r.updatedAt,
+              enabled: r.enabled,
+            };
+          }
+
+          try {
+            // The storage `query` API paginates with a 100-row default cap.
+            // Loop until `hasMore` clears so collections larger than one page
+            // still produce complete metadata.
+            let cursor: string | undefined;
+            for (;;) {
+              const page = await getLayouts(ctx).query({
+                where: { collection },
+                limit: 100,
+                cursor,
+              });
+              for (const item of page.items) {
+                const row = item.data;
+                meta[row.entryId] = {
+                  created_at: row.createdAt,
+                  updated_at: row.updatedAt,
+                  enabled: row.enabled === true || row.enabled === 1 ? 1 : 0,
+                };
+              }
+              if (!page.hasMore || !page.cursor) break;
+              cursor = page.cursor;
+            }
+          } catch (err) {
+            logCaught(ctx, `entries: ctx.storage.layouts.query failed for collection=${collection}`, err);
+          }
 
           let items: { id: string; slug?: string; title?: string; created_at: string; updated_at: string; builder_enabled: boolean }[] = [];
           try {
@@ -614,7 +889,7 @@ export function createPlugin() {
               const id = entry.id; // Use real database ID
               const slug = entry.slug ?? id;
               let title = slug;
-              
+
               if (entry.title) {
                 title = entry.title;
               } else if (entry.name) {
@@ -677,21 +952,28 @@ export function createPlugin() {
             }
           }
 
-          db
-            .prepare(`
-              INSERT INTO empixel_builder_layouts (collection, entry_id, sections, enabled, updated_at)
-              VALUES (?, ?, '[]', ?, current_timestamp)
-              ON CONFLICT(collection, entry_id) DO UPDATE SET
-                enabled = excluded.enabled,
-                updated_at = current_timestamp
-            `)
-            .run(collection, entryId, body?.enabled ? 1 : 0);
+          // Storage-only write. Preserves any existing `sections` (or seeds an
+          // empty array on first toggle) and flips `enabled`. Reads consult
+          // both ctx.storage and the legacy table so a pre-F3.3 row is
+          // upgraded into the storage collection on the first toggle after
+          // upgrade.
+          const existing = await readLayoutFromStorageOrLegacy(ctx, db, collection, entryId);
+          const now = new Date().toISOString();
+          const next: LayoutRow = {
+            collection,
+            entryId,
+            enabled: body?.enabled ? 1 : 0,
+            sections: existing?.sections ?? [],
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now,
+          };
+          await getLayouts(ctx).put(layoutDocId(collection, entryId), next);
 
           // Per-entry toggle can fire without /settings ever being called for
           // this collection. Self-heal the schema here too — hosts no longer
-          // need to declare the column in seed.json. Once the column is
-          // guaranteed present, the UPDATE below can fail loudly; the previous
-          // soft-fail catch (column-missing) is no longer needed.
+          // need to declare the column in seed.json. The UPDATE below mirrors
+          // the enable bit onto the host's `ec_<collection>.empixel_builder`
+          // column for downstream consumers (host queries that filter by it).
           ensureEmpixelBuilderColumn(db, collection, ctx);
           db.prepare(`UPDATE ec_${collection} SET empixel_builder = ? WHERE id = ?`).run(body?.enabled ? 1 : 0, entryId);
 
@@ -737,17 +1019,32 @@ export function createPlugin() {
           event: { id?: string; entry?: { id: string }; collection?: string },
           ctx: PluginContext
         ) => {
+          const entryId = event.id ?? event.entry?.id;
+          if (!event.collection || !entryId) return;
+
+          // Cascade delete from BOTH layers — pre-F3.3 the row may live in the
+          // legacy table only; post-F3.2 writes only land in ctx.storage. Both
+          // are best-effort; orphaned layout rows are harmless until the same
+          // entry id is re-created in the same collection.
           try {
-            const entryId = event.id ?? event.entry?.id;
-            if (event.collection && entryId) {
-              getDb()
-                .prepare("DELETE FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
-                .run(event.collection, entryId);
-            }
+            await getLayouts(ctx).delete(layoutDocId(event.collection, entryId));
           } catch (err) {
-            // Cleanup is best-effort; orphaned layout rows are harmless until
-            // the same entry id is re-created in the same collection.
-            logCaught(ctx, `content:afterDelete: cleanup of empixel_builder_layouts failed for ${event.collection}/${event.id ?? event.entry?.id ?? "?"}`, err);
+            logCaught(
+              ctx,
+              `content:afterDelete: ctx.storage.layouts.delete failed for ${event.collection}/${entryId}`,
+              err
+            );
+          }
+          try {
+            getDb()
+              .prepare("DELETE FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?")
+              .run(event.collection, entryId);
+          } catch (err) {
+            logCaught(
+              ctx,
+              `content:afterDelete: legacy DELETE failed for ${event.collection}/${entryId}`,
+              err
+            );
           }
         },
       },

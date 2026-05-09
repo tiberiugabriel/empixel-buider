@@ -5,7 +5,7 @@ RESTful API layer for layout persistence and integration with EmDash plugin syst
 
 ## Files
 - `src/index.ts` — Plugin descriptor (entry point)
-- `src/plugin.ts` — 6 REST routes + content hook + cold-start migrations (`runSpacerMigration`, `runSlugToUlidMigration_v1`) + `storage.layouts` declaration
+- `src/plugin.ts` — 6 REST routes + content hook + cold-start migrations (`runSpacerMigration`, `runSlugToUlidMigration_v1`) + `storage.layouts` declaration + storage-or-legacy read helpers (`readLayoutFromStorageOrLegacy`, `readLegacyEntryMetaForCollection`) + KV migration-flag helpers (`getMigrationFlag`, `setMigrationFlag`)
 - `src/storage-types.ts` — `LayoutRow` + `StorageLayoutsCollection` types for `ctx.storage.layouts` (consumed by Agent B in F3.4)
 - `src/types.ts` — Block interfaces + type definitions
 - `src/dbShared.ts` — Shared SQLite handle factory (`getDb()`)
@@ -100,7 +100,7 @@ shared factory and runs `CREATE TABLE` / `ALTER TABLE` /
 the host swaps to a different `databasePath` mid-process, the next call
 re-runs schema setup against the new file.
 
-## Storage abstraction (v0.9.0 prep — F3.1)
+## Storage abstraction (v0.9.0 prep — F3.1, F3.2)
 
 `definePlugin({ storage: { layouts: { … } } })` in `src/plugin.ts` declares
 the plugin's typed `ctx.storage.layouts` collection. The shape mirrors the
@@ -137,20 +137,83 @@ in `_plugin_storage`. No table-name conflict, no DDL race.
 - `StorageLayoutsCollection` — alias for `StorageCollection<LayoutRow>`,
   the typed handle EmDash injects on `ctx.storage.layouts`.
 
-**Migration roadmap:**
+### Read path (storage-first, legacy fallback) — F3.2
 
-- F3.1 (this section) — declarative only. Existing routes unchanged.
-- F3.2 — rewrite `/layout` GET+POST, `/toggle`, `/entries`, and the
-  `content:afterDelete` cleanup hook onto `ctx.storage.layouts`. Drop
-  the direct `empixel_builder_layouts` SQL once each writer is moved.
-- F3.3 — one-shot migration `migration_to_storage_v1` (KV flag in
-  `empixel_builder_meta`) copies every row from `empixel_builder_layouts`
-  into `ctx.storage.layouts`. Conflict resolution mirrors
-  `runSlugToUlidMigration_v1`: newer `updated_at` wins.
+Every route handler that reads a layout goes through
+`readLayoutFromStorageOrLegacy(ctx, db, collection, entryId)`. The helper:
+
+1. Calls `ctx.storage.layouts.get(${collection}::${entryId})` first.
+2. If that returns null, falls back to a single direct SELECT against the
+   legacy `empixel_builder_layouts` table.
+3. Returns a typed `LayoutRow` (or `null`) so the caller never touches
+   `JSON.parse` or worries about SQLite's `INTEGER → 0/1` coercion.
+
+The fallback is the **single source of truth** for legacy reads — it's the
+only place outside the cold-start migrations where `SELECT … FROM
+empixel_builder_layouts` still appears at the route layer. F3.3 will copy
+every legacy row into `ctx.storage.layouts`; one release later, F3.5 drops
+the helper's else branch and the legacy table is unreachable.
+
+The `/entries` listing route uses a parallel
+`readLegacyEntryMetaForCollection(ctx, db, collection)` helper that reads
+just the per-entry metadata (entryId, enabled, timestamps — no `sections`)
+because it merges across many rows. Same fallback story; same drop point in
+F3.5.
+
+The deterministic doc id `${collection}::${entryId}` keeps the storage
+`get`/`put`/`delete` calls O(1) without going through `query({ where })`,
+mirroring the legacy primary-key lookup.
+
+### Write path (storage-only) — F3.2
+
+`POST /layout`, `POST /toggle`, and any future writer call
+`ctx.storage.layouts.put(...)` only. **No dual-write to the legacy table.**
+The `content:afterDelete` hook is the one exception: it deletes from BOTH
+layers because a pre-F3.3 row may live in either. Once F3.3 has copied
+every legacy row over and a release passes, F3.5 drops the legacy DELETE.
+
+`POST /layout` reads the existing row first (through the storage-or-legacy
+helper) so the per-entry `enabled` flag isn't clobbered when the editor
+saves a new section tree. `POST /toggle` does the symmetric thing in
+reverse: it preserves the existing `sections` (or seeds `[]` on first
+toggle) and flips just `enabled`.
+
+### Migration flags — F3.2
+
+`migration_spacer_v1` and `migration_slug_to_ulid_v1` previously lived in
+the SQLite `empixel_builder_meta` table. F3.2 moves their truth source to
+`ctx.kv` under the `state:migration:<key>` prefix. Two helpers wrap the
+read/write path:
+
+- `getMigrationFlag(ctx, db, key)` — KV-first; if KV is empty but the
+  legacy meta table has the flag, **trust the legacy value** and sync it
+  forward to KV. The next call skips the SQL lookup.
+- `setMigrationFlag(ctx, db, key, value?)` — writes to BOTH ctx.kv and
+  the legacy meta table during the transition so cold-start migrations
+  (which run synchronously inside `getDb()` without an async ctx) still
+  see the flag and short-circuit.
+
+The existing cold-start migrations stay legacy-table-keyed for now — they
+have no async ctx access. The exported helpers are scaffolding for the
+F3.3 ctx.storage row migration, which runs from a route handler entry
+where ctx is available.
+
+### Migration roadmap
+
+- F3.1 — declarative only. Storage collection declared on `definePlugin`.
+- F3.2 (this section) — route handlers go through `ctx.storage.layouts`.
+  Writes are storage-only; reads fall back to the legacy table; deletes
+  hit both. Migration flags moved to `ctx.kv`.
+- F3.3 — one-shot migration `migration_to_storage_v1` copies every row
+  from `empixel_builder_layouts` into `ctx.storage.layouts`. Flag stored
+  in `ctx.kv`. Conflict resolution mirrors `runSlugToUlidMigration_v1`:
+  newer `updated_at` wins.
 - F3.4 (Agent B) — frontend reader rewrite. `getBuilderLayout` reads
   through `ctx.storage.layouts` instead of via `getDb()`.
-- F3.5 — drop the `better-sqlite3` peer dep + the SQLite singleton in
-  `dbShared.ts` once F3.2/F3.3/F3.4 land. Bumps to 0.9.0.
+- F3.5 — drop the legacy fallback in `readLayoutFromStorageOrLegacy` and
+  `readLegacyEntryMetaForCollection`, drop the legacy DELETE in
+  `content:afterDelete`, drop the `better-sqlite3` peer dep + the SQLite
+  singleton in `dbShared.ts`. Bumps to 0.9.0.
 
 ## API Routes
 
@@ -171,18 +234,32 @@ re-introduces SQL injection — see audit C1.
   case (host CMS hands the builder a slug for an entry never saved
   through the builder before). On-disk rows are ULID-keyed after
   `runSlugToUlidMigration_v1` (see Migrations).
-- Single `SELECT sections FROM empixel_builder_layouts WHERE collection = ? AND entry_id = ?` lookup — no fallback chain.
+- Reads through `readLayoutFromStorageOrLegacy(ctx, db, collection,
+  pageId)` (v0.9 — F3.2): tries `ctx.storage.layouts.get` first, falls
+  back to a single direct SELECT against `empixel_builder_layouts` if
+  the storage collection doesn't yet have the row. The fallback exists
+  for one version while F3.3 migrates rows; F3.5 drops it.
 - Returns `{ data: { sections: SectionBlock[] } }` or `{ data: null }`
 
 **POST** `{ pageId, collection, sections }` → Save layout.
 - Same slug → ULID resolution as GET — writes always land under the canonical ULID key.
-- Upserts row in `empixel_builder_layouts`
+- Reads the existing row first (storage-then-legacy) so the per-entry
+  `enabled` flag isn't clobbered. Then writes through
+  `ctx.storage.layouts.put(...)` ONLY (v0.9 — F3.2). The legacy table is
+  no longer touched on writes; reads still consult it for one version.
 - Returns `{ success: true }`
 
 ### `entries` — GET
 **GET** `?collection=<name>&limit=<n>` → List all entries for a collection with builder metadata.
 - Returns `{ data: Entry[], collection }` where `Entry = { id, slug, title, created_at, updated_at, builder_enabled }`
-- Joins `ec_<collection>` with `empixel_builder_layouts` for `builder_enabled` flag
+- Builder metadata (enabled flag + timestamps) merges
+  `ctx.storage.layouts.query({ where: { collection } })` with
+  `readLegacyEntryMetaForCollection(ctx, db, collection)`. Storage rows
+  win on conflict because F3.2 writes only land in `ctx.storage`. Pages
+  through the storage `query` cursor until `hasMore` clears so
+  collections larger than 100 layouts produce complete metadata.
+  The host's `ec_<collection>` table provides the entry rows
+  themselves (`id`, `slug`, `title`, host timestamps).
 
 ### `collections` — GET
 **GET** → Returns list of collection names where builder is enabled at collection level.
@@ -202,7 +279,11 @@ re-introduces SQL injection — see audit C1.
 ### `toggle` — POST
 **POST** `{ entryId, collection, enabled }` → Enable/disable builder for a specific entry.
 - Resolves slug to ULID.
-- Upserts `empixel_builder_layouts` row with `enabled` = 1/0.
+- Reads the existing row through `readLayoutFromStorageOrLegacy` so the
+  current `sections` aren't lost on first toggle (or seeds `[]` when the
+  row doesn't exist yet), then writes through `ctx.storage.layouts.put`
+  with the new `enabled` value (v0.9 — F3.2). The legacy table is no
+  longer touched on writes.
 - Also runs `ensureEmpixelBuilderColumn(...)` before
   `UPDATE ec_<collection> SET empixel_builder = ?` so per-entry toggles
   work even when the collection-level `/settings` enable was skipped.
@@ -223,8 +304,11 @@ re-introduces SQL injection — see audit C1.
 ## Hooks
 
 ### `content:afterDelete`
-On entry delete, cascade-delete layout from `empixel_builder_layouts`.
-Prevents orphaned rows.
+On entry delete, cascade-delete the layout from BOTH `ctx.storage.layouts`
+AND the legacy `empixel_builder_layouts` table (v0.9 — F3.2). Both layers
+may carry the row pre-F3.3, so the dual delete is needed for clean
+removal. Both calls are best-effort (logged via `logCaught` on failure).
+F3.5 will drop the legacy DELETE once F3.3 has copied every row over.
 
 ## Database
 
@@ -369,6 +453,7 @@ documented in the README's "Caching builder layouts" section.
 |-----|------|---------|
 | `settings:enabledCollections` | `string[]` | Collections with builder enabled at collection level |
 | `settings:breakpoints` | `BreakpointsConfig` | Global breakpoints config (enabled + px overrides) |
+| `state:migration:<flag>` | `string` | One-shot migration flag (e.g. `state:migration:migration_spacer_v1`). Mirrors the legacy `empixel_builder_meta` row during the F3.2/F3.5 transition. v0.9 — F3.2. |
 
 ## Data Flow
 
