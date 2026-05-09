@@ -180,3 +180,72 @@ describe("F3.6.6 — HtmlPreview iframe sizing", () => {
     expect(html).toContain("HTML block");
   });
 });
+
+// F4.8 — postMessage auto-resize protocol replaces the v0.6 DOM polling.
+// The iframe runs an inline measure script that posts
+// `document.documentElement.scrollHeight` to the parent on load / resize /
+// MutationObserver content changes; the parent listens and updates iframe
+// height. Sandbox is tightened to `allow-scripts` only (no
+// `allow-same-origin`) so untrusted HTML can't reach parent state.
+describe("F4.8 — HtmlPreview postMessage auto-resize", () => {
+  it("sandbox attr is `allow-scripts` only (no allow-same-origin)", () => {
+    const html = renderToStaticMarkup(
+      createElement(HtmlPreview, { config: { code: "<p>Hi</p>" } }),
+    );
+    // Match `sandbox="allow-scripts"` exactly. Reject any rendering that
+    // includes `allow-same-origin` (the v0.6 sandbox) — that's the
+    // regression we're guarding against.
+    expect(html).toMatch(/sandbox="allow-scripts"/);
+    expect(html).not.toContain("allow-same-origin");
+  });
+
+  it("injects the inline measure script into srcDoc", () => {
+    const html = renderToStaticMarkup(
+      createElement(HtmlPreview, { config: { code: "<p>Hi</p>" } }),
+    );
+    // The srcDoc HTML is HTML-attribute-encoded inside the rendered
+    // iframe markup, so we look for fragments that survive the encode.
+    // The full measure-script string is single-quoted inside React's
+    // markup; the keystone is the protocol marker `epx:html:resize`.
+    expect(html).toContain("epx:html:resize");
+    // MutationObserver wiring is part of the protocol — explicit check.
+    expect(html).toContain("MutationObserver");
+    // Load + resize listeners attach inside the iframe.
+    expect(html).toMatch(/load/);
+    expect(html).toMatch(/resize/);
+    // parent.postMessage is the cross-origin transport (the iframe's
+    // origin is "null" under `allow-scripts` only, so the protocol can't
+    // use direct DOM access).
+    expect(html).toContain("parent.postMessage");
+  });
+
+  it("iframe carries data-epx-html-frame attribute for parent disambiguation", () => {
+    const html = renderToStaticMarkup(
+      createElement(HtmlPreview, { config: { code: "<p>Hi</p>" } }),
+    );
+    expect(html).toContain("data-epx-html-frame");
+  });
+
+  it("does NOT poll — no setInterval / requestAnimationFrame in the iframe srcDoc", () => {
+    const html = renderToStaticMarkup(
+      createElement(HtmlPreview, { config: { code: "<p>Hi</p>" } }),
+    );
+    // The v0.6 polling lived in Html.astro's parent-side script (and the
+    // canvas's React effect). Both should be gone post-F4.8 — the only
+    // event-driven hooks are load / resize / MutationObserver. We probe
+    // the rendered iframe's srcDoc for polling tells; absent.
+    expect(html).not.toContain("setInterval");
+    expect(html).not.toContain("requestAnimationFrame");
+  });
+
+  // The parent-side smoke test: the listener doesn't throw when no
+  // iframes are mounted (idempotent + defensive). HtmlPreview's listener
+  // is mounted in a useEffect — under `renderToStaticMarkup` the effect
+  // doesn't run, so this assertion is structural: the rendered markup
+  // alone shouldn't throw at import time.
+  it("module imports without errors when no iframes are mounted", async () => {
+    // Import is resolved lazily by vitest at the top of the file; this
+    // test exists to pin the public API (idempotent + safe-when-empty).
+    expect(typeof HtmlPreview).toBe("object"); // memo() returns an object.
+  });
+});

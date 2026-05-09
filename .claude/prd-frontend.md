@@ -931,11 +931,100 @@ call. Single source of truth for spacing CSS lives in `styleUtils.ts`.
   Text and Image — previously skipping `buildBreakpointCss` /
   `buildBreakpointHoverCss` — now get parity with every other leaf via the
   helper.
-- **HTML block** rendered inside a sandboxed iframe with `srcdoc` (`sandbox="allow-scripts allow-same-origin"`, `scrolling="no"`) so site CSS doesn't cross in and the block's `<style>`/`<script>` doesn't leak out. If user code already has `<html>`, srcdoc reuses it; else minimal shell wraps the fragment. Auto-resize via parent script (idempotent global flag) reads `iframe.contentDocument.documentElement.scrollHeight` after `load` + `ResizeObserver` + `MutationObserver` + img loads + 100ms polling for first 2s. Iframe collapsed to `0px` before measurement to neutralize `vh`/`100%` body height feedback. Iframe IS the `data-epx-block` element (no wrapper `<div>`); inline style + global rule force `width: 100%; border: none` regardless of flex/grid parent.
+- **HTML block** rendered inside a sandboxed iframe with `srcdoc` (`sandbox="allow-scripts"`, `scrolling="no"` — F4.8 dropped `allow-same-origin`) so site CSS doesn't cross in and the block's `<style>`/`<script>` doesn't leak out. If user code already has `<html>`, srcdoc reuses it; else minimal shell wraps the fragment. Auto-resize uses the F4.8 `postMessage` protocol — see "HTML iframe auto-resize via postMessage (F4.8)" below. Iframe IS the `data-epx-block` element (no wrapper `<div>`); inline style + global rule force `width: 100%; border: none` regardless of flex/grid parent.
 - **Text Editor block** (`TextEditor.astro`) emits per-breakpoint media queries by walking the union of `configBreakpoints` + `styleBreakpoints` for `column-count`, `column-gap`, and `::first-letter` rule (drop cap toggle + size/lines/margin-right). Image inserts inside PortableText render via custom `components.type.image` → [PortableTextImage.astro](../src/components/PortableTextImage.astro) which builds the URL from `node.asset.storageKey` / `node.storageKey` / `node.url`. Renderer pulled from `emdash/ui` lazily; falls back to plain text when unavailable.
 - **`getCustomCss(config, blockId)`** in `styleUtils.ts` substitutes the `selector` keyword (`/\bselector\b/g`) with `[data-epx-block="<id>"]`. If user CSS contains `{` it's emitted as-is (full rules with selectors); else it's wrapped as bare declarations under the block's selector. Powers the Custom CSS editor + the same on canvas (Canvas.tsx walks tree and injects via `<style id="epx-canvas-custom-css">`).
 - **Text shadow** on canvas + frontend now defaults missing `textShadowColor` to `#000000` (was inheriting `currentColor` → white-on-dark).
 - **Image.astro** defensive guard — `value = rawValue ?? {}` so undefined props (e.g. PortableText image slot) don't throw at frontmatter destructure.
+
+## HTML iframe auto-resize via postMessage (F4.8)
+
+The HTML block renders user-authored markup inside a sandboxed iframe.
+Since v0.6 the frame auto-fits its contents — there's no scroll bar
+inside the block, no manual height knob in the right panel; the height
+just tracks `document.documentElement.scrollHeight` of the inner doc.
+
+**v0.6 mechanism (replaced).** The parent page ran an idempotent inline
+script that, on each iframe's `load`, attached a `ResizeObserver` +
+`MutationObserver` to `iframe.contentDocument.body`, plus a 100 ms
+polling loop for the first 2 s, plus per-image `load` listeners — all
+required `allow-same-origin` so the parent could dereference the
+iframe's contentDocument. That same permission also gave untrusted
+HTML inside the block access to `parent.document` /
+`parent.location`, defeating most of the sandbox isolation.
+
+**F4.8 mechanism (current).** The iframe runs a tiny inline measure
+script (injected into `srcdoc` by `Html.astro`'s frontmatter, after
+the user's body). The script:
+
+1. Subscribes to `window.load` + `window.resize` + a `MutationObserver`
+   on `document.body` watching `subtree` + `childList` +
+   `characterData` changes.
+2. On any of those triggers, posts
+   `{ type: "epx:html:resize", height: documentElement.scrollHeight, id: <frameId> }`
+   to `parent` with target origin `"*"` (the iframe's origin is
+   `"null"` under tightened sandbox; the parent's origin is opaque to
+   the iframe under no-`allow-same-origin`, so `"*"` is the only
+   viable target — and the parent's source-match filter below makes
+   that safe).
+
+The parent (`Html.astro` adjacent `<script is:inline>`) attaches a
+single idempotent `window.message` listener (gated by
+`window.__epxHtmlPostMsg`):
+
+1. Validates `e.data.type === "epx:html:resize"` + `typeof e.data.height === "number"`.
+2. Iterates `document.querySelectorAll("iframe[data-epx-html-frame]")`,
+   matches by `e.source === iframe.contentWindow` (canonical — the
+   iframe's origin is `"null"` so origin checks can't disambiguate
+   iframes; contentWindow refs are unique per frame). The block-id
+   `data-epx-html-frame` is a secondary correlation hint, primarily
+   useful for debugging.
+3. Sets the matched iframe's inline `height` style.
+
+`HtmlPreview.tsx` mirrors the same protocol — same measure script
+injected into the React-controlled `srcDoc`, same parent-side listener
+inside a `useEffect`. Canvas preview behaves identically to runtime,
+no DOM-polling residue.
+
+**Why source-match instead of origin-check.** The standard MDN
+recommendation for postMessage is "always validate `e.origin` against
+a known origin". That recipe assumes a known cross-origin sender.
+Under `sandbox="allow-scripts"` (no `allow-same-origin`), every
+sandboxed iframe's origin serializes as `"null"`, indistinguishable
+across frames. `e.source === iframe.contentWindow` is the correct
+discriminator for this case — `MessageEventSource` is a unique
+reference per frame, never aliased.
+
+**Sandbox tightening.** `sandbox="allow-scripts"` (no
+`allow-same-origin`). The inline measure script can still call
+`parent.postMessage` because that's one of the few APIs the spec
+exempts from the same-origin requirement (along with `parent.length`,
+`parent.location.replace`, etc. — see the HTML standard's "cross-origin-only
+properties"). Untrusted HTML inside the block can no longer reach
+`parent.document` (the `parent` reference is a window proxy, not a
+full Window) so it can't read or write the host page's DOM.
+
+**Behavioral invariants.**
+- Iframe IS the `data-epx-block` element (no wrapper `<div>`) — same
+  as v0.6.
+- Inline `style="display:block;width:100%;border:none;height:0"` plus
+  the global `iframe[data-epx-html-frame]{...}` rule force full-width
+  layout regardless of flex/grid parent — same as v0.6.
+- Initial height `0` until the first message arrives. The measure
+  script fires once on the very first `load` so the gap is one frame.
+- Empty user code still wraps in the minimal `<!DOCTYPE>` shell;
+  measure script always injects.
+
+**Deferred (1.0.x follow-up).** Role-based sanitization — drop
+`allow-scripts` and run the user's HTML through a sanitizer (e.g.
+DOMPurify) when the saver isn't an admin. Needs author-role tracking
+on layout rows (today every row writes happen through a single
+admin-only API route, so the role is uniform; introducing a non-admin
+write path requires cross-team design) plus the sanitizer dependency
+(itself ~50 KB). Out of scope for F4.8. The current security stance:
+HTML blocks are admin-only by virtue of the admin route's auth, and
+the F4.8 sandbox tightening keeps untrusted code from reaching parent
+state even if a non-admin somehow gets write access.
 
 ## v0.6 styleUtils additions
 

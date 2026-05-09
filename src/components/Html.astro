@@ -18,13 +18,53 @@ const cssClasses = advanced?.cssClasses || undefined;
 const rawCode = value.code ?? "";
 const frameId = blockId ?? `epx-html-${Math.random().toString(36).slice(2, 9)}`;
 
-function buildSrcdoc(code: string): string {
-  const hasFullDoc = /<html[\s>]/i.test(code);
-  if (hasFullDoc) return code;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;}</style></head><body>${code}</body></html>`;
+// F4.8 — inline measure script that runs INSIDE the iframe and posts
+// document.documentElement.scrollHeight to the parent on load / resize /
+// MutationObserver content changes. Replaces the v0.6 DOM polling that
+// required `allow-same-origin` to read scrollHeight from the parent side.
+// With this protocol the sandbox can drop `allow-same-origin` (untrusted
+// HTML loses access to parent.document/parent.location entirely) while
+// auto-resize still works cross-origin via postMessage.
+//
+// Block-id is interpolated into the script string at SSR time so the
+// parent listener can disambiguate when multiple HTML blocks share a
+// page. Parent matches by `e.source === iframe.contentWindow` (canonical),
+// the id is a secondary correlation hint for debugging.
+function buildMeasureScript(id: string): string {
+  // JSON.stringify guards against `</script>` injection in the id.
+  const idJson = JSON.stringify(id);
+  return [
+    "<script>",
+    "(function(){",
+    "function send(){",
+    "try{",
+    "var h=document.documentElement.scrollHeight;",
+    `parent.postMessage({type:"epx:html:resize",height:h,id:${idJson}},"*");`,
+    "}catch(e){}",
+    "}",
+    'window.addEventListener("load",send);',
+    'window.addEventListener("resize",send);',
+    'if(document.body){new MutationObserver(send).observe(document.body,{subtree:true,childList:true,characterData:true});}',
+    "send();",
+    "})();",
+    "</script>",
+  ].join("");
 }
 
-const srcdoc = buildSrcdoc(rawCode);
+function buildSrcdoc(code: string, id: string): string {
+  const measureScript = buildMeasureScript(id);
+  const hasFullDoc = /<html[\s>]/i.test(code);
+  if (hasFullDoc) {
+    // Inject the measure script before </body> if present, else append.
+    if (/<\/body>/i.test(code)) {
+      return code.replace(/<\/body>/i, `${measureScript}</body>`);
+    }
+    return `${code}${measureScript}`;
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;}</style></head><body>${code}${measureScript}</body></html>`;
+}
+
+const srcdoc = buildSrcdoc(rawCode, frameId);
 
 const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
 const chromeCss = buildBlockChromeCss(cfg, blockId, { resolveMediaUrl: resolver });
@@ -47,7 +87,7 @@ if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
   id={cssId}
   class={cssClasses || undefined}
   data-epx-html-frame={frameId}
-  sandbox="allow-scripts allow-same-origin"
+  sandbox="allow-scripts"
   scrolling="no"
   srcdoc={srcdoc}
   frameborder="0"
@@ -55,73 +95,33 @@ if (allCss && Array.isArray(epxLocals.empixelLayoutCss)) {
 />
 
 <script is:inline>
+  // F4.8 — postMessage auto-resize listener.
+  // Replaces the v0.6 DOM-polling watcher. The iframe's inline measure
+  // script (injected into srcdoc by Html.astro frontmatter) posts
+  // { type: "epx:html:resize", height, id } on load / resize /
+  // MutationObserver content changes. We listen, match by source ===
+  // iframe.contentWindow (canonical — under `allow-scripts` only the
+  // iframe's origin is "null" so origin checks are not meaningful), and
+  // set the iframe's height inline.
   (function(){
-    if (window.__epxHtmlAutoResize) return;
-    window.__epxHtmlAutoResize = true;
+    if (window.__epxHtmlPostMsg) return;
+    window.__epxHtmlPostMsg = true;
 
-    function size(f){
-      try{
-        var doc = f.contentDocument;
-        if (!doc || !doc.documentElement) return;
-        // Collapse iframe to 0 first so any vh / height:100% / min-height:100vh
-        // body styles don't feed back into our measurement. Layout is computed
-        // synchronously here; browser only paints at the next frame, so the
-        // intermediate 0 is invisible.
-        f.style.height = "0px";
-        // Force reflow inside iframe.
-        void doc.documentElement.offsetHeight;
-        var h = Math.max(
-          doc.documentElement.scrollHeight,
-          doc.documentElement.offsetHeight,
-          doc.body ? doc.body.scrollHeight : 0,
-          doc.body ? doc.body.offsetHeight : 0
-        );
-        if (h > 0) f.style.height = h + "px";
-      }catch(e){}
-    }
-
-    function watch(f){
-      function init(){
-        size(f);
-        try{
-          var doc = f.contentDocument;
-          if (!doc) return;
-          if (window.ResizeObserver && doc.body) {
-            new ResizeObserver(function(){ size(f); }).observe(doc.body);
-          }
-          if (window.MutationObserver && doc.body) {
-            new MutationObserver(function(){ size(f); }).observe(doc.body, { attributes:true, childList:true, subtree:true, characterData:true });
-          }
-          var imgs = doc.querySelectorAll("img");
-          for (var i=0;i<imgs.length;i++) imgs[i].addEventListener("load", function(){ size(f); });
-        }catch(e){}
-      }
-      f.addEventListener("load", init);
-      var ticks = 0;
-      var poll = setInterval(function(){
-        size(f);
-        ticks += 1;
-        if (ticks > 20) clearInterval(poll);
-      }, 100);
-      if (f.contentDocument && f.contentDocument.readyState === "complete") init();
-    }
-
-    function scan(){
+    window.addEventListener("message", function(e){
+      var data = e.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type !== "epx:html:resize") return;
+      var h = data.height;
+      if (typeof h !== "number" || !isFinite(h) || h <= 0) return;
       var frames = document.querySelectorAll("iframe[data-epx-html-frame]");
       for (var i=0;i<frames.length;i++){
         var f = frames[i];
-        if (!f.__epxWatched) { f.__epxWatched = true; watch(f); }
+        if (f.contentWindow === e.source) {
+          f.style.height = h + "px";
+          return;
+        }
       }
-    }
-
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", scan);
-    } else {
-      scan();
-    }
-    window.addEventListener("load", scan);
-    setTimeout(scan, 100);
-    setTimeout(scan, 500);
+    });
   })();
 </script>
 

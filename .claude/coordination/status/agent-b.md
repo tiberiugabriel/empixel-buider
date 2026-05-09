@@ -21,6 +21,27 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-10 00:50 · F4.8 (HTML postMessage auto-resize) started
+
+- Branch: `feature/agentB-F4.8` off worktree at latest main (00e6b89 — F4.4 follow-up entry plumb-through).
+- Goal: replace the v0.6 DOM-polling auto-resize on the HTML block's iframe with a `postMessage` protocol. Iframe runs a tiny inline measure script that posts `document.documentElement.scrollHeight` to the parent on `load` / `resize` / `MutationObserver` content changes. Parent listens and updates iframe height. Sandbox tightens from `allow-scripts allow-same-origin` to **`allow-scripts` only** — protocol works cross-origin (iframe's origin is `null` under srcdoc + no allow-same-origin), and untrusted HTML loses access to `parent.document` / `parent.location` etc. so it can't reach parent state even if it tries.
+- Plan / mechanism:
+  1. Inline measure script gets injected into `srcdoc` AFTER the user's HTML body. Posts `{ type: "epx:html:resize", height, id: <block-id> }` to `parent` with target origin `"*"` (the iframe's origin is `null`, and the parent has no usable origin from the iframe's POV under no-`allow-same-origin`, so `"*"` is the only viable target). Subscribes to `load` + `resize` + `MutationObserver`. The MutationObserver fires on `subtree`/`childList`/`characterData` changes — covers script-driven content updates without polling.
+  2. Block-id disambiguation: the iframe knows its block id via the same `data-epx-html-frame={frameId}` attribute used today. The inline script reads its own block id from a placeholder substituted at SSR time (the `frameId` var on the Astro side already does this). Parent matches messages by `e.source === iframe.contentWindow` (the canonical match since under `null` origin every iframe's `e.origin === "null"`, indistinguishable; the contentWindow ref is unique per iframe).
+  3. Parent listener: a single `<script is:inline>` adjacent to the iframe markup attaches one `window.addEventListener("message", …)` in idempotent global-flag form (`window.__epxHtmlPostMsg`), iterates `document.querySelectorAll("iframe[data-epx-html-frame]")`, finds the one whose `contentWindow === e.source`, sets its `height` style. Validates `e.data.type === "epx:html:resize"` + `typeof e.data.height === "number"`. No origin check (origin is `null`, source-match is the truth). Drops the polling block + ResizeObserver/MutationObserver setup on the parent side — those used to live INSIDE `f.contentDocument`, only reachable because of `allow-same-origin`. With the sandbox tightened, the parent can't touch contentDocument anyway, so the new code path doesn't need them.
+  4. Drop `allow-same-origin` from the sandbox attr. Verify the inline script can still post messages (`parent.postMessage` is one of the few APIs that works under no-`allow-same-origin`).
+  5. Mirror in `HtmlPreview.tsx`: same `srcDoc` injection (the function `buildSrcdoc` is duplicated here for KISS — both sides build their own srcDoc from the user's `code`), the React `useEffect` on the parent attaches the same window listener (idempotent across remounts via a ref or state guard), validates by `e.source === iframeRef.current?.contentWindow`. Drops the previous ResizeObserver/MutationObserver on the iframe document (no longer reachable under tightened sandbox).
+- Files in scope (Agent B's column):
+  - `src/components/Html.astro` — main work.
+  - `src/admin/previews/HtmlPreview.tsx` — F4.8 documented cross-domain exception (canvas iframe must mirror frontend protocol so author preview matches runtime).
+  - `tests/previewParity.test.ts` — extend the existing `F3.6.6 — HtmlPreview iframe sizing` describe with assertions for the new `sandbox="allow-scripts"` value (no `allow-same-origin`) + measure-script presence in srcDoc.
+  - `tests/styleUtils.test.ts` — out of scope (no styleUtils change). The brief's mention of `styleUtils.test.ts | previewParity.test.ts` is "extend whichever fits" — I'll extend `previewParity.test.ts` since the change touches HtmlPreview directly.
+  - `CHANGELOG.md` — append F4.8 bullet under `## Unreleased — 1.0.0 prep`.
+  - `.claude/prd-frontend.md` + `.claude/prd-blocks.md` — document the new protocol.
+  - `.claude/coordination/status/agent-b.md` — start + done entries.
+- Coordination: no `interfaces.md` change. The postMessage protocol's `epx:html:resize` envelope is plugin-internal (only the plugin's own iframe + parent script speak it). Sandbox attr change from `allow-scripts allow-same-origin` to `allow-scripts` is the public-facing behavior shift and is documented in CHANGELOG. Concurrent agents: A and C have nothing on F4.8; the cross-domain edit to HtmlPreview is the per-task allocation table's documented exception ("F4.8 — B" per `.claude/coordination/README.md` row "F4 | A: F4.2. B: F4.1, F4.10. C: F4.3, F4.4, F4.5, F4.6, F4.7, **F4.8**, F4.9" — note the brief hands F4.8 to me, not C, since it's a frontend-led change with the admin preview as a thin mirror).
+- Out-of-scope (deferred to 1.0.x follow-up): role-based sanitization ("no-scripts mode for non-admin authors"). Needs author-role tracking on layout rows + a sanitization library. CHANGELOG calls out the deferral.
+
 ## 2026-05-10 00:25 · F4.4 follow-up (entry plumb-through) started
 
 - Branch: `feature/agentB-F4.4-entryplumb` off worktree at latest main (9742f85 — F4.4 field-binding block).
@@ -130,6 +151,34 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 - Coordination: Agent A is fixing the related backend bug on a parallel branch (`/entries`). Doc-id format `<collection>::<entryId>` is canonical (per `src/plugin.ts:80` `layoutDocId`); A and B's fixes converge on this key. No `interfaces.md` change needed.
 
 ## Done
+
+## 2026-05-10 01:05 · F4.8 (HTML postMessage auto-resize) done
+
+- Mechanism shipped. `Html.astro` and `HtmlPreview.tsx` now use a `postMessage` protocol for iframe auto-resize. The iframe's `srcdoc` carries an inline measure script (injected by `Html.astro`'s `buildSrcdoc(code, frameId)` after the user's body — same `buildSrcdoc` shape on the React side, duplicated for KISS) that subscribes to `window.load` + `window.resize` + a `MutationObserver` on `document.body` (`subtree` + `childList` + `characterData`) and posts `{ type: "epx:html:resize", height: documentElement.scrollHeight, id: frameId }` to `parent` with target origin `"*"`. Parent (a single idempotent `<script is:inline>` adjacent to the iframe markup, gated by `window.__epxHtmlPostMsg`) attaches one `window.message` listener, validates the envelope (`type` + `typeof height === "number"` + `isFinite` + `> 0`), iterates `document.querySelectorAll("iframe[data-epx-html-frame]")`, matches by `e.source === iframe.contentWindow` (canonical for sandboxed null-origin iframes), and sets the matched iframe's inline `height` style. `HtmlPreview.tsx` mirrors the same protocol via `useEffect` on a `window.addEventListener("message", ...)` that's torn down on unmount.
+- **Sandbox attribute final value:** `sandbox="allow-scripts"` (no `allow-same-origin`). Verified the inline measure script can still post to `parent` — `parent.postMessage` is one of the few APIs available under no-`allow-same-origin`. Verified the parent can NOT touch `iframe.contentDocument` post-tightening (which is fine — the new protocol doesn't need to). Untrusted HTML inside the iframe loses access to `parent.document` / `parent.location` / etc.
+- **Drop-list:** v0.6 DOM-polling code paths gone:
+  - `setInterval` polling loop in `Html.astro` parent script (the `var poll = setInterval(...)` block) — gone.
+  - Parent-side `ResizeObserver` + `MutationObserver` setup on `iframe.contentDocument.body` — gone.
+  - Parent-side per-image `addEventListener("load")` attachment loop — gone (the in-iframe MutationObserver picks up image-load DOM mutations naturally).
+  - `setTimeout(scan, 100)` / `setTimeout(scan, 500)` retry chains — gone.
+  - `HtmlPreview.tsx`'s `measure()` function + ResizeObserver + MutationObserver effect — gone, replaced with a single `window.message` listener.
+- **Files changed:**
+  - `src/components/Html.astro` — measure script injected into srcdoc; sandbox tightened; parent-side listener replaces the polling watcher.
+  - `src/admin/previews/HtmlPreview.tsx` — same measure script duplicated into the React-controlled srcDoc; sandbox tightened; useEffect listener replaces the ResizeObserver/MutationObserver setup. `useId()` adds a frame-id correlation token (matches `data-epx-html-frame` on the iframe and the `id` field in posted messages).
+  - `tests/previewParity.test.ts` — added `F4.8 — HtmlPreview postMessage auto-resize` describe with 5 cases:
+    1. Sandbox attr is `allow-scripts` only (no `allow-same-origin`) — guards the regression where someone adds it back.
+    2. Inline measure script presence in srcDoc — checks for `epx:html:resize` envelope marker, `MutationObserver` wiring, `load` + `resize` listener attach, `parent.postMessage` transport call.
+    3. Iframe carries `data-epx-html-frame` attribute for parent disambiguation.
+    4. **No-polling guard** — asserts srcDoc does NOT contain `setInterval` / `requestAnimationFrame` (regression guard for the v0.6 polling).
+    5. Module imports cleanly (smoke test — listener mount is in `useEffect` and doesn't run under `renderToStaticMarkup`, so this asserts the public API stays stable).
+  - `CHANGELOG.md` — F4.8 bullet appended at the TOP of `## Unreleased — 1.0.0 prep` (chronological — F4.8 ships after F4.4 follow-up).
+  - `.claude/prd-frontend.md` — new "HTML iframe auto-resize via postMessage (F4.8)" section before "v0.6 styleUtils additions" documenting the v0.6 mechanism (replaced), the F4.8 protocol, the sandbox tightening rationale, the source-match-vs-origin-check decision, behavioral invariants, and the deferred role-based-sanitization follow-up. Updated the existing "HTML block" bullet under "v0.6+ frontend updates" to point at the new section.
+  - `.claude/prd-blocks.md` — block-8 (`html`) entry rewritten: corrected the inaccurate "frontend: <div set:html=>" claim (was always sandboxed iframe via srcdoc since v0.6), documented the F4.8 sandbox change, linked the new prd-frontend section, called out the deferred sanitization. The pre-F4.8 PRD documentation incorrectly said `<div ... set:html={code}>` — the actual v0.6 implementation has always been a sandboxed iframe via srcdoc; F4.8 corrects the doc drift.
+  - `.claude/coordination/status/agent-b.md` — start + done entries.
+- **Tests:** 408 → 413 (+5 net). All in `tests/previewParity.test.ts` since the change touches `HtmlPreview` directly.
+- **Coordination:** no `interfaces.md` change. The `epx:html:resize` envelope is plugin-internal — only the plugin's own iframe + parent script speak it; no third party in or out of the plugin needs to interop. The sandbox attribute change from `allow-scripts allow-same-origin` to `allow-scripts` is the public-facing behavior shift and is documented in CHANGELOG. Agent B's documented F4.8 cross-domain edit (`HtmlPreview.tsx`) is the only admin file touched.
+- **Pipeline:** lint + typecheck + 413/413 tests + build all green on first try.
+- **Anything surprising:** the `setTimeout(scan, 100)` and `setTimeout(scan, 500)` retry chains in v0.6's parent script were (per the comments) defensive against late-mounting iframes after `DOMContentLoaded`. With the F4.8 protocol the iframe's measure script self-fires on its own `load` regardless of when the iframe is mounted, so the retry chains aren't needed — late-mounted iframes work fine because the listener is already attached and the measure script POSTS the size when ITS load fires. Cleaner. Also: the v0.6 `f.style.height = "0px"` "collapse-then-measure" trick (to neutralize iframe-internal `vh` / `100%` body heights from feeding back into the parent measurement) is preserved by **not setting any height inside the iframe**: `documentElement.scrollHeight` reads inner content height regardless of viewport, so feedback can't happen.
 
 ## 2026-05-10 00:35 · F4.4 follow-up (entry plumb-through) done
 

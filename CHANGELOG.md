@@ -5,6 +5,44 @@ SemVer.
 
 ## Unreleased — 1.0.0 prep
 
+- **F4.8 — HTML block iframe auto-resize via `postMessage` protocol.**
+  Replaces the v0.6 DOM-polling watcher. The iframe runs a tiny inline
+  measure script that posts `document.documentElement.scrollHeight` to
+  the parent on `load`, `resize`, and `MutationObserver` content
+  changes (`subtree` + `childList` + `characterData`). Parent listens
+  on a single `window.message` event handler, validates the envelope
+  (`{ type: "epx:html:resize", height, id }`), matches the iframe by
+  `e.source === iframe.contentWindow` (canonical — under tightened
+  sandbox the iframe's origin is `"null"` so origin checks can't
+  disambiguate), and updates the iframe's height inline. Sandbox
+  attribute tightens from `allow-scripts allow-same-origin` to
+  **`allow-scripts` only** — untrusted HTML can no longer reach
+  `parent.document` / `parent.location` / etc., even if it tries. The
+  protocol works cross-origin because `parent.postMessage` is one of
+  the few APIs available under no-`allow-same-origin`. Drops the
+  `setInterval` polling, the parent-side `ResizeObserver` /
+  `MutationObserver` setup on `iframe.contentDocument` (no longer
+  reachable under tightened sandbox — but the in-iframe MutationObserver
+  picks up the slack), and the per-image `load` listener attachment.
+  Mirror behavior in `HtmlPreview.tsx` so the canvas iframe matches
+  the frontend (documented F4.8 cross-domain edit). Files:
+  `src/components/Html.astro`, `src/admin/previews/HtmlPreview.tsx`,
+  `tests/previewParity.test.ts` (added `F4.8 — HtmlPreview postMessage
+  auto-resize` describe with 5 cases: sandbox attr, srcDoc measure
+  script presence, `data-epx-html-frame` correlation, no-polling
+  guard, no-iframe smoke test), `CHANGELOG.md`, `.claude/prd-frontend.md`,
+  `.claude/prd-blocks.md`, `.claude/coordination/status/agent-b.md`.
+  Tests: 408 → 413 (+5). **Role-based sanitization** (no-scripts mode
+  for non-admin authors — drop `allow-scripts` and run the user's
+  HTML through a sanitizer like DOMPurify when the saver isn't an
+  admin) is **deferred** to a 1.0.x follow-up. Needs author-role
+  tracking on layout rows + a sanitization library, which is a
+  substantial design surface that doesn't fit the F4 scope. The
+  current security stance: HTML blocks are admin-only by virtue of
+  the admin route's auth, and the tightened sandbox keeps untrusted
+  code from reaching parent state even if a non-admin somehow gets
+  write access.
+
 - **F4.4 follow-up — entry plumb-through to `FieldBinding`.**
   `BuilderWrapper.astro`, `LayoutRenderer.astro`, and
   `BlockRenderer.astro` now accept an optional `entry` prop and thread

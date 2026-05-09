@@ -1,79 +1,74 @@
-import React, { memo, useEffect, useRef, useState } from "react";
+import React, { memo, useEffect, useId, useRef, useState } from "react";
 
 interface PreviewProps {
   config: Record<string, unknown>;
 }
 
-function buildSrcdoc(code: string): string {
+// F4.8 — inline measure script that runs INSIDE the iframe and posts
+// document.documentElement.scrollHeight to the canvas (parent) on load /
+// resize / MutationObserver content changes. Mirrors the protocol shipped
+// in Html.astro so author preview behaves identically to runtime. Replaces
+// the v0.6 DOM-polling auto-resize that required `allow-same-origin`.
+function buildMeasureScript(id: string): string {
+  const idJson = JSON.stringify(id);
+  return [
+    "<script>",
+    "(function(){",
+    "function send(){",
+    "try{",
+    "var h=document.documentElement.scrollHeight;",
+    `parent.postMessage({type:"epx:html:resize",height:h,id:${idJson}},"*");`,
+    "}catch(e){}",
+    "}",
+    'window.addEventListener("load",send);',
+    'window.addEventListener("resize",send);',
+    'if(document.body){new MutationObserver(send).observe(document.body,{subtree:true,childList:true,characterData:true});}',
+    "send();",
+    "})();",
+    "</script>",
+  ].join("");
+}
+
+function buildSrcdoc(code: string, id: string): string {
+  const measureScript = buildMeasureScript(id);
   const hasFullDoc = /<html[\s>]/i.test(code);
-  if (hasFullDoc) return code;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;}</style></head><body>${code}</body></html>`;
+  if (hasFullDoc) {
+    if (/<\/body>/i.test(code)) {
+      return code.replace(/<\/body>/i, `${measureScript}</body>`);
+    }
+    return `${code}${measureScript}`;
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;}</style></head><body>${code}${measureScript}</body></html>`;
 }
 
 export const HtmlPreview = memo(function HtmlPreview({ config }: PreviewProps) {
   const code = (config.code as string) || "";
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(0);
+  const frameId = useId();
 
   useEffect(() => {
     const f = iframeRef.current;
     if (!f) return;
 
-    const measure = () => {
-      try {
-        const doc = f.contentDocument;
-        if (!doc || !doc.documentElement) return;
-        // Collapse iframe before measuring so user CSS using vh / 100% body
-        // height can't feed back. Layout is recomputed synchronously, painted
-        // only at next frame — flicker is invisible.
-        f.style.height = "0px";
-        void doc.documentElement.offsetHeight;
-        const h = Math.max(
-          doc.documentElement.scrollHeight,
-          doc.documentElement.offsetHeight,
-          doc.body ? doc.body.scrollHeight : 0,
-          doc.body ? doc.body.offsetHeight : 0,
-        );
-        if (h > 0) {
-          f.style.height = `${h}px`;
-          setHeight(h);
-        }
-      } catch {
-        /* cross-origin */
-      }
+    // F4.8 — postMessage listener. Mirrors Html.astro's parent script.
+    // Match by `e.source === f.contentWindow` (canonical — the iframe's
+    // origin is "null" under `sandbox="allow-scripts"` so origin checks
+    // can't disambiguate iframes; contentWindow refs are unique).
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== f.contentWindow) return;
+      const data = e.data;
+      if (!data || typeof data !== "object") return;
+      const msg = data as { type?: unknown; height?: unknown };
+      if (msg.type !== "epx:html:resize") return;
+      const h = msg.height;
+      if (typeof h !== "number" || !isFinite(h) || h <= 0) return;
+      f.style.height = `${h}px`;
+      setHeight(h);
     };
 
-    let ro: ResizeObserver | undefined;
-    let mo: MutationObserver | undefined;
-
-    const init = () => {
-      measure();
-      try {
-        const doc = f.contentDocument;
-        if (!doc) return;
-        if (typeof ResizeObserver !== "undefined" && doc.body) {
-          ro = new ResizeObserver(() => measure());
-          ro.observe(doc.body);
-        }
-        if (typeof MutationObserver !== "undefined" && doc.body) {
-          mo = new MutationObserver(() => measure());
-          mo.observe(doc.body, { attributes: true, childList: true, subtree: true, characterData: true });
-        }
-        const imgs = doc.querySelectorAll("img");
-        imgs.forEach((img) => img.addEventListener("load", measure));
-      } catch {
-        /* cross-origin */
-      }
-    };
-
-    f.addEventListener("load", init);
-    if (f.contentDocument && f.contentDocument.readyState === "complete") init();
-
-    return () => {
-      f.removeEventListener("load", init);
-      ro?.disconnect();
-      mo?.disconnect();
-    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, [code]);
 
   if (!code.trim()) {
@@ -87,12 +82,18 @@ export const HtmlPreview = memo(function HtmlPreview({ config }: PreviewProps) {
   // than a flex/grid parent — but matching `box-sizing` keeps the iframe
   // consistent with the host page layout when the user copies the block
   // back into a flex/grid container at runtime.
+  //
+  // F4.8 — sandbox tightened to `allow-scripts` only (no `allow-same-origin`).
+  // The auto-resize protocol no longer requires reading the iframe's
+  // contentDocument from the parent, so untrusted HTML loses access to
+  // parent.document / parent.location entirely.
   return (
     <iframe
       ref={iframeRef}
-      sandbox="allow-scripts allow-same-origin"
+      sandbox="allow-scripts"
       scrolling="no"
-      srcDoc={buildSrcdoc(code)}
+      srcDoc={buildSrcdoc(code, frameId)}
+      data-epx-html-frame={frameId}
       style={{
         display: "block",
         width: "100%",

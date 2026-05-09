@@ -448,12 +448,14 @@ interface ImageElementStyle {
 - **Style tab is custom**: Align, ColorNormalHover (Normal/Hover toggle), Size (NumberWithUnits), Rotate (deg/turn)
 - Frontend: SVG → CSS-mask block (so `iconColor` recolors); PNG → `<img>` (color ignored, admin shows note). Wrap in `<a>` when link set. Rotate via transform.
 
-### 8. html (v0.6)
+### 8. html (v0.6, auto-resize updated F4.8)
 - Category: core
 - Fields: code (CodeEditor with `language="html"` — token coloring + tag/attr autocomplete)
 - Default: `{ theme: "light", code: "" }`
 - **No Style tab** — placeholder message instead.
-- Frontend: `<div data-epx-block ... set:html={code}>`. SECURITY: trusted user input, not sanitized (raw-html block intent).
+- Frontend: sandboxed iframe via `srcdoc` (NOT `<div set:html>` — earlier doc was inaccurate). `sandbox="allow-scripts"` only since F4.8 (was `allow-scripts allow-same-origin` v0.6 → F4.7). Auto-resize via the F4.8 `postMessage` protocol — iframe runs a tiny inline measure script that posts `document.documentElement.scrollHeight` on `load` / `resize` / `MutationObserver` content changes; parent listens and updates iframe height. Replaces the v0.6 DOM-polling watcher. See [`prd-frontend.md` § "HTML iframe auto-resize via postMessage (F4.8)"](./prd-frontend.md) for the protocol details.
+- Canvas: [`HtmlPreview.tsx`](../src/admin/previews/HtmlPreview.tsx) mirrors the same protocol so preview matches runtime exactly.
+- SECURITY: trusted user input. The HTML block is admin-only by virtue of the admin route's auth. F4.8 tightened the sandbox so untrusted HTML can't reach `parent.document` even if it tries (`allow-scripts` without `allow-same-origin` makes `parent` a cross-origin window proxy). Role-based sanitization (drop `allow-scripts` + DOMPurify for non-admin authors) is deferred to a 1.0.x follow-up.
 
 ### 9. divider-spacer (v0.6, replaces `spacer`)
 - Category: core
