@@ -195,12 +195,13 @@ ThemeStyleToggle. Frontend rendering does NOT consult `config.theme`;
 it always emits BOTH variants:
 
 - light: `[data-epx-block="<id>"]{...config.style...}`
-- dark (only if `config.styleDark` has any entry):
-  `[data-theme="dark"] [data-epx-block="<id>"], [data-epx-block="<id>"][data-theme="dark"]{...config.styleDark...}`
+- dark (only if `config.styleDark` has any entry): one rule under the
+  universal compound selector returned by `darkBlockSelector(blockId)` —
+  see the "Universal dark selector (F1.2)" section below.
 
-The host site is expected to flip a `data-theme="dark"` attribute on
-`<html>` (or `<body>`) when its dark-mode toggle is active. The cascade
-then promotes every block's dark variant. No re-render needed.
+The host site is expected to flip a dark-mode signal on `<html>` (or
+`<body>`) using whatever convention it prefers. The cascade then
+promotes every block's dark variant. No re-render needed.
 
 The compound selector also matches when `data-theme="dark"` is on the
 block element itself — used by Canvas (admin) so the ThemeStyleToggle
@@ -209,6 +210,39 @@ preview can show one block in dark while the rest stay light.
 Hover and per-breakpoint variants are theme-independent (one set of
 hover / breakpoint declarations applies to both modes; further per-theme
 overrides are not supported at this time).
+
+### Universal dark selector (F1.2)
+
+EmDash core does **not** enforce a single dark-mode convention on host
+sites — different theme authors pick different idioms (Tailwind class,
+HTML data-attribute, body data-attribute, etc.). The plugin must adapt
+to all of them simultaneously rather than ask each host to standardise
+on one. Rationale: Section 5 Q4 of `raport-empixel-emdash.html` — the
+plugin adapts to the host, never the reverse.
+
+`darkBlockSelector(blockId)` therefore emits a single compound selector
+with a `:is(...)` ancestor list that covers the five common cases. For a
+block with id `<id>` the selector is:
+
+```
+:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="<id>"],
+[data-epx-block="<id>"][data-theme="dark"]
+```
+
+Cases covered:
+
+1. `html.dark` — Tailwind / Novapera class-based switch.
+2. `html[data-theme="dark"]` — `<html>` element carrying the attribute.
+3. `[data-theme="dark"]` — any ancestor (e.g. `<body>`) with the attribute.
+4. `[data-mode="dark"]` — EmDash admin convention (used by canvas chrome).
+5. Self-on-the-block — `[data-epx-block][data-theme="dark"]`, set by the
+   canvas so ThemeStyleToggle can preview one block in dark while
+   siblings stay light.
+
+`:is(...)` keeps specificity uniform regardless of which clause matches,
+so author overrides in `customCss` cascade predictably. The dark variant
+fires whenever any of the five matches, with no host-side configuration
+required by the plugin user.
 
 ## v0.6+ — frontend updates
 

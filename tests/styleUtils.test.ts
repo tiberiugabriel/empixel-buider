@@ -21,7 +21,7 @@ describe("buildBlockCss", () => {
     expect(css).toContain("padding-bottom:12px");
   });
 
-  it("emits BOTH light and dark variants — dark scoped via [data-theme]", () => {
+  it("emits BOTH light and dark variants — dark scoped via the universal selector", () => {
     const css = buildBlockCss(
       { style: { color: "#000000" }, styleDark: { color: "#ffffff" } },
       "B1",
@@ -29,9 +29,10 @@ describe("buildBlockCss", () => {
     // Light rule on the bare attribute selector.
     expect(css).toContain('[data-epx-block="B1"]{');
     expect(css).toContain("color:#000000");
-    // Dark rule on the compound selector — matches when the host or the
-    // block itself carries data-theme="dark".
-    expect(css).toContain('[data-theme="dark"] [data-epx-block="B1"]');
+    // Dark rule on the compound :is(...) ancestor selector — matches when an
+    // ancestor uses any of the supported theme conventions, OR when the
+    // block element itself carries data-theme="dark" (canvas preview).
+    expect(css).toContain(':is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="B1"]');
     expect(css).toContain('[data-epx-block="B1"][data-theme="dark"]');
     expect(css).toContain("color:#ffffff");
   });
@@ -40,6 +41,20 @@ describe("buildBlockCss", () => {
     const css = buildBlockCss({ style: { color: "#000000" } }, "B1");
     expect(css).toContain("color:#000000");
     expect(css).not.toContain('[data-theme="dark"]');
+  });
+
+  // F1.2 — universal dark selector. Plugin must adapt to whichever theme
+  // convention the host site chose (EmDash core enforces none); see Section
+  // 5 Q4 of raport-empixel-emdash.html.
+  it("composes dark selector covering Tailwind, html data-theme, ancestor data-theme, data-mode, and self", () => {
+    const css = buildBlockCss(
+      { style: { color: "#000000" }, styleDark: { color: "#ffffff" } },
+      "abc123",
+    );
+    const expectedDarkSelector =
+      ':is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="abc123"],' +
+      '[data-epx-block="abc123"][data-theme="dark"]';
+    expect(css).toContain(`${expectedDarkSelector}{color:#ffffff}`);
   });
 });
 

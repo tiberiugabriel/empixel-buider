@@ -1,9 +1,11 @@
 type GradStop = { color: string; alpha: number; pos: number };
 
 // Light-variant style. Dark is a separate variant emitted as its own scoped
-// rule (see buildBlockCss). config.theme is purely an authoring marker and
-// is NOT consulted at render time — the frontend emits BOTH variants and
-// the `[data-theme="dark"]` ancestor (host site theme switch) cascades.
+// rule (see buildBlockCss / darkBlockSelector). config.theme is purely an
+// authoring marker and is NOT consulted at render time — the frontend emits
+// BOTH variants and a host-driven dark ancestor (`html.dark`,
+// `[data-theme="dark"]`, `[data-mode="dark"]`, …) cascades. See
+// `darkBlockSelector` for the full list of accepted conventions.
 function getEffectiveStyle(config: Record<string, unknown>): Record<string, unknown> {
   return (config.style ?? {}) as Record<string, unknown>;
 }
@@ -413,14 +415,26 @@ export function wrapBlockCss(styleStr: string, blockId: string): string {
 }
 
 /**
- * Compound selector that matches the block element when EITHER an ancestor
- * has `data-theme="dark"` (host-driven theme switch on `<html>` or
- * `<body>`) OR the block element itself does (per-block author override
- * applied by the canvas in admin). Use for any rule that should fire when
- * "the block is currently in dark mode".
+ * Compound selector that matches the block element when it should render its
+ * dark variant. EmDash core does NOT enforce a theme convention on the host
+ * site, so the plugin must support every common one simultaneously. We cover
+ * five cases via a single `:is(...)` ancestor list (specificity stays the
+ * specificity of one attribute selector regardless of which clause matches):
+ *
+ *   1. `html.dark` — Tailwind / Novapera class-based switch.
+ *   2. `html[data-theme="dark"]` — `<html>` carrying the `data-theme` attr.
+ *   3. `[data-theme="dark"]` — any ancestor (e.g. `<body>`) with the attr.
+ *   4. `[data-mode="dark"]` — EmDash admin convention (used by canvas chrome).
+ *   5. Self: `[data-epx-block][data-theme="dark"]` — per-block author override
+ *      applied by the canvas (lets the ThemeStyleToggle preview a single block
+ *      in dark while siblings stay light).
+ *
+ * Uniform specificity means later author overrides cascade predictably.
+ * Rationale: see Section 5 Q4 of `raport-empixel-emdash.html` — the plugin
+ * adapts to the host, never the reverse.
  */
 function darkBlockSelector(blockId: string): string {
-  return `[data-theme="dark"] [data-epx-block="${blockId}"],[data-epx-block="${blockId}"][data-theme="dark"]`;
+  return `:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="${blockId}"],[data-epx-block="${blockId}"][data-theme="dark"]`;
 }
 
 export function buildBlockCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean }): string {

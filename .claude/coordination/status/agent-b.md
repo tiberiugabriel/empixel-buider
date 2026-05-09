@@ -21,7 +21,7 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
-*(empty — orchestrator will assign at F1 spawn)*
+## 2026-05-09 10:05 · F1.2 started
 
 ## In progress
 
@@ -29,7 +29,11 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Done
 
-*(empty)*
+## 2026-05-09 10:08 · F1.2 done
+
+- darkBlockSelector now emits a single compound selector via `:is(...)` covering Tailwind (`html.dark`), `html[data-theme="dark"]`, ancestor `[data-theme="dark"]`, EmDash admin `[data-mode="dark"]`, and self `[data-epx-block][data-theme="dark"]`. Plugin's `styleDark` variants apply regardless of host theme convention.
+- Files: src/components/styleUtils.ts, tests/styleUtils.test.ts, .claude/prd-frontend.md, .claude/coordination/status/agent-b.md
+- Pipeline: green (lint, typecheck, 74/74 tests, build)
 
 ## Blocked
 
