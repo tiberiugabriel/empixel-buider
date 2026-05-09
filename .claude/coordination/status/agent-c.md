@@ -21,7 +21,50 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
-## 2026-05-09 20:30 · F3.5.6 started
+## 2026-05-09 21:30 · F3.5.6 followup (Style spacing + theme dup) started
+
+Branch: `fix/F3.5.6-style-spacing-and-theme-dup`. Worktree at latest
+`main` (`70843fd`). Two surgical visual fixes from manual Novapera
+test post-F3.5.6:
+
+**Bug 1** — `epx-right-panel__style` wrapper has no CSS rule. The
+F3.5.6 `<TabRenderer />` emits a different wrapper class (`__style`)
+for the Style tab body than the Fields tab body (`__fields`); only the
+Fields class has padding/gap/flex rules in `builder.css` (L593–596),
+so the Style tab body collapses against the panel edge. Fix: add a
+shared selector `.epx-right-panel__fields, .epx-right-panel__style`
+(combined rule preferred — same scrollbar styling, same flex layout)
+to `builder.css`. Class names in `TabRenderer.tsx` are correct (per
+PRD intent — different wrappers because the Style body wraps section
+shells, not flat fields). The bug is purely missing CSS.
+
+**Bug 2** — `container.styleTab` opens with `{ kind: "theme" }` even
+though `BackgroundSection` already includes `<ThemeStyleToggle />`
+inline (verified at L57 of `sections/BackgroundSection.tsx`). Same
+audit applies to `button.styleTab`. Decision per block:
+- `text` — no `background` section → keep theme entry? No: `text` has
+  NO `theme` entry in its current declaration (`alignment / typography
+  / textStroke / textShadow / blendMode`). N/A.
+- `image` — no `theme` entry, no `background` section. N/A.
+- `text-editor` — no `theme`, no `background`. N/A.
+- `video` — single `custom(VideoSourceSection)`. N/A.
+- `button` — has `[typography, theme, background, ...]` → `theme`
+  duplicates `BackgroundSection`'s inline toggle. **Drop**.
+- `icon` — `[alignment, custom(IconBlockStyleSection)]`. N/A.
+- `html` — no Style tab. N/A.
+- `divider-spacer` — single custom. N/A.
+- `container` — `[theme, background, ...]` → **Drop** the leading
+  theme entry. Background already covers it.
+
+Tests added:
+- `tabRenderer.test.ts` — assert Style tab body emits
+  `epx-right-panel__style` wrapper class (already present, but tighten
+  by also asserting fields body emits `epx-right-panel__fields`).
+- `blockDefinitions.test.ts` — assert no `styleTab` array contains a
+  leading `{ kind: "theme" }` followed by `{ kind: "background" }`
+  (regression guard for Bug 2).
+
+
 
 Branch: `feature/agentC-F3.5.6`. Worktree at latest `main` (`16356ef`).
 Wiring `RightPanel.tsx` onto the declarative `BlockDef.fieldsTab` /
@@ -152,7 +195,86 @@ rewrite yet (F3.5.6).
 
 ## Done
 
-## 2026-05-09 20:55 · F3.5.6 done
+## 2026-05-09 21:55 · F3.5.6 followup (Bug 1 + Bug 2) done
+
+Branch: `fix/F3.5.6-style-spacing-and-theme-dup`. Single commit.
+
+**Files changed**:
+- `src/admin/builder/styles/builder.css` — combined the
+  `.epx-right-panel__fields` rule with `.epx-right-panel__style` so
+  the Style-tab body inherits identical padding (12px 14px), gap
+  (12px), flex column layout, and scrollbar styling. Same for the
+  three `::-webkit-scrollbar*` sub-selectors. Added an explanatory
+  block comment naming the F3.5.6 root cause (different wrappers,
+  same visual contract).
+- `src/admin/blockDefinitions.ts` — `container.styleTab` and
+  `button.styleTab` no longer lead with `{ kind: "theme" }`. Comment
+  blocks updated to flag the F3.5.6 follow-up + record the
+  `BackgroundSection` inline-toggle reasoning so a future re-add is
+  thoughtful, not accidental.
+- `tests/blockDefinitions.test.ts` — F3.5.6 follow-up: container 5→4,
+  button 6→5 in EXPECTED. Three new regression-guard tests:
+  - `no block declares a redundant theme entry adjacent to background`
+    (sweeps every BlockDef; throws with a named-block message if any
+    pair is reintroduced).
+  - `container styleTab no longer leads with kind: "theme"` (asserts
+    `styleTab[0].kind === "background"`).
+  - `button styleTab does not duplicate the theme toggle`.
+- `tests/tabRenderer.test.ts` — new test
+  `Style and Fields tab bodies emit their respective wrapper classes
+  (Bug 1 regression guard)` asserts both
+  `class="epx-right-panel__fields"` and
+  `class="epx-right-panel__style"` are present in the rendered markup
+  for the matching active tab. Catches future class-name typos.
+- `CHANGELOG.md` — appended two hotfix bullets above the existing
+  `## Unreleased — 0.9.5 prep` entries.
+- `.claude/prd-rightpanel.md` — new "F3.5.6 follow-up hotfixes
+  (0.9.5 prep)" subsection under the F3.5.6 architecture section
+  documenting both fixes + the per-block audit table for the theme
+  removal decision.
+- `.claude/prd-blocks.md` — `button` and `container` rows in the
+  F3.5.2 instance-shape table updated with the new lengths (5, 4)
+  and the reasoning note pointing at `BackgroundSection`.
+
+**Per-block Fix-2 audit** (decision per BlockDef):
+| Block | Has theme entry? | Has background section? | Decision |
+|---|---|---|---|
+| `text` | no | no | n/a (no theme entry) |
+| `image` | no | no | n/a (no theme entry) |
+| `text-editor` | no | no | n/a (no theme entry) |
+| `video` | no | no | n/a (single custom) |
+| `button` | yes (leading after typography) | yes (next entry) | **dropped theme** |
+| `icon` | no | no | n/a (alignment + custom) |
+| `html` | absent (no Style tab) | n/a | n/a |
+| `divider-spacer` | no | no | n/a (single custom) |
+| `container` | yes (leading entry) | yes (next entry) | **dropped theme** |
+
+Final styleTab counts: container 5→4, button 6→5; all 7 other blocks
+unchanged. Total `kind: "theme"` instances in `blockDefinitions.ts`
+went from 2 → 0 (verifiable via
+`grep -c 'kind: "theme"' src/admin/blockDefinitions.ts`).
+
+**Fix-1 root cause**: missing CSS rule. The class emission in
+`TabRenderer.tsx` (`epx-right-panel__style` for the Style body) was
+correct per the F3.5.6 design — the Fields and Style bodies wrap
+different child shapes so they can carry their own selectors if
+needed. The bug was simply that `builder.css` only declared the
+spacing rule for `__fields`. Combined-selector fix is the one-line
+KISS change; no markup edits required.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test &&
+npm run build` all green. **213 tests pass** (209 → 213, +3 from
+the regression guards in `blockDefinitions.test.ts` and +1 from
+`tabRenderer.test.ts`; the F3.5.6 follow-up adjusted 2 EXPECTED
+counts in `blockDefinitions.test.ts` in place rather than adding
+tests there).
+
+**No `src/types.ts` proposal**: pure CSS + per-block declaration
+edits. No shared-type change.
+
+**Surprises / blockers**: none.
+
+
 
 Branch: `feature/agentC-F3.5.6`. Single commit (about to land).
 

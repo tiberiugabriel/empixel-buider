@@ -105,16 +105,19 @@ describe("F3.5.2 + F3.5.6 — migrated BlockDef instances", () => {
   // whose Fields tab carried bespoke widgets (text, image, text-editor,
   // video, button, icon, container, divider-spacer). The fieldsTab
   // counts below include both standard FieldDefs and custom entries.
+  // F3.5.6 followup — container/button styleTab dropped the redundant
+  // leading `{ kind: "theme" }` entry (theme already lives inside the
+  // Background section). Counts shifted: container 5 → 4, button 6 → 5.
   const EXPECTED: Record<string, { fieldsTab: number; styleTab: number | "absent" }> = {
     text:             { fieldsTab: 2, styleTab: 5 }, // content + custom(extras)
     image:            { fieldsTab: 2, styleTab: 6 }, // caption + custom(image fields)
     "text-editor":    { fieldsTab: 2, styleTab: 4 }, // content + custom(extras)
     video:            { fieldsTab: 1, styleTab: 1 }, // custom(video fields)
-    button:           { fieldsTab: 3, styleTab: 6 }, // text + icon + custom(link)
+    button:           { fieldsTab: 3, styleTab: 5 }, // text + icon + custom(link); theme dropped
     icon:             { fieldsTab: 2, styleTab: 2 }, // icon + custom(link)
     html:             { fieldsTab: 1, styleTab: "absent" },
     "divider-spacer": { fieldsTab: 1, styleTab: 1 }, // space (divider line moved to styleTab)
-    container:        { fieldsTab: 1, styleTab: 5 }, // custom(layout)
+    container:        { fieldsTab: 1, styleTab: 4 }, // custom(layout); theme dropped
   };
 
   for (const [type, expected] of Object.entries(EXPECTED)) {
@@ -154,6 +157,41 @@ describe("F3.5.2 + F3.5.6 — migrated BlockDef instances", () => {
     const def = getBlockDef("icon")!;
     const kinds = def.styleTab!.map((s) => s.kind);
     expect(kinds).toEqual(["alignment", "custom"]);
+  });
+
+  // F3.5.6 followup (Bug 2) — no styleTab entry may carry `kind: "theme"`
+  // immediately followed by `kind: "background"` because
+  // `BackgroundSection` already includes `<ThemeStyleToggle />` inline
+  // (sections/BackgroundSection.tsx L57). This regression test guards
+  // any future BlockDef migration from re-introducing the duplicate.
+  it("no block declares a redundant `theme` entry adjacent to `background`", () => {
+    for (const def of BLOCK_DEFINITIONS) {
+      const enriched = getBlockDef(def.type)!;
+      if (!enriched.styleTab) continue;
+      for (let i = 0; i < enriched.styleTab.length - 1; i++) {
+        const cur = enriched.styleTab[i];
+        const nxt = enriched.styleTab[i + 1];
+        if (cur.kind === "theme" && nxt.kind === "background") {
+          throw new Error(
+            `Block "${def.type}" styleTab[${i}..${i + 1}] declares a redundant ` +
+            `theme→background pair. BackgroundSection already renders the ` +
+            `theme toggle inline; drop the leading { kind: "theme" } entry.`,
+          );
+        }
+      }
+    }
+  });
+
+  it("container styleTab no longer leads with kind: \"theme\" (F3.5.6 followup)", () => {
+    const def = getBlockDef("container")!;
+    expect(def.styleTab![0].kind).not.toBe("theme");
+    expect(def.styleTab![0].kind).toBe("background");
+  });
+
+  it("button styleTab does not duplicate the theme toggle (F3.5.6 followup)", () => {
+    const def = getBlockDef("button")!;
+    const themeCount = def.styleTab!.filter((s) => s.kind === "theme").length;
+    expect(themeCount).toBe(0);
   });
 });
 

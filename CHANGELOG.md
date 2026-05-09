@@ -31,6 +31,39 @@ SemVer.
   the legacy shape, end-to-end runtime-singleton round-trip via the legacy
   shape), `.claude/prd-frontend.md`.
 
+- **Hotfix (admin): F3.5.6 follow-up — Style tab spacing matches Fields tab.**
+  The F3.5.6 RightPanel rewrite renders the Style-tab body inside a
+  `.epx-right-panel__style` wrapper (vs Fields' `.epx-right-panel__fields`),
+  but `builder.css` only carried the spacing/scrollbar rule for the Fields
+  selector. Result: the Style tab body collapsed against the panel edge
+  with no padding, no inter-section gap, no working overflow scroll.
+  Fix: combined the selector
+  (`.epx-right-panel__fields, .epx-right-panel__style { ... }`) so both
+  tab bodies inherit the same spacing. Class names in `TabRenderer.tsx`
+  are intentionally distinct (different child shapes) — the bug was
+  purely a missing CSS rule, not a class-emission mismatch.
+- **Hotfix (admin): F3.5.6 follow-up — drop redundant top-level `theme`
+  entries from container/button `styleTab`.** `BackgroundSection`
+  already renders `<ThemeStyleToggle />` inline at the top of the
+  Background controls (`sections/BackgroundSection.tsx` L57), so a
+  leading `{ kind: "theme" }` entry on a `styleTab` that also contains
+  `{ kind: "background" }` produced two theme toggles stacked above
+  each other on the container Style tab (and on button after F3.5.2
+  declared its `styleTab` with the same shape). Per-block audit:
+  - `container` — `[theme, background, …]` → dropped `theme`. Now
+    `[background, borderRadius, border, boxShadow]` (5 → 4 entries).
+  - `button` — `[typography, theme, background, …]` → dropped `theme`.
+    Now `[typography, background, borderRadius, border, boxShadow]`
+    (6 → 5 entries).
+  - `text`, `image`, `text-editor`, `video`, `icon`, `html`,
+    `divider-spacer` — no leading-`theme`-then-`background` pattern;
+    no change. Theme is currently surfaced only via the Background
+    section; if a future block needs theme without Background (e.g.
+    a future flex-grid section that wants the toggle), re-introduce
+    `{ kind: "theme" }` next to that section, not at the top of
+    `styleTab`. Regression test: `blockDefinitions.test.ts` now
+    asserts no `theme→background` adjacent pair exists in any
+    BlockDef.
 - **Hotfix: `/entries` route now returns the entries the builder is
   enabled for instead of an empty list.** F3.2's storage migration
   produced rows under doc id `<collection>::<entryId>`, but the F3.5

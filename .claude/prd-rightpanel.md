@@ -204,6 +204,58 @@ shape but the new pipeline reads per-breakpoint default px values via
 needs host-customised breakpoints to flow in, `SectionRenderProps` /
 `FieldRenderProps` extend with the override map.
 
+#### F3.5.6 follow-up hotfixes (0.9.5 prep)
+
+Two visual regressions surfaced on the first manual Novapera browser
+test after the F3.5.6 rewrite landed.
+
+**Bug 1 — Style tab body has no spacing** because `builder.css`
+carries the padding/gap/scrollbar rule only on
+`.epx-right-panel__fields`, while the F3.5.6 `<TabRenderer />` renders
+the Style-tab body in a `.epx-right-panel__style` wrapper. The two
+classes are intentionally distinct (the wrappers carry different
+child shapes — flat fields vs section shells), so the fix is in CSS,
+not class emission. `builder.css` now combines the selectors:
+
+```css
+.epx-right-panel__fields,
+.epx-right-panel__style { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow: hidden auto; ... }
+```
+
+The Advanced tab body uses `.epx-right-panel__fields` directly inside
+`AdvancedTab.tsx` (L133), so it already inherits the rule and stays
+visually consistent with the other two tabs.
+
+**Bug 2 — duplicate theme toggle on container/button Style tab.**
+`BackgroundSection` (`sections/BackgroundSection.tsx` L57) already
+renders `<ThemeStyleToggle />` inline above `BackgroundControl`. A
+leading `{ kind: "theme" }` entry on a `styleTab` that also contains
+`{ kind: "background" }` produced two stacked theme toggles in the
+panel. Removed the redundant `theme` entry from `container.styleTab`
+(was `[theme, background, borderRadius, border, boxShadow]` → now
+`[background, borderRadius, border, boxShadow]`) and from
+`button.styleTab` (was `[typography, theme, background, ...]` → now
+`[typography, background, ...]`). Per-block audit:
+
+| Block | Before | After | Decision |
+|---|---|---|---|
+| `text` | `[alignment, typography, textStroke, textShadow, blendMode]` | (unchanged) | n/a — no `theme` entry |
+| `image` | `[imgVisual, alignment, opacity, borderRadius, border, boxShadow]` | (unchanged) | n/a |
+| `text-editor` | `[alignment, typography, textShadow, custom]` | (unchanged) | n/a |
+| `video` | `[custom]` | (unchanged) | n/a |
+| `button` | `[typography, theme, background, borderRadius, border, boxShadow]` | `[typography, background, borderRadius, border, boxShadow]` | dropped `theme` (Background already includes it) |
+| `icon` | `[alignment, custom]` | (unchanged) | n/a |
+| `html` | absent | (unchanged) | n/a |
+| `divider-spacer` | `[custom]` | (unchanged) | n/a |
+| `container` | `[theme, background, borderRadius, border, boxShadow]` | `[background, borderRadius, border, boxShadow]` | dropped `theme` (Background already includes it) |
+
+Theme is currently surfaced only via the Background section's inline
+toggle. If a future block needs the theme toggle without a Background
+section (e.g. a future flex-grid section that wants the toggle),
+re-introduce `{ kind: "theme" }` next to that section, not at the
+top of `styleTab`. Regression test in `blockDefinitions.test.ts`
+asserts no `theme→background` adjacent pair exists in any BlockDef.
+
 ## Architecture
 
 ```

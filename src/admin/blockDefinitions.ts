@@ -413,9 +413,13 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     // border, box-shadow). Mirrors the imperative branch in
     // RightPanel.tsx ~lines 1471–1652 (the `block.type === "button"`
     // arm of the shared default-style render).
+    //
+    // F3.5.6 followup (Bug 2): the leading `{ kind: "theme" }` was
+    // removed because `BackgroundSection` already renders
+    // `<ThemeStyleToggle />` inline (sections/BackgroundSection.tsx
+    // L57). Top-level `theme` here duplicated the toggle.
     styleTab: [
       { kind: "typography" },
-      { kind: "theme" },
       { kind: "background" },
       { kind: "borderRadius" },
       { kind: "border" },
@@ -514,12 +518,19 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     },
     fields: CONTAINER_FIELDS,
     fieldsTab: CONTAINER_FIELDS,
-    // Style tab — container: full default stack (theme + background +
+    // Style tab — container: full default stack (background +
     // border-radius + border + box-shadow) shared with image / button
     // via the `block.type === "container" || "image" || "button"`
     // dispatch in RightPanel.tsx ~line 1471.
+    //
+    // F3.5.6 followup (Bug 2): the leading `{ kind: "theme" }` was
+    // removed because `BackgroundSection` already renders
+    // `<ThemeStyleToggle />` inline (sections/BackgroundSection.tsx
+    // L57). Theme is currently only surfaced via the Background
+    // section; if a container-only theme entrypoint is needed later
+    // (e.g. a future flex-grid section that also wants the toggle),
+    // re-introduce `{ kind: "theme" }` next to that section, not here.
     styleTab: [
-      { kind: "theme" },
       { kind: "background" },
       { kind: "borderRadius" },
       { kind: "border" },

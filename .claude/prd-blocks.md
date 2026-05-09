@@ -118,11 +118,11 @@ Each of the 9 entries now declares its Fields and Style tabs through the new sch
 | `image` | `[caption]` (1) | `[imgVisual, alignment, opacity, borderRadius, border, boxShadow]` (6) |
 | `text-editor` | `[content]` (1) | `[alignment, typography, textShadow, custom(TextEditorDropCapSection)]` (4) |
 | `video` | `[custom(VideoFieldsSection)]` (1) — F3.5.6 routes the imperative `VideoSourceControl` + overlay group through `kind: "custom"` | `[custom(VideoSourceSection)]` (1) |
-| `button` | `[text, icon, custom(LinkFieldsSection)]` (3) — F3.5.6 adds the link entry as `kind: "custom"` | `[typography, theme, background, borderRadius, border, boxShadow]` (6) |
+| `button` | `[text, icon, custom(LinkFieldsSection)]` (3) — F3.5.6 adds the link entry as `kind: "custom"` | `[typography, background, borderRadius, border, boxShadow]` (5) — F3.5.6 follow-up dropped the redundant leading `theme` entry (Background already renders `<ThemeStyleToggle />` inline) |
 | `icon` | `[icon, custom(LinkFieldsSection)]` (2) | `[alignment, custom(IconBlockStyleSection)]` (2) |
 | `html` | `[code]` (1) | absent — `html` block hides the Style tab entirely (`getVisibleTabs` returns `["fields", "advanced"]`) |
 | `divider-spacer` | `[space]` (1) | `[custom(DividerLineSection)]` (1) — divider-line picker lifted from Fields → Style |
-| `container` | `[custom(ContainerLayoutPicker)]` (1) — F3.5.6 routes `LayoutControl` / `GapControl` / `OverflowControl` / HTML Tag / `LinkControl` through `kind: "custom"` | `[theme, background, borderRadius, border, boxShadow]` (5) |
+| `container` | `[custom(ContainerLayoutPicker)]` (1) — F3.5.6 routes `LayoutControl` / `GapControl` / `OverflowControl` / HTML Tag / `LinkControl` through `kind: "custom"` | `[background, borderRadius, border, boxShadow]` (4) — F3.5.6 follow-up dropped the redundant leading `theme` entry (Background already renders `<ThemeStyleToggle />` inline) |
 
 Two example shapes:
 

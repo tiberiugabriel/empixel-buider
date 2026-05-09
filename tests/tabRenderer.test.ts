@@ -215,4 +215,35 @@ describe("TabRenderer", () => {
     );
     expect(html).toContain("epx-right-panel__style");
   });
+
+  // F3.5.6 followup (Bug 1) — the Style-tab body must emit a wrapper
+  // class so the matching CSS rule (combined with `__fields` in
+  // builder.css) can apply padding / gap / scrollbar styling. This
+  // also asserts that the Fields-tab body still emits its own wrapper
+  // class — both must be present so the combined selector covers them.
+  it("Style and Fields tab bodies emit their respective wrapper classes (Bug 1 regression guard)", () => {
+    const block = makeBlock("text");
+
+    const fieldsHtml = renderToStaticMarkup(
+      createElement(TabRenderer, {
+        block,
+        activeTab: "fields",
+        onTabChange: () => {},
+        onChange: () => {},
+        activeBreakpoint: "desktop",
+      }),
+    );
+    expect(fieldsHtml).toMatch(/class="epx-right-panel__fields"/);
+
+    const styleHtml = renderToStaticMarkup(
+      createElement(TabRenderer, {
+        block,
+        activeTab: "style",
+        onTabChange: () => {},
+        onChange: () => {},
+        activeBreakpoint: "desktop",
+      }),
+    );
+    expect(styleHtml).toMatch(/class="epx-right-panel__style"/);
+  });
 });

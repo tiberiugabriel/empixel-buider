@@ -590,10 +590,19 @@
       .epx-right-panel__tab { flex: 1; padding: 9px 0; border: none; background: none; color: var(--epx-text-faint); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; display: flex; align-items: center; justify-content: center; }
       .epx-right-panel__tab:hover { color: var(--epx-text-mid); }
       .epx-right-panel__tab.is-active { color: var(--epx-accent); border-bottom-color: var(--epx-accent); }
-      .epx-right-panel__fields { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--epx-text-muted) transparent; height: 100%; }
-      .epx-right-panel__fields::-webkit-scrollbar { width: 4px; }
-      .epx-right-panel__fields::-webkit-scrollbar-track { background: transparent; }
-      .epx-right-panel__fields::-webkit-scrollbar-thumb { background: var(--epx-text-muted); border-radius: 4px; }
+      /* F3.5.6 followup — Style tab body shares Fields-tab spacing/scroll behavior.
+         The F3.5.6 rewrite of RightPanel emits `__style` (vs `__fields`) for the
+         Style-tab body because each wraps a different child shape (section shells
+         vs flat fields), but visually they must align. Combined selector keeps
+         the spacing rule single-source. */
+      .epx-right-panel__fields,
+      .epx-right-panel__style { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--epx-text-muted) transparent; height: 100%; }
+      .epx-right-panel__fields::-webkit-scrollbar,
+      .epx-right-panel__style::-webkit-scrollbar { width: 4px; }
+      .epx-right-panel__fields::-webkit-scrollbar-track,
+      .epx-right-panel__style::-webkit-scrollbar-track { background: transparent; }
+      .epx-right-panel__fields::-webkit-scrollbar-thumb,
+      .epx-right-panel__style::-webkit-scrollbar-thumb { background: var(--epx-text-muted); border-radius: 4px; }
 
       .epx-field { display: flex; flex-direction: column; gap: 4px; }
       .epx-field__label { font-size: 12px; font-weight: 600; color: var(--epx-text-faint); }
