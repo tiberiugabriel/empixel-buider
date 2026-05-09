@@ -8,6 +8,21 @@ RESTful API layer for layout persistence and integration with EmDash plugin syst
 - `src/plugin.ts` — 6 REST routes + content hook
 - `src/types.ts` — Block interfaces + type definitions
 
+## Runtime requirements (v0.7.1)
+
+The plugin descriptor declares the following peer-dep floor: `emdash >=0.9.0`,
+`better-sqlite3 >=12.0.0`, `astro >=6.0.0`, `react >=19.0.0`,
+`react-dom >=19.0.0`, plus optional `@emdash-cms/admin: "*"`. `better-sqlite3`
+12 ships native bindings built against Node 20, so the host site must run on
+**Node.js 20 or newer** — the README's Requirements section calls this out
+explicitly.
+
+The plugin advertises a single capability now: `content:read`. The legacy
+`read:content` form was renamed in 0.7.1 because the EmDash marketplace
+publish pipeline requires the colon-separated `<resource>:<verb>` shape; both
+names still alias inside EmDash core today, but downstream tooling rejects
+the old form.
+
 ## API Routes
 
 All routes are under `/_emdash/api/plugins/empixel-builder/<route>`.

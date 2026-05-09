@@ -21,7 +21,7 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
-*(empty — orchestrator will assign at F1 spawn)*
+## 2026-05-09 13:05 · F1.1 started
 
 ## In progress
 
@@ -29,7 +29,10 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Done
 
-*(empty)*
+## 2026-05-09 13:08 · F1.1 done
+- Bumped peer deps (`emdash >=0.9.0`, `better-sqlite3 >=12.0.0`), version to 0.7.1, renamed capability `read:content` → `content:read` in both `src/plugin.ts` and `src/index.ts`. Added Node 20+ requirement to README. Pipeline green.
+- Files: package.json, package-lock.json, src/plugin.ts, src/index.ts, README.md, CHANGELOG.md, .claude/prd-backend.md
+- Pipeline: green (lint + typecheck + 73 tests + build all pass)
 
 ## Blocked
 

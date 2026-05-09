@@ -3,6 +3,14 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## 0.7.1 — 2026-05-09
+
+- Bump peer deps: `emdash >=0.9.0`, `better-sqlite3 >=12.0.0`. `better-sqlite3` 12
+  ships native bindings built against Node 20, so the plugin now requires
+  Node 20+ as well — noted in the README.
+- Rename capability `read:content` → `content:read`. Both names alias in
+  EmDash today, but the marketplace publish pipeline requires the new form.
+
 ## 0.7.0 — 2026-05-08
 
 ### Breaking

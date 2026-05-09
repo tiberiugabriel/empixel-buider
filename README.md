@@ -53,10 +53,11 @@ Open the editor, build your page layout with drag-and-drop sections, and save. T
 
 ## Requirements
 
-- `emdash` >= 0.4.0
+- **Node.js >= 20** (required by `better-sqlite3` 12, which ships native bindings built against Node 20)
+- `emdash` >= 0.9.0
 - `astro` >= 6.0.0
 - `react` >= 19.0.0
-- `better-sqlite3` >= 9.0.0 (included with EmDash)
+- `better-sqlite3` >= 12.0.0 (included with EmDash)
 
 ---
 

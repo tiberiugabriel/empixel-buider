@@ -1,6 +1,6 @@
 {
   "name": "empixel-builder",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Professional page builder for EmDash and Astro",
   "author": "Tiberiu Gabriel",
   "license": "GPL-3.0",
@@ -42,8 +42,8 @@
   "peerDependencies": {
     "@emdash-cms/admin": "*",
     "astro": ">=6.0.0",
-    "better-sqlite3": ">=9.0.0",
-    "emdash": ">=0.4.0",
+    "better-sqlite3": ">=12.0.0",
+    "emdash": ">=0.9.0",
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0"
   },

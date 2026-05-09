@@ -189,8 +189,8 @@ function runSpacerMigration(db: SqliteDb): void {
 export function createPlugin() {
   return definePlugin({
     id: "empixel-builder",
-    version: "0.7.0",
-    capabilities: ["read:content"],
+    version: "0.7.1",
+    capabilities: ["content:read"],
     routes: {
       // GET  ?pageId=&collection=  → load layout
       // POST { pageId, collection, sections } → save layout
