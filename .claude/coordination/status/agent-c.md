@@ -21,6 +21,18 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 18:30 · F3.5.3 started
+
+Branch: `feature/agentC-F3.5.3`. Worktree at latest `main` (`bf913df`).
+Building the pure `SectionRenderer.tsx` dispatcher under
+`src/admin/right-panel/`. One branch per `StyleSection.kind` (19
+variants), exhaustive via `assertNever`. Wraps existing controls under
+`controls/` plus the four extracted `sections/` files from F3.5.2.
+File stays under 200 LOC; no business logic — purely a switch. Tests
+render each variant via `renderToStaticMarkup` (react-dom/server is
+already in `node_modules` from React peer; no new dep). RightPanel
+wiring deferred to F3.5.6.
+
 ## 2026-05-09 17:10 · F3.5.2 started
 
 Branch: `feature/agentC-F3.5.2`. Worktree at latest `main` (`556a1ae`).
@@ -46,6 +58,66 @@ rewrite yet (F3.5.6).
 *(see "Current task")*
 
 ## Done
+
+## 2026-05-09 18:55 · F3.5.3 done
+
+Branch: `feature/agentC-F3.5.3`. Single commit (see git log).
+
+**Files changed**:
+- `src/admin/right-panel/SectionRenderer.tsx` — new pure dispatcher
+  (109 LOC) mapping each `StyleSection.kind` to the matching control.
+  Exhaustive via `assertNever` on the default branch — adding a new
+  variant in the future causes a typecheck error here.
+- `src/admin/right-panel/sections/BackgroundSection.tsx` — new wrapper
+  combining Normal/Hover toggle + `ThemeStyleToggle` + `BackgroundControl`
+  (matches the imperative `kind: "background"` branch in RightPanel).
+- `src/admin/right-panel/sections/StatefulStyleSection.tsx` — new
+  shared shell + `BorderRadiusSection` / `BorderSection` /
+  `BoxShadowSection` wrappers (Normal/Hover state toggle + bp-routed
+  reads + writes for the three near-identical stateful sections).
+- `src/admin/right-panel/sections/OpacitySection.tsx` — new
+  Normal/Hover Opacity wrapper (image-only `kind: "opacity"`).
+- `src/admin/right-panel/sections/ImgVisualSection.tsx` — new
+  Width/Height/Fit/Position/Align section for the `image` block's
+  `kind: "imgVisual"`.
+- `src/admin/right-panel/sections/BpAwareStyleSections.tsx` — new
+  collection of small bp-aware wrappers for `alignment`, `typography`,
+  `textStroke`, `textShadow`, `blendMode`, `filter`, `overflow`, and
+  `spacing`. One file rather than eight files of <30 LOC each.
+- `tests/sectionRenderer.test.ts` — 5 new tests. Renders every
+  `StyleSection.kind` via `react-dom/server`'s `renderToStaticMarkup`,
+  asserts non-empty HTML output. Also covers the `custom` branch
+  passing the right props to `section.render` and `theme` propagating
+  `block.config.theme` to `ThemeStyleToggle`.
+- `CHANGELOG.md` — new F3.5.3 entry above F3.5.2.
+- `.claude/prd-rightpanel.md` — F3.5.3 row flipped to `✅ shipped` +
+  added a new "F3.5.3 — `SectionRenderer` dispatcher map" subsection
+  with a `kind` → file mapping table.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test && npm run build` all green. 144 tests pass (139 → 144, +5 new in `sectionRenderer.test.ts`).
+
+**Switch shape**: 19 cases (18 declarative variants + `custom`) plus
+the `default: assertNever(section)` exhaustiveness branch. Final LOC
+count for `SectionRenderer.tsx`: 109 (well under the 200 LOC ceiling).
+
+**Test rendering strategy**: `renderToStaticMarkup` from `react-dom/server`
+(already in `node_modules` from React's transitive peer; no new dep
+added). Tests are written in `.ts` using `React.createElement` to keep
+the existing `vitest.config.ts` `tests/**/*.test.ts` glob unchanged.
+
+**Wiring NOT done in this PR**: the dispatcher is added but
+`RightPanel.tsx` is untouched. F3.5.6 retires the imperative
+`block.type ===` branches and routes the Style tab through
+`SectionRenderer`. The 9 imperative branches in `RightPanel.tsx`
+keep ownership of the Style tab today.
+
+**No `src/types.ts` proposal**: all new code is admin-UI-only and
+lives in `src/admin/right-panel/`. The `SectionRendererProps`
+interface is local to `SectionRenderer.tsx` and re-exports nothing
+that frontend Astro or plugin runtime consume.
+
+**No blockers.**
 
 ## 2026-05-09 17:42 · F3.5.2 done
 

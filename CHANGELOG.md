@@ -5,6 +5,26 @@ SemVer.
 
 ## Unreleased — 0.9.5 prep
 
+- **F3.5.3 — `SectionRenderer` dispatcher.** New
+  `src/admin/right-panel/SectionRenderer.tsx` maps each
+  `StyleSection.kind` to the matching control under
+  `src/admin/controls/` (or one of the extracted wrappers under
+  `src/admin/right-panel/sections/`). Pure switch — no business logic
+  — under 200 LOC. Exhaustiveness enforced via an `assertNever` default
+  branch so adding a new `StyleSection` variant in the future causes
+  a typecheck error here. The dispatcher is NOT yet wired into
+  `RightPanel.tsx`; F3.5.6 will swap the imperative `block.type ===`
+  branches over to it. Five new section wrappers landed alongside the
+  dispatcher to keep the switch under the LOC ceiling:
+  `BackgroundSection.tsx` (Normal/Hover toggle + theme row),
+  `StatefulStyleSection.tsx` (shared shell for `borderRadius` /
+  `border` / `boxShadow` Normal/Hover state + bp routing),
+  `OpacitySection.tsx` (image-block Opacity with state toggle),
+  `ImgVisualSection.tsx` (image-block Width/Height/fit/position/align),
+  `BpAwareStyleSections.tsx` (small bp-aware wrappers for `alignment` /
+  `typography` / `textStroke` / `textShadow` / `blendMode` / `filter` /
+  `overflow` / `spacing`).
+
 - **F3.5.2 — migrate all 9 `BlockDef` instances to the declarative
   `fieldsTab` + `styleTab` schema introduced in F3.5.1.** Each of
   `container`, `text`, `image`, `text-editor`, `video`, `button`,

@@ -14,7 +14,7 @@ The 1671-LOC `RightPanel.tsx` today branches imperatively on `block.type` for th
 |------|--------|-------|
 | F3.5.1 | ✅ shipped (0.9.5 prep) | Add `StyleSection` discriminated union + optional `fieldsTab` / `styleTab` on `BlockDef`. Existing `fields` / `styleFields` kept as deprecated aliases. No instances migrated; no panel rewrite. |
 | F3.5.2 | ✅ shipped (0.9.5 prep) | All 9 `BlockDef` entries populate `fieldsTab` + `styleTab`. Non-trivial Style logic extracted into `src/admin/right-panel/sections/`: `TextEditorDropCapSection.tsx` (paragraph spacing + drop cap), `VideoSourceSection.tsx` (aspect ratio + filter), `DividerLineSection.tsx` (full divider-line picker), `IconBlockStyleSection.tsx` (icon color/size/rotate). Imperative `block.type ===` branches in `RightPanel.tsx` stay in place — F3.5.6 deletes them. |
-| F3.5.3 | ⬜ planned | `right-panel/SectionRenderer.tsx` — switch on `StyleSection.kind`, render the right control. |
+| F3.5.3 | ✅ shipped (0.9.5 prep) | `right-panel/SectionRenderer.tsx` — pure switch on `StyleSection.kind`, renders the matching control. 109 LOC, exhaustive via `assertNever`. Dispatcher added in this PR; wired into `RightPanel.tsx` by F3.5.6. |
 | F3.5.4 | ⬜ planned | `right-panel/TabRenderer.tsx` — consumes `fieldsTab` + `styleTab`, replaces inline branching. |
 | F3.5.5 | ⬜ planned | `right-panel/AdvancedTab.tsx` — extract Advanced tab. |
 | F3.5.6 | ⬜ planned | Drop imperative `block.type ===` branches in `RightPanel.tsx`; retire `fields` / `styleFields` aliases. |
@@ -34,6 +34,32 @@ interface SectionRenderProps {
 Mirrors the top-level `RightPanel` props so custom branches lift out unchanged. Custom renderers handle their own breakpoint routing (writes go to `style.*` or `styleBreakpoints[bpId].*` based on `activeBreakpoint`).
 
 The 19 `StyleSection` variants and the `BackgroundMode` / `TypographyProp` aliases are documented in [prd-blocks.md](prd-blocks.md#stylesection-declarative-style-tab--f351). `BackgroundMode` aliases the existing `BackgroundType` union from `controls/BackgroundControl.tsx`; `TypographyProp` is `keyof TypographyValue` from `controls/TypographyControl.tsx` — neither forks a new shape.
+
+### F3.5.3 — `SectionRenderer` dispatcher map
+
+`src/admin/right-panel/SectionRenderer.tsx` is the pure switch added by F3.5.3. Each `StyleSection.kind` lands in exactly one branch that wraps the matching control (or one of the extracted `right-panel/sections/*` files). No business logic, no imperative `block.type` checks — the dispatcher is fed by the `BlockDef.styleTab` declared on each block. F3.5.6 wires it into `RightPanel.tsx`'s Style tab and deletes the legacy `block.type ===` branches.
+
+| `StyleSection.kind` | Renders | File |
+|---|---|---|
+| `theme` | `ThemeStyleToggle` (inline, 1-liner) | `controls/ThemeStyleToggle.tsx` |
+| `spacing` | Padding/Margin `SpacingControl` pair | `right-panel/sections/BpAwareStyleSections.tsx` |
+| `background` | Normal/Hover toggle + `ThemeStyleToggle` + `BackgroundControl` | `right-panel/sections/BackgroundSection.tsx` |
+| `border` | Normal/Hover toggle + `BorderControl` | `right-panel/sections/StatefulStyleSection.tsx` |
+| `borderRadius` | Normal/Hover toggle + `BorderRadiusControl` | `right-panel/sections/StatefulStyleSection.tsx` |
+| `boxShadow` | Normal/Hover toggle + `BoxShadowControl` | `right-panel/sections/StatefulStyleSection.tsx` |
+| `typography` | `TypographyControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` |
+| `textStroke` | `TextStrokeControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` |
+| `textShadow` | `TextShadowControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` |
+| `alignment` | `AlignControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` |
+| `blendMode` | `BlendModeControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` |
+| `filter` | `CssFiltersControl` | `right-panel/sections/BpAwareStyleSections.tsx` |
+| `overflow` | `OverflowControl` | `right-panel/sections/BpAwareStyleSections.tsx` |
+| `opacity` | Normal/Hover toggle + `NumberRow` (image-only) | `right-panel/sections/OpacitySection.tsx` |
+| `imgVisual` | Width/Height/Fit/Position/Align (image-only) | `right-panel/sections/ImgVisualSection.tsx` |
+| `videoSource` | Aspect ratio + `CssFiltersControl` (video-only) | `right-panel/sections/VideoSourceSection.tsx` |
+| `iconGroup` | `IconGroup` reading `block.config.icon` | `controls/IconGroup.tsx` |
+| `dividerLine` | Full divider-line picker (style/width/length/color/gradient/align/IconGroup) | `right-panel/sections/DividerLineSection.tsx` |
+| `custom` | `section.render({ block, onChange, activeBreakpoint })` | declared per-block in `blockDefinitions.ts` |
 
 ## Architecture
 
