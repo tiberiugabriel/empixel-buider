@@ -5,7 +5,8 @@ RESTful API layer for layout persistence and integration with EmDash plugin syst
 
 ## Files
 - `src/index.ts` — Plugin descriptor (entry point)
-- `src/plugin.ts` — 6 REST routes + content hook + cold-start migrations (`runSpacerMigration`, `runSlugToUlidMigration_v1`)
+- `src/plugin.ts` — 6 REST routes + content hook + cold-start migrations (`runSpacerMigration`, `runSlugToUlidMigration_v1`) + `storage.layouts` declaration
+- `src/storage-types.ts` — `LayoutRow` + `StorageLayoutsCollection` types for `ctx.storage.layouts` (consumed by Agent B in F3.4)
 - `src/types.ts` — Block interfaces + type definitions
 - `src/dbShared.ts` — Shared SQLite handle factory (`getDb()`)
 
@@ -98,6 +99,58 @@ shared factory and runs `CREATE TABLE` / `ALTER TABLE` /
 `runSpacerMigration` once per shared handle (tracked via a `WeakSet`). If
 the host swaps to a different `databasePath` mid-process, the next call
 re-runs schema setup against the new file.
+
+## Storage abstraction (v0.9.0 prep — F3.1)
+
+`definePlugin({ storage: { layouts: { … } } })` in `src/plugin.ts` declares
+the plugin's typed `ctx.storage.layouts` collection. The shape mirrors the
+existing `empixel_builder_layouts` row (composite identity
+`(collection, entryId)`, declared as both an `indexes` entry and a
+`uniqueIndexes` entry so EmDash's storage layer can serve `findOne`-style
+lookups without a full scan).
+
+```ts
+const PLUGIN_STORAGE = {
+  layouts: {
+    indexes: [["collection", "entryId"]],
+    uniqueIndexes: [["collection", "entryId"]],
+  },
+} as const satisfies PluginStorageConfig;
+```
+
+**Coexistence with the legacy table.** EmDash's storage abstraction routes
+every plugin's rows through the shared `_plugin_storage` table — keyed on
+`(plugin_id, collection, id)` with `data` JSON-blobbed per row (see the
+`PluginStorageRepository` class in EmDash core). It does **NOT** touch the
+existing `empixel_builder_layouts` table at all, so the two back-ends
+coexist during the F3 migration: SQL routes keep using `empixel_builder_layouts`
+via `getDb()`, while `ctx.storage.layouts` is a separate, fresh collection
+in `_plugin_storage`. No table-name conflict, no DDL race.
+
+`src/storage-types.ts` exposes the public types:
+
+- `LayoutRow` — wire shape of one row in the `layouts` collection
+  (`collection`, `entryId`, `enabled`, `sections`, `createdAt?`,
+  `updatedAt?`). `enabled` accepts `0 | 1 | boolean` so multi-driver
+  back-ends (Postgres, D1, Turso) that coerce SQLite's `INTEGER` to a JS
+  boolean don't surprise consumers.
+- `StorageLayoutsCollection` — alias for `StorageCollection<LayoutRow>`,
+  the typed handle EmDash injects on `ctx.storage.layouts`.
+
+**Migration roadmap:**
+
+- F3.1 (this section) — declarative only. Existing routes unchanged.
+- F3.2 — rewrite `/layout` GET+POST, `/toggle`, `/entries`, and the
+  `content:afterDelete` cleanup hook onto `ctx.storage.layouts`. Drop
+  the direct `empixel_builder_layouts` SQL once each writer is moved.
+- F3.3 — one-shot migration `migration_to_storage_v1` (KV flag in
+  `empixel_builder_meta`) copies every row from `empixel_builder_layouts`
+  into `ctx.storage.layouts`. Conflict resolution mirrors
+  `runSlugToUlidMigration_v1`: newer `updated_at` wins.
+- F3.4 (Agent B) — frontend reader rewrite. `getBuilderLayout` reads
+  through `ctx.storage.layouts` instead of via `getDb()`.
+- F3.5 — drop the `better-sqlite3` peer dep + the SQLite singleton in
+  `dbShared.ts` once F3.2/F3.3/F3.4 land. Bumps to 0.9.0.
 
 ## API Routes
 

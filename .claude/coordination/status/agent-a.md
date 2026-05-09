@@ -21,6 +21,8 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 14:35 · F3.1 started
+
 ## 2026-05-09 14:20 · F2.4 started
 
 ## 2026-05-09 14:05 · F2.3 started
@@ -38,6 +40,19 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 *(empty)*
 
 ## Done
+
+## 2026-05-09 14:42 · F3.1 done
+- New `storage.layouts` declaration on `definePlugin({...})` in `src/plugin.ts`. Composite identity `(collection, entryId)` declared as both an `indexes` entry and a `uniqueIndexes` entry — the unique-index lets EmDash's storage layer serve `findOne`-style lookups by the same pair without a full scan, and the plain `indexes` entry keeps `query({ where })` cheap. Lifted into a top-level `const PLUGIN_STORAGE = { … } as const satisfies PluginStorageConfig` so the `as const` keeps the literal types intact for the `StorageLayoutsCollection` consumer side while still widening to `definePlugin`'s expected shape. Imported `PluginStorageConfig` from `emdash` (already part of the public type surface — see `node_modules/emdash/dist/types-D19uBYWn.d.mts:228`).
+- New `src/storage-types.ts` exports `LayoutRow` and `StorageLayoutsCollection = StorageCollection<LayoutRow>` for Agent B (F3.4 frontend reader rewrite). `LayoutRow` mirrors the existing `empixel_builder_layouts` row shape (`collection`, `entryId`, `enabled`, `sections`, optional `createdAt` / `updatedAt`). `enabled` accepts `0 | 1 | boolean` so consumers don't have to special-case multi-driver back-ends that coerce SQLite's `INTEGER` to a JS boolean (Postgres / D1 / Turso). `sections` is the structured `SectionBlock[]` — the storage abstraction handles JSON serialisation, no manual `JSON.stringify`. Imports `SectionBlock` from `src/types.ts` (orchestrator-owned, NOT modified).
+- **Coexistence verified.** EmDash's `PluginStorageRepository` (in `node_modules/emdash/dist/search-DkN-BqsS.mjs:570-740`) routes every plugin's rows through a SHARED `_plugin_storage` table — keyed `(plugin_id, collection, id)` with `data` JSON-blobbed per row. It does NOT touch the existing `empixel_builder_layouts` table. So the two back-ends sit side-by-side during the F3.2/F3.3 migration: SQL routes keep using `empixel_builder_layouts` via `getDb()`, while `ctx.storage.layouts` writes to `_plugin_storage WHERE plugin_id='empixel-builder' AND collection='layouts'`. No table-name conflict, no DDL race. Big plus for the migration plan — F3.3 just needs to copy rows over once.
+- **Existing routes unchanged.** F3.1 is purely additive — `storage` declaration only. The 6 SQL routes (`/layout`, `/collections`, `/settings`, `/entries`, `/toggle`, `/breakpoints`) and the `content:afterDelete` hook still go through `getDb()` and `empixel_builder_layouts`. F3.2 is the route rewrite onto `ctx.storage`; F3.3 is the row migration; F3.5 drops the legacy table + the `better-sqlite3` peer dep.
+- Tests: 6 new cases in `tests/storage.test.ts`. Three exercise the resolved plugin's `.storage.layouts` config (composite indexes + uniqueIndexes round-trip exactly; no surprise `meta` collection — KV stays for migration flags). Two stub the `StorageLayoutsCollection` API in-memory and round-trip a `LayoutRow` end-to-end (proves the shape + structurally satisfies the EmDash interface). One asserts boolean-coerced `enabled` reads cleanly through the type alias. Heavier integration test against a real plugin manager + sqlite back-end is gated behind F3.2 — for F3.1 the lighter assertion keeps the task self-contained (and avoids pulling the full Astro / EmDash core just to inspect a config object).
+- Files: `src/plugin.ts`, `src/storage-types.ts` (new), `tests/storage.test.ts` (new), `CHANGELOG.md`, `.claude/prd-backend.md`, `.claude/coordination/interfaces.md`, `.claude/coordination/status/agent-a.md`. NOT touched: `src/types.ts` (orchestrator-owned — `LayoutRow` stays local to `storage-types.ts`).
+- CHANGELOG: new `## Unreleased — 0.9.0 prep` section above `## 0.8.0`. NOT bumping `package.json` version yet — F3.5 owns the 0.9.0 bump.
+- PRD: `prd-backend.md` adds a new "Storage abstraction (v0.9.0 prep — F3.1)" section that documents the declaration, the `_plugin_storage` coexistence story, and the F3.2/F3.3/F3.4/F3.5 migration roadmap.
+- `interfaces.md`: `StorageLayoutsCollection` row flipped from 🆕 to ✅ stable, full row shape inlined.
+- Pipeline: green (lint + typecheck + 113 tests + build all pass — total 107 → 113, +6 in `tests/storage.test.ts`).
+- Surprises / blockers: none. The shape `definePlugin` expects matches the report's example almost exactly (just `indexes` / `uniqueIndexes` arrays on each named collection). The `_plugin_storage` shared-table design means F3.3 can copy rows during a normal cold start without DDL coordination — the destination collection is provisioned by EmDash core when the plugin loads.
 
 ## 2026-05-09 14:25 · F2.4 done
 - New return shape for `getBuilderLayout(collection, entryId, enabled?)` in `src/components/db.ts` — now returns `BuilderLayoutResult = { sections: SectionBlock[] | null; cacheHint: { tags?: string[]; lastModified?: Date } }` instead of the legacy `SectionBlock[] | null`. The `cacheHint` matches EmDash's `CacheHint` shape (verified against `node_modules/emdash/dist/index-DjPMOfO0.d.mts:1567` — same `{ tags?: string[]; lastModified?: Date }` pair as `getEmDashEntry` / `getEmDashCollection`). Re-declared locally rather than importing the type so the pkg keeps a structural-only dependency.

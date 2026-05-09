@@ -1,5 +1,5 @@
 import { definePlugin } from "emdash";
-import type { RouteContext, PluginContext } from "emdash";
+import type { RouteContext, PluginContext, PluginStorageConfig } from "emdash";
 import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
 import { DEFAULT_BREAKPOINTS_CONFIG, stripUnknownBlocks } from "./types.js";
 import { getDb as getSharedDb, type SqliteDb } from "./dbShared.js";
@@ -430,11 +430,36 @@ export function runSlugToUlidMigration_v1(db: SqliteDb): void {
   }
 }
 
+/**
+ * Plugin storage declaration. Maps to the existing `empixel_builder_layouts`
+ * data model — composite identity `(collection, entryId)`, enforced as a
+ * unique composite index so EmDash's storage layer can serve `findOne`-style
+ * lookups without a full scan.
+ *
+ * **Additive only in F3.1.** This declaration just exposes
+ * `ctx.storage.layouts` to the plugin context; the existing SQL routes in
+ * this file continue to read/write `empixel_builder_layouts` directly via
+ * `getDb()`. F3.2 rewrites the route handlers onto `ctx.storage`; F3.3
+ * migrates rows out of the legacy table; F3.5 drops the `better-sqlite3`
+ * peer dependency once the writers are off it.
+ *
+ * Declared `as const satisfies PluginStorageConfig` so TS keeps the literal
+ * types intact for the `StorageLayoutsCollection` consumer side, while still
+ * widening the value to the shape `definePlugin` expects.
+ */
+const PLUGIN_STORAGE = {
+  layouts: {
+    indexes: [["collection", "entryId"]],
+    uniqueIndexes: [["collection", "entryId"]],
+  },
+} as const satisfies PluginStorageConfig;
+
 export function createPlugin() {
   return definePlugin({
     id: "empixel-builder",
     version: "0.8.0",
     capabilities: ["content:read"],
+    storage: PLUGIN_STORAGE,
     routes: {
       // GET  ?pageId=&collection=  → load layout
       // POST { pageId, collection, sections } → save layout

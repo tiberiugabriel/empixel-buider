@@ -3,6 +3,26 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## Unreleased — 0.9.0 prep
+
+- Declare `storage.layouts` in `definePlugin` so EmDash provisions the
+  layouts collection through its multi-driver storage abstraction. The
+  collection is keyed on the composite `(collection, entryId)` pair via
+  both `indexes` and `uniqueIndexes`, mirroring the existing
+  `empixel_builder_layouts` PK. EmDash routes storage rows through the
+  shared `_plugin_storage` table (filtered by `plugin_id =
+  "empixel-builder" AND collection = "layouts"`), which is separate
+  from the legacy `empixel_builder_layouts` table — so the two
+  back-ends coexist while the migration is in flight. **Additive only**:
+  the existing SQL routes still read/write `empixel_builder_layouts`
+  unchanged. F3.2 will move the route handlers onto `ctx.storage`; F3.3
+  copies the legacy rows into the storage collection; F3.5 drops
+  the `better-sqlite3` peer dependency once the writers are off it.
+- New `src/storage-types.ts` exposes `LayoutRow` and
+  `StorageLayoutsCollection` (typed `StorageCollection<LayoutRow>`) so
+  Agent B can consume the typed `ctx.storage.layouts` handle in F3.4
+  without re-declaring the shape.
+
 ## 0.8.0 — 2026-05-09
 
 - **Breaking — `getBuilderLayout` now returns `{ sections, cacheHint }`**
