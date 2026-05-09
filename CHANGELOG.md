@@ -3,6 +3,44 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## Unreleased — 1.0.0 prep
+
+- **F4.1 — single `<style>` per page with grouped `@media` queries.**
+  Pre-F4.1 every leaf block component emitted its own
+  `<style is:global>` at template position; a 30-block page shipped
+  30+ inline `<style>` tags, each repeating its own
+  `@media (max-width: ...)` block. F4.1 collects every block's CSS
+  string in `LayoutRenderer.astro` (via a shared
+  `Astro.locals.empixelLayoutCss` string-array — initialized in the
+  layout root, pushed-to in each block's frontmatter) and emits
+  exactly **one** coalesced `<style>` per page. New helper
+  `coalesceLayoutCss(strings)` in `styleUtils.ts` parses the
+  collected CSS for `@media` blocks, groups rule bodies by query
+  string (whitespace-tolerant — `@media(max-width:992px)` and
+  `@media (max-width: 992px)` merge into the same wrapper), and
+  emits base rules first, then one `@media (...) { merged-body }`
+  per unique query in first-seen order. The F1.3 plugin-scoped
+  reset is folded into the same coalesced bundle so the page emits
+  one `<style>` rather than reset + bundle. Hover, dark
+  (`:is(html.dark, …)`), per-bp, and customCss rules all flow
+  through unchanged. **Performance benchmark:** 5-block page goes
+  from 5+ `<style>` tags to 1; 30-block page goes from 30+ to 1.
+  Each unique breakpoint opens exactly one `@media` block instead
+  of one per block × per bp. Files touched:
+  `src/components/styleUtils.ts` (new `coalesceLayoutCss`),
+  `src/components/LayoutRenderer.astro` (collects + emits one
+  `<style>`), `src/components/{Text,Image,Button,Icon,Video,Html,
+  DividerSpacer,TextEditor,SectionContainer}.astro` (pushes per-block
+  CSS into the shared buffer instead of emitting inline `<style>`),
+  `tests/styleUtils.test.ts` (+10 cases — empty input, fast path,
+  same-query merge, different-query separation, base-before-media
+  ordering, three-block × two-query merge, nested-brace tolerance
+  for `:hover` rules inside `@media`, whitespace-tolerant query
+  grouping, dark `:is(...)` selector preservation, end-to-end
+  5-block page emits exactly 1 `<style>` tag), `CHANGELOG.md`,
+  `.claude/prd-frontend.md`, `.claude/prd-breakpoints.md`,
+  `.claude/coordination/status/agent-b.md`. Tests: 316 → 326 (+10).
+
 ## 0.9.6 — 2026-05-09
 
 - **F3.6.7 — parity snapshot suite for the 9 block types.** New

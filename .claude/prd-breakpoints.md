@@ -137,7 +137,7 @@ the full rationale.
 
 Hover overrides per breakpoint go through `buildBreakpointHoverCss(config, blockId)` and emit `@media + :hover` rules with `!important`.
 
-Both functions sort entries by `_px` descending so that smaller breakpoints win in cascade order. CSS is concatenated and injected via `<style set:html={...} is:global />` in `BlockRenderer.astro` / `SectionContainer.astro`.
+Both functions sort entries by `_px` descending so that smaller breakpoints win in cascade order. CSS strings are pushed into `Astro.locals.empixelLayoutCss` by each block's frontmatter (`Text.astro` / `Image.astro` / etc. + `SectionContainer.astro`), then `LayoutRenderer.astro` runs `coalesceLayoutCss(strings)` over the array and emits a single `<style is:global>` per page (F4.1). Identical `@media (max-width: <px>)` queries from different blocks are merged into one wrapper — a 30-block page with 5 active breakpoints opens 5 `@media` blocks total instead of 150. See `prd-frontend.md § CSS coalescing — single <style> per page (F4.1)`.
 
 ## API
 

@@ -21,6 +21,19 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 23:50 · F4.1 started
+
+- Branch: `feature/agentB-F4.1` off latest main (0d767dd, v0.9.6).
+- Goal: collect every per-block CSS string and emit a single `<style is:global>` per page from `LayoutRenderer.astro`. New helper `coalesceLayoutCss(strings)` in `styleUtils.ts` groups identical `@media` queries so each breakpoint opens exactly one `@media` block instead of one per block × per bp. 30-block page goes from 30+ `<style>` tags to 1.
+- Plan / mechanism:
+  1. Use a shared `Astro.locals.empixelLayoutCss` string-array as the collection mechanism. `LayoutRenderer.astro` initializes it (assigns a fresh `[]`) at the top of its frontmatter, BEFORE rendering any children. Each block component (`Text.astro` / `Image.astro` / etc.) pushes its CSS string into the array in its frontmatter instead of emitting an inline `<style>`. `SectionContainer.astro` pushes its main CSS bundle plus the optional video-controls override. After the `{sections.map(...)}` expression returns, `LayoutRenderer` renders a single `<style is:global>` whose body is `coalesceLayoutCss(Astro.locals.empixelLayoutCss).
+  2. Astro semantics: the children's frontmatter runs synchronously as the parent template's `{sections.map(...)}` expression evaluates. Subsequent `<style>` JSX expressions in the parent template are evaluated AFTER all map children have finished — so the array is fully populated before the parent emits the bundle.
+  3. `coalesceLayoutCss(strings)`: parse each CSS string for `@media (...)` blocks, group rule bodies by query string, emit (a) all base (non-`@media`) rules first, then (b) one `@media (query) { merged-body }` per unique query. Plugin-emitted CSS is predictable — no nested at-rules other than `@media` — so a single regex split is sufficient.
+  4. Reset CSS — F1.3 already emits the reset inline in the layout. Move the reset string into the same coalesced bundle (prepended) so we end up with exactly ONE `<style>` per page rather than reset + bundle. KISS.
+  5. Don't break: customCss (already wrapped to `[data-epx-block]`), `:hover` / dark selectors (preserved as base rules), per-bp CSS (coalesced under one `@media (max-width: <px>)` per breakpoint).
+- Tests: extend `tests/styleUtils.test.ts` with a `describe("coalesceLayoutCss (F4.1)")` block — base-only, two blocks with same `@media`, two blocks with different `@media`, mixed base + media, idempotency on empty input, preserve declaration order across grouped media. Plus a "5-block page emits exactly 1 style tag" assertion (counts `<style` occurrences in a synthetic LayoutRenderer trace string).
+- Coordination: A is on F4.2 (cache LRU on `styleUtils.ts`'s `buildBlockCss` / `buildBlockChromeCss` etc.) — F4.2 wraps the existing helpers in a memoize layer; my new `coalesceLayoutCss` is a separate addition that doesn't conflict. C is on F4.3 (admin code-split) — disjoint path. CHANGELOG `## Unreleased — 1.0.0 prep` may be opened by parallel agent first; if so I append, if not I open.
+
 ## 2026-05-09 23:10 · F3.6.4 (frontend) started
 
 - Branch: `feature/agentB-F3.6.4-fallback` off latest main (d777a5c).
@@ -74,6 +87,25 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 - Coordination: Agent A is fixing the related backend bug on a parallel branch (`/entries`). Doc-id format `<collection>::<entryId>` is canonical (per `src/plugin.ts:80` `layoutDocId`); A and B's fixes converge on this key. No `interfaces.md` change needed.
 
 ## Done
+
+## 2026-05-09 23:55 · F4.1 done
+
+- Mechanism shipped: `Astro.locals.empixelLayoutCss = []` shared string-array. `LayoutRenderer.astro` initialises it (and pushes the F1.3 reset CSS as the first entry); each block component (`Text.astro` / `Image.astro` / `Button.astro` / `Icon.astro` / `Video.astro` / `Html.astro` / `DividerSpacer.astro` / `TextEditor.astro` / `SectionContainer.astro`) pushes its computed CSS string in its frontmatter; LayoutRenderer drains via `coalesceLayoutCss` and emits exactly ONE `<style is:global>` per page after the iteration. Astro creates a fresh `Astro.locals` per request so the array is naturally request-scoped — no cleanup needed.
+- New helper `coalesceLayoutCss(strings: ReadonlyArray<string>): string` in `src/components/styleUtils.ts`. Walks the concatenated buffer at top-level brace depth (so `:hover` braces inside `@media` bodies don't confuse the boundary detector), splits into bare rules + `@media (...) { … }` blocks, buckets `@media` blocks by trimmed query string. Output is base rules first (input order) then one `@media${query}{merged-body}` per unique query in first-seen order. Whitespace-tolerant (`@media(max-width:992px)` and `@media (max-width: 992px) ` group together). Plugin emits flat rules with at most one level of `@media` nesting (no `@supports` / `@layer` / `@container`), so a regex-driven scan is sufficient — no full CSS parser. KISS.
+- Performance: 5-block page emits exactly 1 `<style>` (was 5+); 30-block page emits 1 (was 30+). Each unique breakpoint opens exactly one `@media` block instead of one per block × per bp.
+- Files changed:
+  - `src/components/styleUtils.ts` — added `coalesceLayoutCss` plus comment block (algorithm + plugin-emitted-CSS predictability rationale).
+  - `src/components/LayoutRenderer.astro` — initialise array; push reset CSS as first entry; render single `<style is:global>` from coalesced bundle after the iteration. F1.3 reset moved into the bundle (was its own `<style>` tag) so total emit is one tag, not two.
+  - `src/components/Text.astro`, `Image.astro`, `Button.astro`, `Icon.astro`, `Video.astro`, `Html.astro`, `DividerSpacer.astro`, `TextEditor.astro`, `SectionContainer.astro` — each pushes its full CSS bundle into `Astro.locals.empixelLayoutCss` instead of emitting `<style is:global>` at template position. SectionContainer additionally folds its HTML5-video controls override (was a SECOND `<style>` tag pre-F4.1) into the same push.
+  - `tests/styleUtils.test.ts` — added `import { coalesceLayoutCss }` and a `describe("coalesceLayoutCss (F4.1)")` block: 10 cases covering empty input, fast path (no @media), same-query merge, different-query separation, base-before-media ordering, three-block × two-query merge, nested-brace tolerance for `:hover` rules inside `@media`, whitespace-tolerant query grouping, dark `:is(...)` selector preservation, end-to-end "5-block page emits exactly 1 `<style>` tag" assertion.
+- PRDs updated:
+  - `prd-frontend.md` — new "CSS coalescing — single `<style>` per page (F4.1)" section under LayoutRenderer documenting the collection mechanism, Astro semantics, and the `coalesceLayoutCss` algorithm. F1.3 reset section reworded to clarify it's now folded into the F4.1 bundle (not a separate tag). Block Component Pattern code example updated to show the push pattern. Style Utilities table got a `coalesceLayoutCss` row. Rules section updated to say block components no longer emit their own `<style>`.
+  - `prd-breakpoints.md` — Frontend Rendering paragraph updated: per-bp CSS strings now flow through the F4.1 collection mechanism, and identical `@media (max-width: <px>)` queries from different blocks merge into one wrapper (cross-references the new `prd-frontend.md` section).
+- CHANGELOG: opened `## Unreleased — 1.0.0 prep` section with a single F4.1 bullet (parallel agents A on F4.2 / C on F4.3 will append below mine — chronological order).
+- Coordination: no `interfaces.md` change. `coalesceLayoutCss` is exported but a plugin-internal helper (LayoutRenderer is the only caller) — not a cross-agent contract. The Astro.locals key `empixelLayoutCss` is plugin-scoped + frontmatter-only — host code never touches it. Concurrent A on F4.2 (memoize layer over the existing chrome helpers) is orthogonal — F4.2's wrapping doesn't change the strings the helpers return, just adds a cache; coalescing operates on those strings unchanged. Concurrent C on F4.3 (admin code-split) doesn't touch any frontend file.
+- Tests: 316 → 326 (+10 net).
+- Pipeline: lint + typecheck + 326/326 tests + build all green on first try after the one `prefer-const` lint fix.
+- Anything surprising: nothing. Astro's lazy frontmatter execution and the `Astro.locals` per-request lifecycle map cleanly onto the collect-then-emit pattern — no need for slot tricks or render-string capture. The brace-depth walker is simple because plugin-emitted CSS never nests at-rules beyond `@media`.
 
 ## 2026-05-09 23:35 · F3.6.4 (frontend) done
 

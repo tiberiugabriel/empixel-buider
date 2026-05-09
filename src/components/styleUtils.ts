@@ -763,3 +763,130 @@ export function getCustomCss(config: Record<string, unknown>, blockId: string): 
   if (replaced.includes("{")) return replaced;
   return `${sel}{${replaced}}`;
 }
+
+// ─── F4.1: CSS coalescing ───────────────────────────────────────────────────
+//
+// Pre-F4.1 every block emitted its own `<style is:global>` tag at template
+// position — a 30-block page shipped 30+ inline `<style>` tags, each
+// repeating its own `@media (max-width: ...)` block. `coalesceLayoutCss`
+// is the merge step: takes the per-block CSS strings the layout root
+// collected, parses each for `@media` blocks, groups rule bodies by query,
+// and emits a single string with (a) all base (non-`@media`) rules first,
+// then (b) one `@media (...) { merged-body }` per unique query.
+//
+// Plugin-emitted CSS is predictable: every helper above (`buildBlockCss`,
+// `buildHoverCss`, `buildBreakpointCss`, `buildBreakpointHoverCss`,
+// `getCustomCss`, plus per-component scoped rules in `Image.astro` /
+// `Icon.astro` / `DividerSpacer.astro` / `Html.astro` / `Video.astro` /
+// `TextEditor.astro` / `SectionContainer.astro`) emits flat rules and at
+// most one level of `@media` nesting. We never emit nested at-rules
+// (`@supports` / `@layer` / `@container`), so a regex-driven scan is
+// sufficient — no full CSS parser needed (KISS).
+//
+// Algorithm:
+//   1. Concatenate all input strings into one buffer.
+//   2. Scan top-level: walk the buffer tracking brace depth (so nested
+//      braces inside `@media` bodies don't confuse the boundary detector)
+//      and split into top-level chunks. Each chunk is either a bare rule
+//      (`<selector> { … }`) or an `@media (...) { … }` block.
+//   3. Bare rules are appended to the base-rules accumulator in input
+//      order (preserves cascade semantics — declarations from later blocks
+//      keep their original ordering relative to earlier blocks).
+//   4. `@media` blocks are bucketed by their query string (everything
+//      between `@media` and the opening `{`, normalized — leading /
+//      trailing whitespace trimmed). The body (everything between matching
+//      braces) is appended to that bucket's accumulator.
+//   5. Output: base-rules first, then `@media (query){ accumulated body }`
+//      per unique query in first-seen order.
+//
+// Idempotent on empty input. Whitespace-tolerant (regex matching is
+// flexible on the `@media` syntax). Pass-through on input that contains
+// no `@media` blocks (the original concatenation, no parse cost).
+export function coalesceLayoutCss(perBlockCss: ReadonlyArray<string>): string {
+  if (perBlockCss.length === 0) return "";
+  const joined = perBlockCss.filter(Boolean).join("");
+  if (!joined) return "";
+
+  // Fast path — nothing to merge.
+  if (!joined.includes("@media")) return joined;
+
+  let baseRules = "";
+  // Map<queryString, mergedBody>. Map preserves insertion order so groups
+  // emit in first-seen order — predictable for tests + cascade.
+  const mediaGroups = new Map<string, string>();
+
+  let i = 0;
+  const n = joined.length;
+  while (i < n) {
+    // Skip leading whitespace between rules so the boundary detector
+    // doesn't accidentally treat trailing whitespace as a rule.
+    while (i < n && /\s/.test(joined[i])) i += 1;
+    if (i >= n) break;
+
+    if (joined.startsWith("@media", i)) {
+      // Find the opening brace that starts the @media body.
+      const openIdx = joined.indexOf("{", i);
+      if (openIdx === -1) {
+        // Malformed — drop the rest, no useful split possible.
+        break;
+      }
+      const queryRaw = joined.slice(i + "@media".length, openIdx);
+      const query = queryRaw.trim();
+
+      // Walk to the matching closing brace, tracking nested braces.
+      let depth = 1;
+      let j = openIdx + 1;
+      while (j < n && depth > 0) {
+        const ch = joined[j];
+        if (ch === "{") depth += 1;
+        else if (ch === "}") depth -= 1;
+        if (depth === 0) break;
+        j += 1;
+      }
+      if (depth !== 0) {
+        // Unbalanced — give up on the rest.
+        break;
+      }
+      const body = joined.slice(openIdx + 1, j);
+      const existing = mediaGroups.get(query) ?? "";
+      mediaGroups.set(query, existing + body);
+      i = j + 1;
+      continue;
+    }
+
+    // Bare rule — find the matching closing brace.
+    const openIdx = joined.indexOf("{", i);
+    if (openIdx === -1) {
+      // No more rules — append the trailing tail (declarations without a
+      // selector — unusual but harmless to keep).
+      baseRules += joined.slice(i);
+      break;
+    }
+    let depth = 1;
+    let j = openIdx + 1;
+    while (j < n && depth > 0) {
+      const ch = joined[j];
+      if (ch === "{") depth += 1;
+      else if (ch === "}") depth -= 1;
+      if (depth === 0) break;
+      j += 1;
+    }
+    if (depth !== 0) {
+      baseRules += joined.slice(i);
+      break;
+    }
+    baseRules += joined.slice(i, j + 1);
+    i = j + 1;
+  }
+
+  let out = baseRules;
+  for (const [query, body] of mediaGroups) {
+    // No space between `@media` and the parenthesized query — matches the
+    // form `buildBreakpointCss` / `buildBreakpointHoverCss` already emit
+    // (`@media(max-width:992px)`), so existing snapshots / `.toContain`
+    // assertions on the breakpoint helpers continue to match the coalesced
+    // output. The trimmed query string carries its own parentheses.
+    out += `@media${query}{${body}}`;
+  }
+  return out;
+}

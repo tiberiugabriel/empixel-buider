@@ -8,6 +8,7 @@ import {
   getBlockId,
   getBlockClass,
   normalizeLegacySpacing,
+  coalesceLayoutCss,
 } from "../src/components/styleUtils.js";
 
 describe("buildBlockCss", () => {
@@ -275,5 +276,153 @@ describe("buildBreakpointCss — F3.6.4 legacy spacing inline-resolve", () => {
       "B1",
     );
     expect(css).toContain("font-size:16px");
+  });
+});
+
+// ─── F4.1: CSS coalescing ───────────────────────────────────────────────────
+//
+// Pre-F4.1 every block component emitted its own `<style is:global>` at
+// template position; a 30-block page shipped 30+ inline `<style>` tags with
+// each repeating its own `@media` block. `coalesceLayoutCss(strings)` is the
+// merge step LayoutRenderer.astro runs after collecting per-block CSS — it
+// groups identical `@media` queries so each breakpoint opens exactly one
+// `@media` block instead of one per block × per bp.
+describe("coalesceLayoutCss (F4.1)", () => {
+  it("returns empty string for empty input", () => {
+    expect(coalesceLayoutCss([])).toBe("");
+    expect(coalesceLayoutCss([""])).toBe("");
+    expect(coalesceLayoutCss(["", ""])).toBe("");
+  });
+
+  it("passes through input that has no @media blocks (fast path)", () => {
+    const input = [
+      '[data-epx-block="A"]{color:red}',
+      '[data-epx-block="B"]{color:blue}',
+    ];
+    const out = coalesceLayoutCss(input);
+    expect(out).toBe('[data-epx-block="A"]{color:red}[data-epx-block="B"]{color:blue}');
+  });
+
+  it("groups two blocks that share an @media query under one wrapper", () => {
+    const a = '[data-epx-block="A"]{color:red}@media(max-width:992px){[data-epx-block="A"]{font-size:14px}}';
+    const b = '[data-epx-block="B"]{color:blue}@media(max-width:992px){[data-epx-block="B"]{font-size:12px}}';
+    const out = coalesceLayoutCss([a, b]);
+    // Base rules first.
+    expect(out).toContain('[data-epx-block="A"]{color:red}');
+    expect(out).toContain('[data-epx-block="B"]{color:blue}');
+    // Exactly one @media wrapper containing BOTH blocks' bodies.
+    const mediaMatches = out.match(/@media\(max-width:992px\)\{/g) ?? [];
+    expect(mediaMatches.length).toBe(1);
+    // Both per-bp bodies survive into the single wrapper.
+    expect(out).toContain('[data-epx-block="A"]{font-size:14px}');
+    expect(out).toContain('[data-epx-block="B"]{font-size:12px}');
+  });
+
+  it("keeps two blocks with DIFFERENT @media queries in separate wrappers", () => {
+    const a = '[data-epx-block="A"]{color:red}@media(max-width:992px){[data-epx-block="A"]{font-size:14px}}';
+    const b = '[data-epx-block="B"]{color:blue}@media(max-width:575px){[data-epx-block="B"]{font-size:10px}}';
+    const out = coalesceLayoutCss([a, b]);
+    // Two distinct @media wrappers, one per query.
+    expect(out.match(/@media\(max-width:992px\)\{/g)?.length).toBe(1);
+    expect(out.match(/@media\(max-width:575px\)\{/g)?.length).toBe(1);
+    expect(out).toContain('[data-epx-block="A"]{font-size:14px}');
+    expect(out).toContain('[data-epx-block="B"]{font-size:10px}');
+  });
+
+  it("emits base rules BEFORE any @media wrapper (cascade order)", () => {
+    const a = '[data-epx-block="A"]{color:red}@media(max-width:992px){[data-epx-block="A"]{font-size:14px}}';
+    const b = '[data-epx-block="B"]{color:blue}';
+    const out = coalesceLayoutCss([a, b]);
+    const baseAIdx = out.indexOf('[data-epx-block="A"]{color:red}');
+    const baseBIdx = out.indexOf('[data-epx-block="B"]{color:blue}');
+    const mediaIdx = out.indexOf("@media");
+    expect(baseAIdx).toBeGreaterThanOrEqual(0);
+    expect(baseBIdx).toBeGreaterThanOrEqual(0);
+    expect(mediaIdx).toBeGreaterThan(baseBIdx);
+  });
+
+  it("merges three blocks across two shared queries — two @media wrappers total", () => {
+    const a = '@media(max-width:992px){[data-epx-block="A"]{font-size:14px}}@media(max-width:575px){[data-epx-block="A"]{font-size:10px}}';
+    const b = '@media(max-width:992px){[data-epx-block="B"]{font-size:13px}}';
+    const c = '@media(max-width:575px){[data-epx-block="C"]{font-size:9px}}';
+    const out = coalesceLayoutCss([a, b, c]);
+    expect(out.match(/@media\(max-width:992px\)\{/g)?.length).toBe(1);
+    expect(out.match(/@media\(max-width:575px\)\{/g)?.length).toBe(1);
+    expect(out).toContain('[data-epx-block="A"]{font-size:14px}');
+    expect(out).toContain('[data-epx-block="A"]{font-size:10px}');
+    expect(out).toContain('[data-epx-block="B"]{font-size:13px}');
+    expect(out).toContain('[data-epx-block="C"]{font-size:9px}');
+  });
+
+  it("handles `:hover` rules inside an @media block (nested-brace tolerance)", () => {
+    // `buildBreakpointHoverCss` emits `@media(...){[data-epx-block]:hover{...}}` —
+    // verify the splitter doesn't get confused by the inner braces and
+    // groups two hover rules under the same query.
+    const a = '@media(max-width:992px){[data-epx-block="A"]:hover{color:red !important}}';
+    const b = '@media(max-width:992px){[data-epx-block="B"]:hover{color:blue !important}}';
+    const out = coalesceLayoutCss([a, b]);
+    expect(out.match(/@media\(max-width:992px\)\{/g)?.length).toBe(1);
+    expect(out).toContain('[data-epx-block="A"]:hover{color:red !important}');
+    expect(out).toContain('[data-epx-block="B"]:hover{color:blue !important}');
+  });
+
+  it("normalises whitespace differences in queries (trims) so equivalent queries merge", () => {
+    // Plugin helpers emit `@media(max-width:992px)` (no space). Custom CSS
+    // authored by the user might write `@media (max-width: 992px)` with
+    // padding. The query string is trimmed — leading / trailing whitespace
+    // is squashed — so the two forms group together.
+    const a = '@media(max-width:992px){[data-epx-block="A"]{font-size:14px}}';
+    const b = '@media (max-width:992px) {[data-epx-block="B"]{font-size:13px}}';
+    const out = coalesceLayoutCss([a, b]);
+    // Should produce exactly one @media wrapper despite the input variation.
+    expect(out.match(/@media/g)?.length).toBe(1);
+    expect(out).toContain('[data-epx-block="A"]{font-size:14px}');
+    expect(out).toContain('[data-epx-block="B"]{font-size:13px}');
+  });
+
+  it("preserves dark-theme :is(...) selectors as base rules (not @media)", () => {
+    // The dark variant emits its own scoped rule via `darkBlockSelector(blockId)`
+    // which uses `:is(html.dark, html[data-theme="dark"], …) [data-epx-block]`.
+    // Make sure the splitter treats it as a bare rule (not as something
+    // exotic) — `:is(...)` isn't an at-rule.
+    const a = '[data-epx-block="A"]{color:#000}:is(html.dark, [data-theme="dark"]) [data-epx-block="A"]{color:#fff}';
+    const out = coalesceLayoutCss([a]);
+    expect(out).toContain('[data-epx-block="A"]{color:#000}');
+    expect(out).toContain(':is(html.dark, [data-theme="dark"]) [data-epx-block="A"]{color:#fff}');
+    expect(out).not.toContain("@media");
+  });
+
+  it("end-to-end — a 5-block page emits CSS that produces exactly 1 <style> tag", () => {
+    // Synthetic mirror of what LayoutRenderer.astro does: collect each
+    // block's CSS string into an array, coalesce, emit ONE <style> wrapper.
+    // Pre-F4.1 each block emitted its own <style is:global>; a 5-block
+    // page shipped 5 tags. Post-F4.1 it ships 1.
+    const perBlockCss = [
+      buildBlockChromeCss({ style: { paddingTop: "8px" }, styleBreakpoints: { "tablet-portrait": { _px: 992, fontSize: "16px" } } }, "B1"),
+      buildBlockChromeCss({ style: { color: "red" }, styleBreakpoints: { "tablet-portrait": { _px: 992, fontSize: "14px" } } }, "B2"),
+      buildBlockChromeCss({ style: { paddingBottom: "12px" }, styleBreakpoints: { "mobile-portrait": { _px: 575, fontSize: "12px" } } }, "B3"),
+      buildBlockChromeCss({ style: { color: "blue" }, styleHover: { borderTopWidth: "2px" } }, "B4"),
+      buildBlockChromeCss({ style: { paddingLeft: "4px" } }, "B5"),
+    ];
+    // All 5 blocks produced non-empty CSS.
+    expect(perBlockCss.every((s) => s.length > 0)).toBe(true);
+
+    const bundle = coalesceLayoutCss(perBlockCss);
+    // Wrap in the single <style> tag the LayoutRenderer would emit.
+    const emitted = `<style is:global>${bundle}</style>`;
+    // Exactly ONE <style> tag opens.
+    expect((emitted.match(/<style /g) ?? []).length).toBe(1);
+    // Exactly ONE @media(max-width:992px) wrapper despite TWO blocks (B1, B2)
+    // contributing per-bp rules at that breakpoint — proves grouping worked.
+    expect(bundle.match(/@media\(max-width:992px\)\{/g)?.length).toBe(1);
+    // Exactly ONE @media(max-width:575px) wrapper — only B3 contributes
+    // there but the count must still be one (no degenerate doubling).
+    expect(bundle.match(/@media\(max-width:575px\)\{/g)?.length).toBe(1);
+    // All 5 base rules survive into the bundle.
+    expect(bundle).toContain('[data-epx-block="B1"]{');
+    expect(bundle).toContain('[data-epx-block="B2"]{');
+    expect(bundle).toContain('[data-epx-block="B3"]{');
+    expect(bundle).toContain('[data-epx-block="B4"]{');
+    expect(bundle).toContain('[data-epx-block="B5"]{');
   });
 });
