@@ -51,10 +51,12 @@ describe("getBlockDef", () => {
     expect(getBlockDef("not-a-real-block")).toBeUndefined();
   });
 
-  it("aliases fieldsTab to fields when fieldsTab is not set on the entry (F3.5.1 transition)", () => {
-    // F3.5.2 will populate fieldsTab directly on each entry. Until then,
-    // getBlockDef must expose `fieldsTab` so new declarative consumers
-    // (TabRenderer in F3.5.4) can read a single field.
+  it("exposes fieldsTab on every block (F3.5.2 — every entry now declares it directly)", () => {
+    // F3.5.1 set up an alias from `fields` when an entry didn't declare
+    // `fieldsTab`. F3.5.2 makes the declaration explicit on each of the
+    // 9 entries — `def.fieldsTab` and `def.fields` MUST point at the
+    // same array (alias contract preserved for `getBlockDef` / reducer
+    // / RightPanel callers reading either property).
     for (const type of [
       "container",
       "text",
@@ -68,18 +70,85 @@ describe("getBlockDef", () => {
     ] as const) {
       const def = getBlockDef(type);
       expect(def).toBeDefined();
+      expect(def!.fieldsTab).toBeDefined();
       expect(def!.fieldsTab).toBe(def!.fields);
     }
   });
 
-  it("does not invent a styleTab when none is declared (F3.5.1 leaves it undefined)", () => {
-    // F3.5.6 will require every BlockDef to set styleTab. Until F3.5.2
-    // populates it, getBlockDef must NOT fabricate a default — the
-    // imperative branches in RightPanel still own the Style tab.
+  it("declares styleTab on every block except `html` (F3.5.2)", () => {
+    // F3.5.2 — each block migrates its imperative Style-tab branch into
+    // a declarative `styleTab: StyleSection[]`. The `html` block
+    // legitimately has NO Style tab (RightPanel.tsx hides it via
+    // `hideStyleTab = block.type === "html"`); expressed as the
+    // absence of `styleTab`.
     for (const def of BLOCK_DEFINITIONS) {
       const enriched = getBlockDef(def.type)!;
-      expect(enriched.styleTab).toBeUndefined();
+      if (def.type === "html") {
+        expect(enriched.styleTab).toBeUndefined();
+      } else {
+        expect(enriched.styleTab).toBeDefined();
+        expect(Array.isArray(enriched.styleTab)).toBe(true);
+        expect(enriched.styleTab!.length).toBeGreaterThan(0);
+      }
     }
+  });
+});
+
+// ─── F3.5.2 — migrated instance shape ─────────────────────────────────────────
+
+describe("F3.5.2 — migrated BlockDef instances", () => {
+  // Block-by-block coverage. The exact `styleTab` length is asserted so
+  // accidental regressions surface (e.g. someone removing the
+  // `borderRadius` entry from `image`).
+  const EXPECTED: Record<string, { fieldsTab: number; styleTab: number | "absent" }> = {
+    text:             { fieldsTab: 1, styleTab: 5 },
+    image:            { fieldsTab: 1, styleTab: 6 },
+    "text-editor":    { fieldsTab: 1, styleTab: 4 },
+    video:            { fieldsTab: 0, styleTab: 1 },
+    button:           { fieldsTab: 2, styleTab: 6 },
+    icon:             { fieldsTab: 1, styleTab: 2 },
+    html:             { fieldsTab: 1, styleTab: "absent" },
+    "divider-spacer": { fieldsTab: 1, styleTab: 1 },
+    container:        { fieldsTab: 0, styleTab: 5 },
+  };
+
+  for (const [type, expected] of Object.entries(EXPECTED)) {
+    it(`block "${type}" has fieldsTab=${expected.fieldsTab} items, styleTab=${
+      expected.styleTab === "absent" ? "absent" : `${expected.styleTab} items`
+    }`, () => {
+      const def = getBlockDef(type as Parameters<typeof getBlockDef>[0])!;
+      expect(def.fieldsTab).toBeDefined();
+      expect(def.fieldsTab!.length).toBe(expected.fieldsTab);
+
+      if (expected.styleTab === "absent") {
+        expect(def.styleTab).toBeUndefined();
+      } else {
+        expect(def.styleTab).toBeDefined();
+        expect(def.styleTab!.length).toBe(expected.styleTab);
+      }
+    });
+  }
+
+  it("text-editor styleTab includes a custom render entry for paragraph spacing + drop cap", () => {
+    const def = getBlockDef("text-editor")!;
+    const customs = def.styleTab!.filter((s) => s.kind === "custom");
+    expect(customs).toHaveLength(1);
+  });
+
+  it("video styleTab is a single custom render entry (aspect ratio + filter)", () => {
+    const def = getBlockDef("video")!;
+    expect(def.styleTab).toEqual([{ kind: "custom", render: expect.any(Function) }]);
+  });
+
+  it("divider-spacer styleTab is a single custom render entry (divider line)", () => {
+    const def = getBlockDef("divider-spacer")!;
+    expect(def.styleTab).toEqual([{ kind: "custom", render: expect.any(Function) }]);
+  });
+
+  it("icon styleTab pairs alignment with a custom color/size/rotate entry", () => {
+    const def = getBlockDef("icon")!;
+    const kinds = def.styleTab!.map((s) => s.kind);
+    expect(kinds).toEqual(["alignment", "custom"]);
   });
 });
 

@@ -2,6 +2,10 @@ import type { ReactNode } from "react";
 import type { BlockType, BreakpointId, SectionBlock } from "../types.js";
 import type { BackgroundType } from "./controls/BackgroundControl.js";
 import type { TypographyValue } from "./controls/TypographyControl.js";
+import { TextEditorDropCapSection } from "./right-panel/sections/TextEditorDropCapSection.js";
+import { VideoSourceSection } from "./right-panel/sections/VideoSourceSection.js";
+import { DividerLineSection } from "./right-panel/sections/DividerLineSection.js";
+import { IconBlockStyleSection } from "./right-panel/sections/IconBlockStyleSection.js";
 
 // ─── Field Schema ─────────────────────────────────────────────────────────────
 
@@ -169,6 +173,66 @@ export interface BlockDef {
 
 // ─── Block Definitions ────────────────────────────────────────────────────────
 
+// ─── Field arrays (defined as locals so each BlockDef can point both
+// `fields` and `fieldsTab` at the same array — keeps the alias contract
+// honest and gives F3.5.6 a single line to delete per block when it
+// retires `fields`).
+const TEXT_FIELDS: FieldDef[] = [
+  { key: "content", label: "Content", type: "textarea", placeholder: "Enter text...", labelClassName: "epx-row-label--section" },
+];
+
+const IMAGE_FIELDS: FieldDef[] = [
+  { key: "caption", label: "Caption", type: "textarea", placeholder: "Optional caption…", labelClassName: "epx-row-label--section" },
+];
+
+const TEXT_EDITOR_FIELDS: FieldDef[] = [
+  { key: "content", label: "Content", type: "rich-text", labelClassName: "epx-row-label--section" },
+  // dropCap, columns, columnsCustom, columnsGap rendered via custom
+  // branch in RightPanel.tsx (text-editor block) — they support per-
+  // breakpoint overrides through configBreakpoints[bpId]. Until F3.5.6
+  // refactors the panel onto fieldsTab, the inline panel branch owns
+  // these rows; declaring them here as plain FieldDefs would break the
+  // bp-aware writes.
+];
+
+const VIDEO_FIELDS: FieldDef[] = [
+  // VideoSourceControl + ImageOverlay group rendered via the imperative
+  // branch in RightPanel.tsx (video block). Both rely on direct config
+  // mutation patterns FieldRenderer does not (yet) support, so the
+  // declarative `fieldsTab` stays empty until F3.5.6 introduces a
+  // Fields-tab `kind: "custom"` hook (mirrors the Style-tab equivalent).
+];
+
+const BUTTON_FIELDS: FieldDef[] = [
+  { key: "text", label: "Text", type: "textarea", placeholder: "Click me", labelClassName: "epx-row-label--section" },
+  { key: "icon", label: "Icon", type: "icon-group", showPosition: true },
+];
+
+const ICON_FIELDS: FieldDef[] = [
+  { key: "icon", label: "Icon", type: "icon-group", showPosition: false },
+];
+
+const HTML_FIELDS: FieldDef[] = [
+  { key: "code", label: "HTML", type: "code", language: "html", labelClassName: "epx-row-label--section" },
+];
+
+const DIVIDER_SPACER_FIELDS: FieldDef[] = [
+  { key: "space", label: "Space", type: "number-units", units: ["px", "rem", "em", "vh", "%"], labelClassName: "epx-row-label--section" },
+  // Divider sub-fields (style/width/length/color/gradient/align/IconGroup)
+  // are extracted into `right-panel/sections/DividerLineSection.tsx` and
+  // declared via `styleTab` below — F3.5.6 routes them through the new
+  // declarative path on the Style tab.
+];
+
+const CONTAINER_FIELDS: FieldDef[] = [
+  // LayoutControl + GapControl + OverflowControl + HTML Tag selector +
+  // LinkControl all live in the imperative `block.type === "container"`
+  // Fields branch in RightPanel.tsx. They write CSS keys (gap/overflow/
+  // layout) and a flat `htmlTag` plus link fields through bespoke
+  // patterns FieldRenderer doesn't model. Stays empty until F3.5.6
+  // introduces a Fields-tab `kind: "custom"` hook.
+];
+
 export const BLOCK_DEFINITIONS: BlockDef[] = [
   {
     type: "text",
@@ -177,8 +241,16 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     description: "A text block with custom CSS control",
     category: "general",
     defaultConfig: { content: "", theme: "light" },
-    fields: [
-      { key: "content", label: "Content", type: "textarea", placeholder: "Enter text...", labelClassName: "epx-row-label--section" },
+    fields: TEXT_FIELDS,
+    fieldsTab: TEXT_FIELDS,
+    // Style tab — text block: align + typography stack only (no
+    // background/border/shadow). RightPanel.tsx ~lines 1271–1299.
+    styleTab: [
+      { kind: "alignment" },
+      { kind: "typography" },
+      { kind: "textStroke" },
+      { kind: "textShadow" },
+      { kind: "blendMode" },
     ],
   },
 
@@ -189,8 +261,20 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
     description: "An image with optional caption and link",
     category: "general",
     defaultConfig: { theme: "light", resolution: "full" },
-    fields: [
-      { key: "caption", label: "Caption", type: "textarea", placeholder: "Optional caption…", labelClassName: "epx-row-label--section" },
+    fields: IMAGE_FIELDS,
+    fieldsTab: IMAGE_FIELDS,
+    // Style tab — image block: imgVisual covers width/height/objectFit/
+    // objectPosition/imgStyle, then alignment + opacity, then theme +
+    // border/radius/shadow that target the inner <img>. The `imgVisual`
+    // section also folds in the inner-img border behavior. Mirrors the
+    // imperative branch in RightPanel.tsx ~lines 1471, 1489–1601.
+    styleTab: [
+      { kind: "imgVisual" },
+      { kind: "alignment" },
+      { kind: "opacity" },
+      { kind: "borderRadius" },
+      { kind: "border" },
+      { kind: "boxShadow" },
     ],
   },
 
@@ -207,11 +291,18 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       columnsGap: "0px",
       dropCap: false,
     },
-    fields: [
-      { key: "content", label: "Content", type: "rich-text", labelClassName: "epx-row-label--section" },
-      // dropCap, columns, columnsCustom, columnsGap rendered via custom
-      // branch in RightPanel.tsx (text-editor block) — they support per-
-      // breakpoint overrides through configBreakpoints[bpId].
+    fields: TEXT_EDITOR_FIELDS,
+    fieldsTab: TEXT_EDITOR_FIELDS,
+    // Style tab — text-editor block: align, typography (base only — no
+    // bp pass-through is intentional here, matches RightPanel.tsx
+    // ~line 1308), text shadow, then a `kind: "custom"` covering
+    // paragraph spacing + the conditional drop-cap subgroup
+    // (Size / Lines / Margin Right). RightPanel.tsx ~lines 1301–1370.
+    styleTab: [
+      { kind: "alignment" },
+      { kind: "typography" },
+      { kind: "textShadow" },
+      { kind: "custom", render: TextEditorDropCapSection },
     ],
   },
 
@@ -226,10 +317,14 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       video: { src: "url", autoplay: false, mute: true, controls: true, lazyLoad: true },
       aspectRatio: "16:9",
     },
-    fields: [
-      // The Video Source field is intentionally a single declarative entry —
-      // FieldRenderer dispatches it via a custom branch in RightPanel.
-      // Wire it as a select so the entry shows a label; full UI lives in RightPanel.
+    fields: VIDEO_FIELDS,
+    fieldsTab: VIDEO_FIELDS,
+    // Style tab — video block: aspect ratio (with custom W/H fallback)
+    // + CssFiltersControl. Extracted to a `kind: "custom"` so the
+    // aspect-ratio + filter group can be lifted out of RightPanel.tsx
+    // (~lines 1372–1425) when F3.5.6 retires the imperative branch.
+    styleTab: [
+      { kind: "custom", render: VideoSourceSection },
     ],
   },
 
@@ -244,9 +339,20 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       text: "Click me",
       icon: { iconPosition: "left", iconSize: "16px" },
     },
-    fields: [
-      { key: "text", label: "Text", type: "textarea", placeholder: "Click me", labelClassName: "epx-row-label--section" },
-      { key: "icon", label: "Icon", type: "icon-group", showPosition: true },
+    fields: BUTTON_FIELDS,
+    fieldsTab: BUTTON_FIELDS,
+    // Style tab — button block: typography prepended on top of the
+    // default container/image-style stack (background, border-radius,
+    // border, box-shadow). Mirrors the imperative branch in
+    // RightPanel.tsx ~lines 1471–1652 (the `block.type === "button"`
+    // arm of the shared default-style render).
+    styleTab: [
+      { kind: "typography" },
+      { kind: "theme" },
+      { kind: "background" },
+      { kind: "borderRadius" },
+      { kind: "border" },
+      { kind: "boxShadow" },
     ],
   },
 
@@ -260,8 +366,14 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       theme: "light",
       icon: { iconSize: "32px" },
     },
-    fields: [
-      { key: "icon", label: "Icon", type: "icon-group", showPosition: false },
+    fields: ICON_FIELDS,
+    fieldsTab: ICON_FIELDS,
+    // Style tab — icon block: align + a `kind: "custom"` covering icon
+    // color (Normal/Hover), size, and rotate. None of the second group
+    // map to a built-in section. RightPanel.tsx ~lines 1427–1461.
+    styleTab: [
+      { kind: "alignment" },
+      { kind: "custom", render: IconBlockStyleSection },
     ],
   },
 
@@ -275,9 +387,12 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
       theme: "light",
       code: "",
     },
-    fields: [
-      { key: "code", label: "HTML", type: "code", language: "html", labelClassName: "epx-row-label--section" },
-    ],
+    fields: HTML_FIELDS,
+    fieldsTab: HTML_FIELDS,
+    // No styleTab — `html` block hides the Style tab entirely.
+    // RightPanel.tsx ~line 583 (`hideStyleTab = block.type === "html"`).
+    // Expressed as the absence of the property; F3.5.6's TabRenderer
+    // treats `styleTab === undefined` as "hide the Style tab".
   },
 
   {
@@ -298,9 +413,17 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
         align: "center",
       },
     },
-    fields: [
-      { key: "space", label: "Space", type: "number-units", units: ["px", "rem", "em", "vh", "%"], labelClassName: "epx-row-label--section" },
-      // Divider sub-fields handled inline in RightPanel (collapsible group, IconGroup nested).
+    fields: DIVIDER_SPACER_FIELDS,
+    fieldsTab: DIVIDER_SPACER_FIELDS,
+    // Style tab — divider-spacer: today the Style tab is a placeholder
+    // ("All settings for this block are in the Fields tab.",
+    // RightPanel.tsx ~line 1463). The divider-line picker
+    // (style/width/length/color/gradient/align/IconGroup) currently
+    // lives on the Fields tab (~lines 958–1267) but logically belongs
+    // to the Style tab. F3.5.2 declares it as a `kind: "custom"`
+    // entry here so F3.5.6 can route it through the new path.
+    styleTab: [
+      { kind: "custom", render: DividerLineSection },
     ],
   },
 
@@ -322,7 +445,19 @@ export const BLOCK_DEFINITIONS: BlockDef[] = [
         rowGap: "6px",
       },
     },
-    fields: [],
+    fields: CONTAINER_FIELDS,
+    fieldsTab: CONTAINER_FIELDS,
+    // Style tab — container: full default stack (theme + background +
+    // border-radius + border + box-shadow) shared with image / button
+    // via the `block.type === "container" || "image" || "button"`
+    // dispatch in RightPanel.tsx ~line 1471.
+    styleTab: [
+      { kind: "theme" },
+      { kind: "background" },
+      { kind: "borderRadius" },
+      { kind: "border" },
+      { kind: "boxShadow" },
+    ],
   },
 ];
 

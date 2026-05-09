@@ -12,8 +12,8 @@ The 1671-LOC `RightPanel.tsx` today branches imperatively on `block.type` for th
 
 | Step | Status | Scope |
 |------|--------|-------|
-| F3.5.1 | ✅ shipped (this PR, 0.9.5 prep) | Add `StyleSection` discriminated union + optional `fieldsTab` / `styleTab` on `BlockDef`. Existing `fields` / `styleFields` kept as deprecated aliases. No instances migrated; no panel rewrite. |
-| F3.5.2 | ⬜ planned | Populate `fieldsTab` + `styleTab` on all 9 `BlockDef` entries. |
+| F3.5.1 | ✅ shipped (0.9.5 prep) | Add `StyleSection` discriminated union + optional `fieldsTab` / `styleTab` on `BlockDef`. Existing `fields` / `styleFields` kept as deprecated aliases. No instances migrated; no panel rewrite. |
+| F3.5.2 | ✅ shipped (0.9.5 prep) | All 9 `BlockDef` entries populate `fieldsTab` + `styleTab`. Non-trivial Style logic extracted into `src/admin/right-panel/sections/`: `TextEditorDropCapSection.tsx` (paragraph spacing + drop cap), `VideoSourceSection.tsx` (aspect ratio + filter), `DividerLineSection.tsx` (full divider-line picker), `IconBlockStyleSection.tsx` (icon color/size/rotate). Imperative `block.type ===` branches in `RightPanel.tsx` stay in place — F3.5.6 deletes them. |
 | F3.5.3 | ⬜ planned | `right-panel/SectionRenderer.tsx` — switch on `StyleSection.kind`, render the right control. |
 | F3.5.4 | ⬜ planned | `right-panel/TabRenderer.tsx` — consumes `fieldsTab` + `styleTab`, replaces inline branching. |
 | F3.5.5 | ⬜ planned | `right-panel/AdvancedTab.tsx` — extract Advanced tab. |

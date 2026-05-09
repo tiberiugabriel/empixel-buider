@@ -102,10 +102,62 @@ interface SectionRenderProps {
 Backwards-compat strategy: `fields` is the alias source — `getBlockDef` returns `def.fieldsTab ?? def.fields` so new declarative consumers can read `def.fieldsTab` directly while old callers keep working unchanged. `styleTab` is opt-in until F3.5.6 (no auto-alias from `styleFields` because the shapes differ — `FieldDef[]` vs `StyleSection[]`).
 
 Deprecation timeline:
-- **F3.5.1** (this PR) — types added, no instances migrated
-- **F3.5.2** — 9 BlockDef instances populate `fieldsTab` + `styleTab` directly
+- **F3.5.1** — types added, no instances migrated
+- **F3.5.2** (shipped) — 9 BlockDef instances populate `fieldsTab` + `styleTab` directly. Custom Style logic extracted into `src/admin/right-panel/sections/`. Imperative `block.type ===` branches in `RightPanel.tsx` still own rendering until F3.5.6.
 - **F3.5.3 + .4** — `SectionRenderer.tsx` + `TabRenderer.tsx` consume the declarative lists
 - **F3.5.6** — `RightPanel.tsx` drops imperative branches; `fields` / `styleFields` removed
+
+### F3.5.2 — migrated instance shapes
+
+Each of the 9 entries now declares its Fields and Style tabs through the new schema. Per-block summary (length × kind, where applicable):
+
+| Block | `fieldsTab` | `styleTab` |
+|-------|-------------|------------|
+| `text` | `[content]` (1) | `[alignment, typography, textStroke, textShadow, blendMode]` (5) |
+| `image` | `[caption]` (1) | `[imgVisual, alignment, opacity, borderRadius, border, boxShadow]` (6) |
+| `text-editor` | `[content]` (1) | `[alignment, typography, textShadow, custom(TextEditorDropCapSection)]` (4) |
+| `video` | (0 — Fields branch keeps the imperative `VideoSourceControl` + overlay group until F3.5.6) | `[custom(VideoSourceSection)]` (1) |
+| `button` | `[text, icon]` (2) | `[typography, theme, background, borderRadius, border, boxShadow]` (6) |
+| `icon` | `[icon]` (1) | `[alignment, custom(IconBlockStyleSection)]` (2) |
+| `html` | `[code]` (1) | absent — `html` block hides the Style tab entirely (RightPanel.tsx ~line 583) |
+| `divider-spacer` | `[space]` (1) | `[custom(DividerLineSection)]` (1) — divider-line picker lifted from Fields → Style |
+| `container` | (0 — Fields branch keeps the imperative `LayoutControl` / `GapControl` / `OverflowControl` / HTML Tag / `LinkControl` stack until F3.5.6) | `[theme, background, borderRadius, border, boxShadow]` (5) |
+
+Two example shapes:
+
+```ts
+// text — pure built-in stack
+{
+  type: "text",
+  fieldsTab: [
+    { key: "content", label: "Content", type: "textarea", labelClassName: "epx-row-label--section" },
+  ],
+  styleTab: [
+    { kind: "alignment" },
+    { kind: "typography" },
+    { kind: "textStroke" },
+    { kind: "textShadow" },
+    { kind: "blendMode" },
+  ],
+}
+
+// html — Style tab absent (RightPanel `hideStyleTab`)
+{
+  type: "html",
+  fieldsTab: [
+    { key: "code", label: "HTML", type: "code", language: "html", labelClassName: "epx-row-label--section" },
+  ],
+  // styleTab intentionally undefined
+}
+```
+
+Custom renderers live under `src/admin/right-panel/sections/`:
+- `TextEditorDropCapSection.tsx` — paragraph spacing + (conditional) drop-cap subgroup.
+- `VideoSourceSection.tsx` — aspect ratio + `CssFiltersControl`.
+- `DividerLineSection.tsx` — full divider-line picker (~300 LOC, lifted verbatim with bp routing intact).
+- `IconBlockStyleSection.tsx` — icon color (Normal/Hover) + size + rotate.
+
+`SectionRenderProps` (`{ block, onChange, activeBreakpoint }`) does not yet carry `breakpointsConfig`, so custom renderers fall back to `BREAKPOINT_DEFS[bp].defaultPx` for the `_px` field on `styleBreakpoints[bpId]` writes — F3.5.4's `TabRenderer.tsx` may extend the prop shape if host-customised breakpoints need to flow in.
 
 ### FieldDef interface
 ```ts

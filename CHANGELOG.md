@@ -5,6 +5,33 @@ SemVer.
 
 ## Unreleased — 0.9.5 prep
 
+- **F3.5.2 — migrate all 9 `BlockDef` instances to the declarative
+  `fieldsTab` + `styleTab` schema introduced in F3.5.1.** Each of
+  `container`, `text`, `image`, `text-editor`, `video`, `button`,
+  `icon`, `html`, and `divider-spacer` now declares its Fields tab
+  (`fieldsTab: FieldDef[]`) and Style tab (`styleTab: StyleSection[]`)
+  through the new schema. Non-trivial Style logic
+  (text-editor paragraph spacing + drop cap, video aspect ratio +
+  filter, divider-spacer divider-line picker, icon color/size/rotate)
+  extracted into `src/admin/right-panel/sections/` and referenced via
+  `{ kind: "custom", render: ... }` entries:
+    * `TextEditorDropCapSection.tsx` — covers Paragraph Spacing and
+      the conditional Drop Cap subgroup (Size / Lines / Margin Right).
+    * `VideoSourceSection.tsx` — Aspect Ratio (with custom W/H
+      fallback) and `CssFiltersControl`.
+    * `DividerLineSection.tsx` — full divider-line picker
+      (style / width / length / color or gradient editor / align /
+      `IconGroup`). Lifted out of the divider-spacer Fields branch;
+      lives under `styleTab` going forward.
+    * `IconBlockStyleSection.tsx` — icon color (Normal/Hover), size,
+      and rotate. None of these match a built-in `StyleSection`
+      variant, so they share one custom entry.
+  Existing `fields` / `styleFields` arrays are kept and now alias the
+  new `fieldsTab` arrays directly (every block points both keys at the
+  same shared array). The hardcoded `block.type === ...` branches in
+  `RightPanel.tsx` stay in place — F3.5.6 deletes them and switches
+  the panel onto the declarative path.
+
 - **F3.5.1 — declarative `StyleSection` types + `fieldsTab` /
   `styleTab` on `BlockDef`.** Adds the discriminated-union schema
   (`theme` / `spacing` / `background` / `border` / `borderRadius` /
