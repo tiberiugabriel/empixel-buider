@@ -53,6 +53,65 @@ function cssStr(v: unknown): string {
   return t;
 }
 
+// ─── Legacy symbolic-spacing inline resolve (F3.6.4) ─────────────────────────
+//
+// Pre-F3.6 layouts persisted padding/margin as symbolic strings (`"md"`,
+// `"lg"`, …). Since F3.6 the canvas writes concrete px (e.g. `"12px"`).
+// Agent A's `runMigrationLegacySpacingV1` rewrites stored values forward;
+// once it has run, no row carries a symbolic value anymore. This helper
+// defends the brief window between an EmDash host upgrading the plugin and
+// the lazy-gate migration firing on first request — without that window
+// guard, rows with `paddingTop: "md"` would render with literal `"md"` as
+// the CSS value (browser ignores → padding 0, silent visual regression).
+//
+// Values verified against the legacy `spacingMap` in `SectionContainer.astro`
+// (pre-F3.6.4). Source-of-truth migration also uses these values.
+const LEGACY_SPACING_MAP: Record<string, string> = {
+  none: "0",
+  sm:   "32px",
+  md:   "48px",
+  lg:   "64px",
+  xl:   "96px",
+};
+
+// Spacing keys whose symbolic values are normalised via LEGACY_SPACING_MAP.
+// Restricted to padding+margin — the original `resolveSpacing` in
+// `SectionContainer.astro` only ever applied to padding, but margin uses the
+// same authoring vocabulary historically. Border / sizing / radius keys are
+// intentionally NOT in this set: they never had a symbolic-spacing fallback
+// and folding them in would silently change behavior for any author who
+// happened to type `none` into a width field expecting it to stay `none`.
+const LEGACY_SPACING_PROP_SET: ReadonlySet<string> = new Set([
+  "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+  "marginTop",  "marginRight",  "marginBottom",  "marginLeft",
+]);
+
+/**
+ * Inline-resolve a legacy symbolic spacing value (`"none"`/`"sm"`/`"md"`/
+ * `"lg"`/`"xl"`) to its px equivalent. Returns the input unchanged when the
+ * value is not symbolic — concrete CSS values (`"12px"`, `"1.5rem"`, …) and
+ * empty strings pass through.
+ *
+ * KISS: callers gate this on the prop name being in
+ * `LEGACY_SPACING_PROP_SET`, so non-spacing keys never touch the legacy map.
+ */
+export function normalizeLegacySpacing(value: string): string {
+  return Object.prototype.hasOwnProperty.call(LEGACY_SPACING_MAP, value)
+    ? LEGACY_SPACING_MAP[value]
+    : value;
+}
+
+/**
+ * `cssStr` + legacy spacing normalisation. Used by the CSS builder for
+ * padding/margin keys so symbolic values from pre-F3.6 layouts render as
+ * the matching px during the migration window.
+ */
+function spacingCssStr(v: unknown): string {
+  const raw = cssStr(v);
+  if (!raw) return "";
+  return normalizeLegacySpacing(raw);
+}
+
 // ─── Background ───────────────────────────────────────────────────────────────
 
 export function buildBackgroundCss(style: Record<string, unknown>, opts?: MediaUrlOptions): string {
@@ -176,10 +235,16 @@ function buildStyleBodyFromObject(
     parts.push(`color:${alpha < 1 ? hexToRgba(textColor, alpha) : textColor}`);
   }
 
-  // All simple camelCase → kebab CSS properties
+  // All simple camelCase → kebab CSS properties.
+  // Spacing keys (padding*/margin*) are inline-resolved through the legacy
+  // symbolic map (F3.6.4) so pre-migration rows render concrete px during
+  // the upgrade-to-migration window. Non-spacing keys go through the
+  // unchanged `cssStr` path.
   for (const prop of STYLE_PROPS) {
     if (imgScoped && IMG_VISUAL_PROP_SET.has(prop)) continue;
-    const v = cssStr(style[prop]);
+    const v = LEGACY_SPACING_PROP_SET.has(prop)
+      ? spacingCssStr(style[prop])
+      : cssStr(style[prop]);
     if (v) parts.push(`${camelToKebab(prop)}:${v}`);
   }
 
@@ -575,7 +640,14 @@ export function buildBreakpointCss(
     }
 
     for (const prop of BP_VISUAL_PROPS) {
-      const v = cssStr(bpStyle[prop]);
+      // Same legacy-spacing normalisation as the desktop path
+      // (`buildStyleBodyFromObject`). BP_VISUAL_PROPS doesn't currently
+      // include padding/margin, so this is a forward-compatibility gate —
+      // if a future change adds a spacing prop here, the legacy fallback
+      // travels with it.
+      const v = LEGACY_SPACING_PROP_SET.has(prop)
+        ? spacingCssStr(bpStyle[prop])
+        : cssStr(bpStyle[prop]);
       if (v) visualParts.push(`${camelToKebab(prop)}:${v}`);
     }
 

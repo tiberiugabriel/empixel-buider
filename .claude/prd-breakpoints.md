@@ -123,6 +123,18 @@ Breakpoint styles are emitted as CSS media queries by `buildBreakpointCss(config
 Visual properties (border, radius, shadow, text color, typography, text-stroke, text-shadow) are written to the root `[data-epx-block="<id>"]` selector.
 Layout / gap properties (`column-gap`, `row-gap`, `flex-direction`, `flex-wrap`, `justify-content`, `align-items`) are written to `layoutSelector` when provided — `SectionContainer.astro` passes `[data-epx-block="<id>"]>div` for video-background containers so layout targets the inner content wrapper, otherwise it merges into a single rule.
 
+**Legacy spacing inline-resolve (F3.6.4)** — the per-breakpoint loop in
+`buildBreakpointCss` applies the same `normalizeLegacySpacing` gate as the
+desktop `buildStyleBodyFromObject` loop, scoped to padding/margin keys
+listed in `LEGACY_SPACING_PROP_SET`. `BP_VISUAL_PROPS` doesn't currently
+include padding/margin (it's the visual-only subset — radii / border
+widths / typography / blend-mode / aspect-ratio / filter), so the gate
+is a forward-compatibility measure: if a future change adds a spacing
+prop to the breakpoint loop, symbolic values from pre-F3.6 layouts
+inherit the same px translation as the desktop path. See
+`prd-frontend.md § Legacy symbolic-spacing inline resolve (F3.6.4)` for
+the full rationale.
+
 Hover overrides per breakpoint go through `buildBreakpointHoverCss(config, blockId)` and emit `@media + :hover` rules with `!important`.
 
 Both functions sort entries by `_px` descending so that smaller breakpoints win in cascade order. CSS is concatenated and injected via `<style set:html={...} is:global />` in `BlockRenderer.astro` / `SectionContainer.astro`.

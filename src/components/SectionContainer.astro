@@ -19,39 +19,14 @@ const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals })
 
 const style = (value.style ?? {}) as Record<string, unknown>;
 
-// Padding: prefer style.* (new system), fall back to named spacingMap (old system)
-const spacingMap: Record<string, string> = {
-  none: "0", sm: "32px", md: "48px", lg: "64px", xl: "96px",
-};
-function resolveSpacing(styleVal: unknown, legacyKey: string): string {
-  const sv = typeof styleVal === "string" && styleVal && !styleVal.startsWith("@@") ? styleVal
-    : typeof styleVal === "string" && styleVal.startsWith("@@") ? styleVal.slice(2)
-    : "";
-  if (sv) return sv;
-  return spacingMap[legacyKey] ?? "48px";
-}
-
-const paddingTop    = resolveSpacing(style.paddingTop,    value.paddingTop);
-const paddingRight  = resolveSpacing(style.paddingRight,  "");
-const paddingBottom = resolveSpacing(style.paddingBottom, value.paddingBottom);
-const paddingLeft   = resolveSpacing(style.paddingLeft,   "");
-
-// Build all other styles (background, margin, border, width, height, etc.)
-// via buildBlockStyle, then override padding with resolved values
-const fullStyle = buildBlockStyle(value, { resolveMediaUrl: resolver });
-
-// Compose final inline style — buildBlockStyle may include paddingTop etc.
-// but we override below with our resolved values that respect both systems
-const paddingCss = [
-  paddingTop    ? `padding-top:${paddingTop}`      : "",
-  paddingRight  ? `padding-right:${paddingRight}`  : "",
-  paddingBottom ? `padding-bottom:${paddingBottom}` : "",
-  paddingLeft   ? `padding-left:${paddingLeft}`    : "",
-].filter(Boolean).join(";");
-
-// Strip any padding-* the full style may have added, then append resolved padding
-const styleWithoutPadding = fullStyle.replace(/padding-[^:]+:[^;]+(;|$)/g, "");
-const inlineStyle = [styleWithoutPadding, paddingCss].filter(Boolean).join(";");
+// All chrome (padding/margin/border/width/height/typography/background/…)
+// is emitted by `buildBlockStyle`. F3.6.4 retired the legacy `spacingMap` /
+// `resolveSpacing` fallback: padding/margin keys with symbolic values
+// (`"md"`/`"lg"`/…) are inline-resolved by `styleUtils.ts` via
+// `normalizeLegacySpacing`, and Agent A's data migration rewrites stored
+// rows forward. Single source of truth for spacing CSS now lives in
+// `styleUtils.ts` — this component just spreads `value.style` through.
+const inlineStyle = buildBlockStyle(value, { resolveMediaUrl: resolver });
 
 // Layout styles
 const layoutMode = (value.layout as string) ?? "flex";

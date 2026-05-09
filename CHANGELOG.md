@@ -5,6 +5,7 @@ SemVer.
 
 ## Unreleased — 0.9.6 prep
 
+<<<<<<< HEAD
 - **F3.6.3 — Canvas now calls `buildBlockChromeCss` identically with the
   frontend `*.astro` components. Drift between admin preview and host
   render dies by construction.** Previously `Canvas.tsx`'s
@@ -94,6 +95,35 @@ SemVer.
     (5 lazy-gate sites + import), `tests/legacySpacingMigration.test.ts`
     (new — 22 cases). `version` in `package.json` stays at `0.9.5` —
     F3.6 phase will bump to 0.9.6 at phase close.
+- **F3.6.4 (frontend) — drop SectionContainer's legacy `spacingMap`
+  fallback. Symbolic spacing values (`none`/`sm`/`md`/`lg`/`xl`) are now
+  inline-resolved by `styleUtils.ts` via `normalizeLegacySpacing`,
+  applied to padding/margin keys inside `buildStyleBodyFromObject` (the
+  single chokepoint that emits every block's CSS).** Single source of
+  truth: `style.paddingTop` etc. carry concrete px values at render
+  time, with the legacy map applied only when the persisted value
+  matches one of the five symbolic keys. The post-hoc
+  `paddingCss` / `styleWithoutPadding` regex dance in
+  `SectionContainer.astro` was retired together with the local
+  `spacingMap` and `resolveSpacing` helpers — the container now just
+  spreads `value.style` through the standard chrome builder. Pair with
+  Agent A's `runMigrationLegacySpacingV1` (separate branch) which
+  rewrites stored values forward; the inline-resolve guards the brief
+  upgrade-to-migration window so rows that haven't been rewritten yet
+  still render correct padding instead of dropping to 0. Restricted to
+  padding+margin keys (`LEGACY_SPACING_PROP_SET`) so non-spacing
+  attributes (`width`, `borderTopWidth`, …) keep their values
+  unchanged. New export: `normalizeLegacySpacing(value)`. New tests
+  (`tests/styleUtils.test.ts`): `normalizeLegacySpacing` describe (3
+  cases — exact-map, pass-through, no-false-match), `buildBlockCss —
+  F3.6.4 legacy spacing inline-resolve` describe (4 cases — symbolic
+  padding, symbolic margin, concrete-value pass-through, scoped to
+  padding+margin only), `buildBreakpointCss — F3.6.4 legacy spacing
+  inline-resolve` describe (1 forward-compat case). Total 242 → 250
+  (+8 new). Files: `src/components/styleUtils.ts`,
+  `src/components/SectionContainer.astro`,
+  `tests/styleUtils.test.ts`, `.claude/prd-frontend.md`,
+  `.claude/prd-breakpoints.md`.
 
 - **F3.6.2 — `getDefaultBlockConfig(type)` helper exported from
   `blockDefinitions.ts`. `ADD_BLOCK` + `LOAD_SUCCESS` (plus

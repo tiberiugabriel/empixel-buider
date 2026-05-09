@@ -21,6 +21,25 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 23:10 · F3.6.4 (frontend) started
+
+- Branch: `feature/agentB-F3.6.4-fallback` off latest main (d777a5c).
+- Goal: drop SectionContainer's legacy `spacingMap` + `resolveSpacing` so symbolic spacing values (`none/sm/md/lg/xl`) no longer leak into the render template. Pair with Agent A's parallel `runMigrationLegacySpacingV1` (data migration on a separate branch).
+- **Decision: approach (a) inline-resolve**, NOT drop entirely. Rationale:
+  1. There's a brief window between an EmDash host upgrading the plugin and Agent A's lazy-gate migration actually firing on first request (the runMigrationToStorageV1 pattern is one-shot, lazy, KV-flagged). During that window, rows with `paddingTop: "md"` would render with literal `"md"` as the CSS value (browser ignores → padding 0). That's a visible, silent regression.
+  2. Inline-resolve plumbing is small: one helper `normalizeLegacySpacing(value)` in `styleUtils.ts`, applied to padding/margin keys inside `buildStyleBodyFromObject` (the single chokepoint that emits `STYLE_PROPS`). Same fix lands per-breakpoint via `BP_VISUAL_PROPS` (no padding/margin in there today, so no extra plumbing needed).
+  3. `cssStr()` is the natural place to fold in legacy normalization for spacing keys — the helper already strips the `@@` custom-CSS marker, so adding a `keyHint?: string` arg to optionally normalize via the legacy map keeps the call site clean. KISS: one branch on the prop name set, no new path through the codebase.
+  4. The resolver is keyed by prop name (so `paddingTop`, `paddingRight`, `marginBottom`, etc. trigger normalization, but `width`, `borderTopWidth`, etc. don't). This matches the original `resolveSpacing` behavior — the old fallback was scoped to padding only, never touching border/margin.
+  5. Single source of truth: any future caller of `buildBlockCss` / `buildBlockChromeCss` / `buildBlockStyle` (admin Canvas in F3.6.3, host pages, tests) gets normalized values automatically. No need to re-implement the fallback in three places.
+- Plan:
+  1. Add `LEGACY_SPACING_MAP = { none:"0", sm:"32px", md:"48px", lg:"64px", xl:"96px" }` to `styleUtils.ts` (verified against the actual `SectionContainer.astro:24` spacingMap — task brief had different values; the source is canonical).
+  2. Add `normalizeLegacySpacing(value)` helper. Returns the input unchanged unless it matches a legacy key.
+  3. Define `LEGACY_SPACING_PROP_SET` = padding{Top,Right,Bottom,Left} + margin{Top,Right,Bottom,Left}.
+  4. In `buildStyleBodyFromObject`'s `STYLE_PROPS` loop, normalize `style[prop]` through `normalizeLegacySpacing` when the prop is in the spacing set. No change to the camelCase→kebab transform.
+  5. Same normalization applied in `buildBreakpointCss`'s `BP_VISUAL_PROPS` loop — even though BP_VISUAL_PROPS doesn't currently include padding/margin, gate the helper on the spacing prop set so future additions are automatically covered.
+  6. Remove `spacingMap` + `resolveSpacing` from `SectionContainer.astro`. The component now spreads `style.paddingTop` etc. straight into the chrome builder via the existing `buildBlockStyle(value, opts)` call. The post-hoc `paddingCss` / `styleWithoutPadding` regex dance goes away — that whole fallback block was the legacy spacingMap's plumbing.
+  7. Tests: add a fixture in `tests/styleUtils.test.ts` with `style: { paddingTop: "md", marginRight: "sm" }` and assert `padding-top:48px` + `margin-right:32px` end up in the emitted CSS. Add a test demonstrating that non-spacing keys are NOT touched (`width: "md"` stays `width:md` — only padding/margin gets the legacy map). Add a test confirming concrete values pass through unchanged (`paddingTop: "12px"` → `padding-top:12px`).
+
 ## 2026-05-09 10:05 · F1.2 started
 
 ## 2026-05-09 11:30 · F1.3 started
@@ -55,6 +74,24 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 - Coordination: Agent A is fixing the related backend bug on a parallel branch (`/entries`). Doc-id format `<collection>::<entryId>` is canonical (per `src/plugin.ts:80` `layoutDocId`); A and B's fixes converge on this key. No `interfaces.md` change needed.
 
 ## Done
+
+## 2026-05-09 23:35 · F3.6.4 (frontend) done
+
+- Approach (a) inline-resolve. Implementation:
+  - `styleUtils.ts` — added `LEGACY_SPACING_MAP` (`none:"0"`, `sm:"32px"`, `md:"48px"`, `lg:"64px"`, `xl:"96px"` — verified against the pre-F3.6.4 spacingMap in `SectionContainer.astro:24`), `LEGACY_SPACING_PROP_SET` (8 padding+margin keys), public export `normalizeLegacySpacing(value)`, internal `spacingCssStr(v)`. `buildStyleBodyFromObject`'s STYLE_PROPS loop now branches on the prop set: spacing keys go through `spacingCssStr` (`cssStr` + legacy normalisation), everything else stays on the unchanged `cssStr` path. Same gate added to `buildBreakpointCss`'s BP_VISUAL_PROPS loop as a forward-compat measure (BP_VISUAL_PROPS doesn't currently include padding/margin, so today the branch is a no-op — but if a future change moves spacing into per-breakpoint visuals the fallback travels with it).
+  - `SectionContainer.astro` — removed the local `spacingMap` table, `resolveSpacing` helper, the `paddingTop` / `paddingRight` / `paddingBottom` / `paddingLeft` resolution block, the `paddingCss` / `styleWithoutPadding` regex post-hoc dance. Frontmatter now just calls `buildBlockStyle(value, { resolveMediaUrl: resolver })` once and assigns the result to `inlineStyle`. Net delta: -29 lines / +6 lines (a comment block explaining where the fallback moved to). Single source of truth for spacing CSS lives in `styleUtils.ts`.
+- Tests added (`tests/styleUtils.test.ts`):
+  - `normalizeLegacySpacing (F3.6.4)` describe — 3 cases: exact-map for all five legacy keys, pass-through for concrete CSS values (`12px`, `1.5rem`, `0`, ``, `clamp(...)`), no false-positive on near-matches (`medium`, `xlarge`).
+  - `buildBlockCss — F3.6.4 legacy spacing inline-resolve` describe — 4 cases: symbolic padding (all 4 sides, all 4 legacy values), symbolic margin (all 4 sides + `none`), concrete values pass through, scoping check (only padding+margin keys are normalised — `width:md` / `borderTopWidth:sm` stay literal while `paddingTop:md` becomes `48px`).
+  - `buildBreakpointCss — F3.6.4 legacy spacing inline-resolve` describe — 1 forward-compat case (typography keys at the breakpoint level emit unchanged, demonstrating the no-op path).
+  - Total: 242 → 250 (+8 net).
+- PRDs updated:
+  - `prd-frontend.md` — `SectionContainer.astro` bullet rewritten (no more "legacy named-spacing fallback" claim — that lives in `styleUtils.ts` now). New section "Legacy symbolic-spacing inline resolve (F3.6.4)" documents the decision (a) over (b), the migration coordination with Agent A, the mechanism (`LEGACY_SPACING_MAP` / `LEGACY_SPACING_PROP_SET` / `normalizeLegacySpacing` / `spacingCssStr`), and the SectionContainer cleanup.
+  - `prd-breakpoints.md` — Frontend Rendering section appended a paragraph linking the per-breakpoint inline-resolve to the desktop path, noting BP_VISUAL_PROPS doesn't currently carry spacing keys (forward-compat gate only).
+- CHANGELOG: bullet under `## Unreleased — 0.9.6 prep` (appended ABOVE the F3.6.2 bullet — chronological order).
+- Coordination: no `interfaces.md` change. `normalizeLegacySpacing` is exported but not a cross-agent contract — it's an implementation detail inside `styleUtils.ts`. Agent A's data migration (`runMigrationLegacySpacingV1` on a separate branch) and this frontend half are independent commits that converge on the same `LEGACY_SPACING_MAP` values; if A's migration uses different px (the task brief had `8/16/24/32px` for sm/md/lg/xl — but those don't match the actual source `spacingMap`'s `32/48/64/96px`), the orchestrator is on point to reconcile. The `SectionContainer.astro:24` pre-F3.6.4 spacingMap is the canonical source — that's what shipped to users, that's what stored values reflect, that's what the migration must match.
+- Pipeline: lint + typecheck + 250/250 tests + build all green on first try.
+- Anything surprising: the task brief's claimed legacy values (`sm:"8px"`, `md:"16px"`, `lg:"24px"`, `xl:"32px"`) didn't match the actual code (`sm:"32px"`, `md:"48px"`, `lg:"64px"`, `xl:"96px"`). Used the actual source values per spec footnote ("verify against `SectionContainer.astro`'s actual spacingMap; match exactly"). Flagging here so the orchestrator can sync with Agent A — the migration must use the same px or stored data and rendered output diverge.
 
 ## 2026-05-09 18:55 · fix/F3.4-frontend-empty done
 

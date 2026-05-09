@@ -89,7 +89,12 @@ Routes to the correct Astro component by `block.type`. Builds CSS via `buildBloc
 ## SectionContainer.astro
 
 Owns the full container rendering pipeline:
-- Resolves padding from `style.*` with legacy named-spacing fallback (`sm`/`md`/`lg`/`xl`)
+- Spreads `value.style` straight through `buildBlockStyle` — no template-level
+  spacing fallback. Legacy `none/sm/md/lg/xl` values for padding/margin are
+  inline-resolved by `styleUtils.ts § normalizeLegacySpacing` (F3.6.4 — see
+  "Legacy symbolic-spacing inline resolve" below). The post-hoc
+  `paddingCss` / `styleWithoutPadding` regex dance and the local
+  `spacingMap` / `resolveSpacing` helpers were retired in F3.6.4.
 - Renders flex or grid layout (mode from `value.layout`)
 - Composes block CSS via `wrapBlockCss(buildBlockStyle + layoutStyle, blockId)`
 - Renders hover, breakpoint, breakpoint-hover, and custom CSS in a single `<style is:global>`
@@ -516,6 +521,64 @@ Cases covered:
 so author overrides in `customCss` cascade predictably. The dark variant
 fires whenever any of the five matches, with no host-side configuration
 required by the plugin user.
+
+## Legacy symbolic-spacing inline resolve (F3.6.4)
+
+Pre-F3.6 layouts persisted padding/margin as symbolic strings —
+`"none"`, `"sm"`, `"md"`, `"lg"`, `"xl"` — which `SectionContainer.astro`
+translated to px at render time via a local `spacingMap` +
+`resolveSpacing` helper. F3.6 onwards the canvas writes concrete px
+(e.g. `"12px"`), so the symbolic vocabulary is dead at write time. F3.6.4
+retires it at read time too:
+
+1. **Data migration (Agent A)** — `runMigrationLegacySpacingV1` rewrites
+   stored values forward on first request after upgrade, lazily-gated by a
+   KV flag (same one-shot pattern as `runMigrationToStorageV1`). Once it
+   runs, no row in `_plugin_storage` carries a symbolic spacing value
+   anymore.
+2. **Inline-resolve in `styleUtils.ts` (Agent B — this section)** — the CSS
+   builder defends the brief upgrade-to-migration window. Without this
+   defence, rows where `style.paddingTop = "md"` would render with literal
+   `"md"` as the CSS value (browser ignores → padding 0, silent visual
+   regression).
+
+**Decision (a vs b).** Two approaches were considered: (a) inline-resolve in
+`styleUtils.ts` so the CSS builder is the single normalisation point;
+(b) drop the fallback entirely and rely on Agent A's migration. Approach
+(a) was chosen because the migration window is real and the plumbing is
+small — one helper plus a prop-set gate inside the existing STYLE_PROPS
+loop. The cost is one extra function call per spacing key per render;
+the benefit is that any future caller of `buildBlockCss` /
+`buildBlockChromeCss` (admin Canvas in F3.6.3, host pages, tests)
+inherits the fallback automatically without needing to re-implement it.
+
+**Mechanism.**
+- `LEGACY_SPACING_MAP = { none:"0", sm:"32px", md:"48px", lg:"64px", xl:"96px" }`
+  — verified against the original `spacingMap` in `SectionContainer.astro`
+  pre-F3.6.4 (these are the canonical values; the migration uses the same
+  table).
+- `LEGACY_SPACING_PROP_SET` — padding{Top,Right,Bottom,Left} +
+  margin{Top,Right,Bottom,Left}. Restricted to padding+margin so
+  non-spacing keys don't get accidentally rewritten (an author who typed
+  `none` into a `width` field, however unlikely, sees `width:none` not
+  `width:0`).
+- Public export: `normalizeLegacySpacing(value: string): string` —
+  returns the input unchanged unless it matches a legacy key.
+- Internal helper `spacingCssStr(v)` = `cssStr(v)` then
+  `normalizeLegacySpacing`. Called inside `buildStyleBodyFromObject`'s
+  STYLE_PROPS loop and `buildBreakpointCss`'s BP_VISUAL_PROPS loop, gated
+  on the prop being in `LEGACY_SPACING_PROP_SET`. BP_VISUAL_PROPS doesn't
+  currently include padding/margin, so the gate is a forward-compatibility
+  measure — if a future change adds spacing to per-breakpoint visuals,
+  the legacy fallback travels with it.
+
+**SectionContainer cleanup.** The local `spacingMap` /
+`resolveSpacing` helpers were removed. The post-hoc
+`paddingCss` / `styleWithoutPadding` regex dance — which existed only
+because `buildBlockStyle` and the local resolver were emitting
+overlapping declarations — is also gone. The frontmatter now just
+spreads `value.style` through the standard `buildBlockStyle(value, opts)`
+call. Single source of truth for spacing CSS lives in `styleUtils.ts`.
 
 ## v0.6+ — frontend updates
 
