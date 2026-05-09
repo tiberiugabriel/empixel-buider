@@ -1,6 +1,6 @@
 {
   "name": "empixel-builder",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Professional page builder for EmDash and Astro",
   "author": "Tiberiu Gabriel",
   "license": "GPL-3.0",
@@ -61,12 +61,15 @@
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
     "build": "tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/",
     "analyze": "vite-bundle-visualizer -c vite.analyze.config.ts -t treemap --open false -o dist-analyze/stats.html",
     "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.50.0",
     "@types/react": "^19.0.0",
     "better-sqlite3": "^12.0.0",
     "eslint": "^10.2.1",

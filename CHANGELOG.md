@@ -3,6 +3,54 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## 1.0.6 — 2026-05-09
+
+**F4.9 — Playwright E2E smoke suite.** Five smoke specs in
+`tests/e2e/builder.spec.ts` covering `open`, `drag-container`,
+`nested-drag-text`, `save-reload`, `breakpoint-switch`. Specs
+run against a *user-running* EmDash dev server (default
+`http://localhost:4321`; override via the `EMPIXEL_E2E_BASE`
+env var). The bundled host fixture from the original 1.0.0
+plan was deferred — pragmatic approach is "user runs
+`npx emdash dev` on their consumer site, then kicks off
+`npm run test:e2e` from the plugin checkout". `beforeEach`
+fetches the first available entry id from the plugin's
+`/_emdash/api/plugins/empixel-builder/entries?collection=posts`
+route to build the `pageId` URL param; specs self-skip if no
+entry is available so a fresh consumer install doesn't fail
+mysteriously.
+
+Two new scripts:
+
+- `npm run test:e2e:install` — one-time chromium binary fetch
+  (`playwright install chromium`).
+- `npm run test:e2e` — run the suite (`playwright test`).
+
+Both are **separate from the default `npm run test`** (which
+stays vitest-only) and are NOT wired into `prepublishOnly`.
+The dev server has to be running externally before
+`test:e2e` will succeed.
+
+`playwright.config.ts` ships chromium-only (`Desktop Chrome`),
+list reporter, `trace: "on-first-retry"`, `fullyParallel: true`.
+`@playwright/test ^1.50.0` added to `devDependencies`.
+`.gitignore` covers `test-results/`, `playwright-report/`,
+`playwright/.cache/`.
+
+Drag-and-drop API: `locator.dragTo()` for the simple
+palette-card → canvas-root case; manual
+`page.mouse.{down,move,move,up}` with intermediate moves for
+the nested text → container drop where @dnd-kit's pointer
+sensor needs the activation-distance + over-target detection
+to fire.
+
+Vitest pipeline unchanged at 414/414 (e2e files end in
+`.spec.ts` and live under `tests/e2e/`; vitest only includes
+`tests/**/*.test.ts`).
+
+Closes the last F4 task. The refactor roadmap from
+`raport-empixel-emdash.html` is complete.
+
 ## 1.0.5 — 2026-05-09
 
 **Debt cleanup — `STYLE_PROPS` exported from `styleUtils.ts`.** F3.6.1

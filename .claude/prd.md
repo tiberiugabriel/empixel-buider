@@ -99,6 +99,7 @@ Drag-and-drop page builder plugin for EmDash. Users visually compose pages using
 - **[prd-frontend.md](prd-frontend.md)** — Astro components, BlockRenderer, rendering flow
 - **[prd-previews.md](prd-previews.md)** — Live preview components, PREVIEW_MAP
 - **[prd-breakpoints.md](prd-breakpoints.md)** — Breakpoint system, canvas resize, per-bp overrides
+- **[prd-e2e.md](prd-e2e.md)** — Playwright E2E smoke suite (1.0.6+)
 
 **Start here:** [prd-index.md](prd-index.md)
 

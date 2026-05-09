@@ -2805,3 +2805,169 @@ append below this bullet.
   channel is additive.
 
 **No blockers.**
+
+---
+
+## 2026-05-09 — F4.9 — Playwright E2E smoke (1.0.6) — Start
+
+Last F4 task. Per the brief in `REMAINING.md` item 5, ship 5
+smoke specs against a user-running EmDash dev server. Skip
+bundled host fixture (deferred infra complexity from 1.0.0).
+
+**Plan**:
+1. `playwright.config.ts` — testDir `./tests/e2e`, chromium-only
+   project, list reporter, `baseURL` from
+   `EMPIXEL_E2E_BASE` env or `http://localhost:4321`,
+   `trace: "on-first-retry"`.
+2. `tests/e2e/builder.spec.ts` — 5 specs in
+   `test.describe("empixel-builder admin")`:
+   - `loads the builder admin page without JS errors`
+   - `drags a container block onto the canvas`
+   - `drags a text block into a container`
+   - `persists blocks after Save and reload`
+   - `switches to a non-desktop breakpoint`
+   `test.beforeEach` — fetch `/entries?collection=posts` to
+   pick a valid pageId ULID, then navigate to
+   `/_emdash/admin/plugins/empixel-builder/editor?...`.
+3. `package.json` — add `@playwright/test` devDep,
+   `test:e2e` and `test:e2e:install` scripts. Bump
+   1.0.5 → 1.0.6. Do NOT wire e2e into `prepublishOnly`.
+4. `.gitignore` — add `test-results/` + `playwright-report/`.
+5. CHANGELOG — open `## 1.0.6 — 2026-05-09` with the F4.9
+   bullet.
+6. PRDs — short paragraph in `prd-rightpanel.md` (or new
+   `prd-e2e.md`). Going with a new `prd-e2e.md` since E2E is
+   its own concern and doesn't fit cleanly under any existing
+   sub-PRD; `CLAUDE.md` registry will gain a row in the
+   "task / file" table later (orchestrator-owned section).
+7. Pipeline — `npm install` + lint + typecheck + vitest +
+   build. Do NOT run `npm run test:e2e`.
+8. Status log finish entry.
+
+**DOM hooks I'll target**:
+- `.epx-canvas` (root canvas)
+- `.epx-canvas__preview-frame` (resizable frame — width
+  changes per breakpoint)
+- `[data-epx-block]` (rendered block wrappers)
+- `.epx-block-card` (LeftPanel palette card; first one is
+  Container, second is Text in the "core" group)
+- `.epx-bp-btn` (top-bar breakpoint switcher; mobile-portrait
+  is the last button by default)
+- `text=Save` (top-bar primary save button)
+
+**Drag API**: `locator.dragTo()` first; fall back to
+manual `mouse.down/move/move/up` if @dnd-kit's pointer
+sensor needs intermediate move events to register. The
+existing reducer tests confirm `useDraggable({ id:
+"new-<type>", data: { kind: "new-block", blockType:
+<type> } })` is the wire shape — Playwright's pointer
+events should be enough.
+
+**Assumption**: Novapera ships a `posts` collection (per
+the brief). Tests degrade gracefully — `beforeEach` skips
+the spec if `/entries?collection=posts` returns empty so a
+fresh installation doesn't fail mysteriously.
+
+---
+
+## 2026-05-09 — F4.9 — Playwright E2E smoke (1.0.6) — Done
+
+**Files added/changed**:
+- `playwright.config.ts` (new, 22 LOC) — chromium-only, list
+  reporter, `baseURL` from `EMPIXEL_E2E_BASE` env or
+  `http://localhost:4321`, `trace: "on-first-retry"`,
+  `fullyParallel: true`.
+- `tests/e2e/builder.spec.ts` (new, ~210 LOC) — 5 specs in
+  one `test.describe`. `beforeEach` resolves the first
+  `/entries?collection=posts` row to a ULID; specs self-skip
+  if the consumer site has no posts.
+- `package.json` — added `@playwright/test ^1.50.0`
+  devDep, `test:e2e` and `test:e2e:install` scripts.
+  Version bumped 1.0.5 → 1.0.6. `prepublishOnly` left
+  unchanged (vitest-only — does NOT call `test:e2e`).
+- `.gitignore` — added `test-results/`,
+  `playwright-report/`, `playwright/.cache/`.
+- `CHANGELOG.md` — opened `## 1.0.6 — 2026-05-09` with
+  the F4.9 bullet.
+- `.claude/prd-e2e.md` (new) — full E2E doc:
+  stack, file layout, how to run, spec inventory,
+  conventions, future work.
+- `.claude/prd.md` — added a row to the Detailed Docs
+  list pointing at `prd-e2e.md`.
+- `.claude/prd-rightpanel.md` — short paragraph
+  cross-referencing `prd-e2e.md`.
+
+**Resolved Playwright version**: `1.59.1` (lockfile
+hit from `^1.50.0` range; `npm install` added 4 packages,
+no version conflicts).
+
+**Spec inventory**:
+| `builder.spec.ts:94` | `loads the builder admin page without JS errors` |
+| `builder.spec.ts:108` | `drags a container block onto the canvas` |
+| `builder.spec.ts:124` | `drags a text block into a container` |
+| `builder.spec.ts:169` | `persists blocks after Save and reload` |
+| `builder.spec.ts:199` | `switches to a non-desktop breakpoint` |
+
+`npx playwright test --list` resolves all 5 cleanly under
+the `chromium` project.
+
+**Drag-and-drop strategy**:
+- `locator.dragTo()` for the simple palette → canvas-root
+  case (single drop target, no nested gating).
+- Manual `page.mouse.{move, down, move, move, up}` with
+  `{ steps: 8/10 }` and an intermediate midpoint move for
+  the nested text → container case. @dnd-kit's pointer
+  sensor needs the activation-distance threshold and an
+  over-target detection to fire, both of which the
+  high-level helper sometimes elides.
+
+**Pipeline tail**:
+```
+> empixel-builder@1.0.6 lint
+> eslint src/
+
+> empixel-builder@1.0.6 typecheck
+> tsc -p tsconfig.check.json
+
+> empixel-builder@1.0.6 test
+> vitest run
+
+ Test Files  22 passed (22)
+      Tests  414 passed (414)
+   Duration  1.30s
+
+> empixel-builder@1.0.6 build
+> tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/
+```
+
+414/414 vitest specs unchanged. Lint, typecheck, build all
+green. `npm run test:e2e` was NOT run during the pipeline
+per the brief — it requires a running dev server, and the
+suite is documented as a separate manual command.
+
+**Surprising findings / notes**:
+
+- The playwright lockfile resolved `^1.50.0` to `1.59.1`
+  rather than the bare `1.50.0` floor; harmless — chromium
+  binary fetch is identical, the API surface used here
+  (`test`, `expect`, `dragTo`, `page.mouse.*`) is stable
+  across the 1.50–1.59 range.
+- ESLint script is scoped to `src/` only
+  (`"lint": "eslint src/"`), and the typecheck `include`
+  is `src/**/*.ts*` only — both naturally exclude the new
+  `tests/e2e/builder.spec.ts` and `playwright.config.ts`.
+  No tooling-side changes needed to keep the new files
+  out of the unit-test pipeline.
+- Vitest's `include: ["tests/**/*.test.ts"]` matches `.test.ts`
+  only, so `tests/e2e/builder.spec.ts` (`.spec.ts`) is
+  invisible to vitest by file extension alone — no need to
+  add an `exclude` glob.
+- The plugin has a known double-envelope quirk on `/layout`
+  GET (see CHANGELOG 1.0.3); `/entries` is single-envelope.
+  The `fetchFirstEntryId` helper inspects multiple shapes
+  defensively so a future change to the route's wrap shape
+  doesn't silently break the suite.
+
+**No blockers.** Last F4 task closed. Refactor roadmap from
+`raport-empixel-emdash.html` complete. Ready for orchestrator
+review + merge.
