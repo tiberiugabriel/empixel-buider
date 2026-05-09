@@ -45,6 +45,25 @@ Every leaf `BlockType` must have an entry here. `container` is rendered by `Sect
 
 Iterates `layout.sections`. Containers go through `SectionContainer.astro` (which handles its own children recursively); leaves go to `BlockRenderer`.
 
+### Plugin-scoped reset (F1.3)
+
+Before any block markup, `LayoutRenderer.astro` emits a single global
+`<style>` element carrying a minimal reset scoped to `[data-epx-block]`
+(and its descendants):
+
+```
+[data-epx-block]{box-sizing:border-box;margin:0;}
+[data-epx-block] *,[data-epx-block] *::before,[data-epx-block] *::after{box-sizing:border-box;}
+```
+
+Why: many host themes ship a global `* { box-sizing: border-box }` plus
+margin/padding resets that bleed into plugin blocks (`<figure>`, `<button>`,
+`<a>`, etc.) and produce inconsistent visual output across sites. The
+plugin defends itself with its own predictable starting point. The reset
+lives in the layout root — not in each block component — so it ships once
+per rendered page rather than N copies for N blocks. It is **skipped when
+`sections.length === 0`** so empty layouts stay zero-emit.
+
 ```astro
 ---
 import type { SectionBlock } from "../types.js";

@@ -8,7 +8,29 @@ interface Props {
 }
 
 const { sections } = Astro.props;
+
+// F1.3 — Plugin-scoped reset emitted once per layout.
+//
+// Many EmDash host themes ship a global `* { box-sizing: border-box }` plus
+// margin / padding resets that bleed onto plugin blocks (`<figure>`,
+// `<button>`, `<a>`, etc.) and produce inconsistent results across sites.
+// We emit a tiny reset scoped to `[data-epx-block]` and its descendants so
+// the plugin's CSS pipeline always has a predictable starting point —
+// regardless of what the host's global styles do.
+//
+// Rules:
+// - Lives in the LayoutRenderer (the single render-path entry), NOT inside
+//   each block component, so we ship one rule per page rather than N copies.
+// - `is:global` so the rule actually applies to plugin blocks rendered into
+//   the host's document.
+// - Skipped when `sections.length === 0` so empty layouts stay zero-emit.
+const hasBlocks = sections.length > 0;
+const resetCss =
+  "[data-epx-block]{box-sizing:border-box;margin:0;}" +
+  "[data-epx-block] *,[data-epx-block] *::before,[data-epx-block] *::after{box-sizing:border-box;}";
 ---
+
+{hasBlocks && <style set:html={resetCss} is:global />}
 
 {sections.map((block) => {
   if (block.type === "container") {

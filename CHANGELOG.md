@@ -13,6 +13,10 @@ SemVer.
 - Stop swallowing exceptions silently in plugin routes; log via
   `ctx.log.warn` (or `console.warn` at module load). Set `EMPIXEL_DEBUG=1` to
   escalate to error level for local debugging.
+- Emit a minimal plugin-scoped reset (`box-sizing: border-box; margin: 0`)
+  once per rendered layout. Defends builder blocks from theme `* { ... }`
+  resets that bleed onto plugin elements (`<figure>`, `<button>`, `<a>`,
+  etc.). Skipped when the layout has zero sections.
 
 ## 0.7.0 — 2026-05-08
 
