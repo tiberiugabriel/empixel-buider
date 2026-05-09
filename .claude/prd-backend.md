@@ -378,6 +378,16 @@ re-introduces SQL injection — see audit C1.
   back to a single direct SELECT against `empixel_builder_layouts` if
   the storage collection doesn't yet have the row. The fallback exists
   for one version while F3.3 migrates rows; F3.5 drops it.
+- F4.2 — response goes through an **in-memory LRU cache** keyed by
+  the post-slug-→-ULID `${collection}::${entryId}`, capacity 200,
+  eviction LRU via `Map` re-set on hit. Cache holds the serialized
+  body, the ETag, and the parsed `lastModified` (from the row's
+  `updatedAt`). A conditional GET with `If-None-Match` matching the
+  cached ETag returns **304 Not Modified** without a body. Cache
+  busts on `POST /layout`, `POST /toggle`, and the
+  `content:afterDelete` hook for the same key. Missing rows
+  (`{ data: null }`) are also cached — repeat reads on a not-yet-built
+  page short-circuit to 304 the same way.
 - Returns `{ data: { sections: SectionBlock[] } }` or `{ data: null }`
 
 **POST** `{ pageId, collection, sections }` → Save layout.
@@ -386,7 +396,48 @@ re-introduces SQL injection — see audit C1.
   `enabled` flag isn't clobbered. Then writes through
   `ctx.storage.layouts.put(...)` ONLY (v0.9 — F3.2). The legacy table is
   no longer touched on writes; reads still consult it for one version.
+- F4.2 — calls `invalidateLayoutCache(collection, entryId)` after the
+  storage `put` so the next GET serves the fresh row.
 - Returns `{ success: true }`
+
+### Layout LRU + ETag (v0.9.7 — F4.2)
+
+`/layout` GET sits on the hot path of every admin canvas open and
+every host-page render of an enabled entry. F4.2 adds an in-process
+LRU cache + ETag round trip so warm hits skip the storage round-trip
+and conditional GETs short-circuit to 304.
+
+- **Cache key** — `${collection}::${entryId}` (after slug→ULID
+  resolution). Distinct collections with the same entry id stay
+  isolated.
+- **Capacity** — 200 entries. Eviction on overflow drops the
+  insertion-order head (oldest); on a hit, the entry is `delete`d
+  and `set` again so insertion order tracks recency.
+- **Cache value** — `{ body: string; etag: string; lastModified: Date }`.
+  The body is the already-serialized JSON so warm hits don't
+  re-`JSON.stringify`. The ETag is `"<sha1>"` of the body
+  (`crypto.createHash("sha1").update(body).digest("hex")`,
+  double-quoted per RFC 7232). `lastModified` is parsed from the
+  row's `updatedAt`; falls back to "now" when the row is absent.
+- **Invalidation** — `POST /layout`, `POST /toggle`, and
+  `content:afterDelete` each call `invalidateLayoutCache(collection,
+  entryId)` after a successful storage mutation. Cache miss on the
+  next GET re-populates with fresh body + ETag.
+- **304 semantics** — GET checks the request's `If-None-Match`
+  header. If it matches the cached ETag, returns 304 with `ETag:`
+  and `Last-Modified:` headers and an empty body. Otherwise the
+  cached body is returned with a fresh `Content-Type: application/json`.
+- **Test exports** — `_resetLayoutCache()` and `_layoutCacheSize()`
+  are underscore-prefixed test-only helpers. Not part of the
+  public surface.
+
+The cache is process-local. EmDash multi-worker hosts (or future
+horizontally-scaled deployments) get one cache per worker — the
+storage layer is the source of truth, so workers stay consistent
+because invalidation is local-only and the next GET on a stale
+worker just falls through to `ctx.storage.layouts.get`. Hosts who
+need cross-worker invalidation should layer a CDN / reverse-proxy
+cache in front using the ETag we already emit.
 
 ### `entries` — GET
 **GET** `?collection=<name>&limit=<n>` → List all entries for a collection with builder metadata.
@@ -446,6 +497,8 @@ re-introduces SQL injection — see audit C1.
   current `sections` aren't lost on first toggle (or seeds `[]` when the
   row doesn't exist yet), then writes through `ctx.storage.layouts.put`
   with the new `enabled` value.
+- F4.2 — calls `invalidateLayoutCache(collection, entryId)` after the
+  storage `put` so the next `/layout` GET serves the fresh row.
 - The pre-F3.5peer mirror UPDATE on
   `ec_<collection>.empixel_builder` is **gone**. It was a runtime
   no-op (the `ctx.db` cast resolved to `undefined`), and adding
@@ -474,6 +527,11 @@ AND the legacy `empixel_builder_layouts` table (v0.9 — F3.2). Both layers
 may carry the row pre-F3.3, so the dual delete is needed for clean
 removal. Both calls are best-effort (logged via `logCaught` on failure).
 F3.5 will drop the legacy DELETE once F3.3 has copied every row over.
+
+F4.2 — also calls `invalidateLayoutCache(collection, entryId)` after a
+successful storage delete so a subsequent GET re-evaluates the storage
+miss and caches `{ data: null }` rather than continuing to serve the
+deleted layout.
 
 ## Database
 

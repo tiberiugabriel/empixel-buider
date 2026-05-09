@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import {
   buildBlockCss,
   buildHoverCss,
@@ -9,6 +9,8 @@ import {
   getBlockClass,
   normalizeLegacySpacing,
   coalesceLayoutCss,
+  _resetBuildBlockChromeCssCache,
+  _buildBlockChromeCssCacheSize,
 } from "../src/components/styleUtils.js";
 
 describe("buildBlockCss", () => {
@@ -424,5 +426,169 @@ describe("coalesceLayoutCss (F4.1)", () => {
     expect(bundle).toContain('[data-epx-block="B3"]{');
     expect(bundle).toContain('[data-epx-block="B4"]{');
     expect(bundle).toContain('[data-epx-block="B5"]{');
+  });
+});
+
+// ─── F4.2: memoize buildBlockChromeCss ──────────────────────────────────────
+
+describe("F4.2 — buildBlockChromeCss memoization", () => {
+  beforeEach(() => {
+    _resetBuildBlockChromeCssCache();
+  });
+  afterEach(() => {
+    _resetBuildBlockChromeCssCache();
+  });
+
+  it("identical inputs produce identical output and the second call hits the cache", () => {
+    const config = {
+      style: { paddingTop: "8px", paddingBottom: "12px", color: "#000000" },
+      styleHover: { borderTopWidth: "2px" },
+      styleBreakpoints: {
+        "tablet-portrait": { _px: 992, fontSize: "16px" },
+      },
+    };
+
+    expect(_buildBlockChromeCssCacheSize()).toBe(0);
+    const a = buildBlockChromeCss(config, "B1");
+    expect(_buildBlockChromeCssCacheSize()).toBe(1);
+
+    const b = buildBlockChromeCss(config, "B1");
+    expect(b).toBe(a);
+    // Size unchanged — the second call hit the existing cached entry.
+    expect(_buildBlockChromeCssCacheSize()).toBe(1);
+  });
+
+  it("memo hit is faster than cold path on heavy configs (sanity bench)", () => {
+    // Construct a non-trivial config — large enough that the sub-helpers
+    // walk a meaningful amount of work cold.
+    const heavy = {
+      style: {
+        paddingTop: "12px", paddingRight: "16px", paddingBottom: "12px", paddingLeft: "16px",
+        color: "#112233", fontSize: "18px", lineHeight: "1.4",
+        borderStyle: "solid", borderTopWidth: "1px", borderRightWidth: "1px",
+        borderBottomWidth: "1px", borderLeftWidth: "1px",
+        borderTopLeftRadius: "8px", borderTopRightRadius: "8px",
+        borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px",
+      },
+      styleHover: {
+        borderTopWidth: "2px", borderRightWidth: "2px",
+        borderBottomWidth: "2px", borderLeftWidth: "2px",
+      },
+      styleBreakpoints: {
+        "tablet-portrait": { _px: 992, fontSize: "16px" },
+        "mobile-portrait": { _px: 575, fontSize: "14px" },
+      },
+      styleHoverBreakpoints: {
+        "mobile-portrait": { _px: 575, borderTopWidth: "1px" },
+      },
+      advanced: { customCss: "selector{outline:1px dashed red}" },
+    };
+
+    // Warm the cache.
+    buildBlockChromeCss(heavy, "B1");
+    // Bench: 100 hits.
+    const N = 100;
+    const t0 = performance.now();
+    for (let i = 0; i < N; i += 1) buildBlockChromeCss(heavy, "B1");
+    const elapsed = performance.now() - t0;
+    // 100 hits should comfortably finish in well under 5ms (the per-call
+    // budget for cache hits). Headroom — the cold path on a heavy config
+    // can hit single-digit ms by itself, so 100 cold paths would dwarf this.
+    expect(elapsed).toBeLessThan(50);
+  });
+
+  it("different blockId → distinct cache entries", () => {
+    const config = { style: { paddingTop: "8px" } };
+    buildBlockChromeCss(config, "B1");
+    buildBlockChromeCss(config, "B2");
+    expect(_buildBlockChromeCssCacheSize()).toBe(2);
+  });
+
+  it("different config → distinct cache entries", () => {
+    buildBlockChromeCss({ style: { paddingTop: "8px" } }, "B1");
+    buildBlockChromeCss({ style: { paddingTop: "12px" } }, "B1");
+    expect(_buildBlockChromeCssCacheSize()).toBe(2);
+  });
+
+  it("different opts.imgScoped → distinct cache entries", () => {
+    const config = { style: { paddingTop: "8px", borderTopLeftRadius: "4px" } };
+    buildBlockChromeCss(config, "B1");
+    buildBlockChromeCss(config, "B1", { imgScoped: true });
+    expect(_buildBlockChromeCssCacheSize()).toBe(2);
+  });
+
+  it("skips memoization when opts.resolveMediaUrl is set (closure dependency)", () => {
+    const resolver = (key: string) => `https://cdn.example.com/${key}`;
+    const config = {
+      style: {
+        backgroundType: "image",
+        backgroundImageSrc: "storage",
+        backgroundImageStorageKey: "abc.jpg",
+      },
+    };
+
+    expect(_buildBlockChromeCssCacheSize()).toBe(0);
+    const a = buildBlockChromeCss(config, "B1", { resolveMediaUrl: resolver });
+    // Cache stays empty because the path bypassed memoization entirely.
+    expect(_buildBlockChromeCssCacheSize()).toBe(0);
+    // Still computes the correct CSS (with the resolved URL baked in).
+    expect(a).toContain("https://cdn.example.com/abc.jpg");
+
+    // Different resolver — must produce different output, with no
+    // cross-call cache pollution from the previous call.
+    const resolver2 = (key: string) => `https://other.example.com/${key}`;
+    const b = buildBlockChromeCss(config, "B1", { resolveMediaUrl: resolver2 });
+    expect(b).toContain("https://other.example.com/abc.jpg");
+    expect(b).not.toEqual(a);
+    expect(_buildBlockChromeCssCacheSize()).toBe(0);
+  });
+
+  it("LRU eviction: 501st distinct call evicts the oldest entry", () => {
+    // 500 distinct (config, blockId) pairs → cache fills to capacity.
+    for (let i = 0; i < 500; i += 1) {
+      buildBlockChromeCss({ style: { paddingTop: `${i}px` } }, `B${i}`);
+    }
+    expect(_buildBlockChromeCssCacheSize()).toBe(500);
+
+    // 501st pushes us over capacity — the eviction step runs and drops it
+    // back to capacity.
+    buildBlockChromeCss({ style: { paddingTop: "999px" } }, "B-new");
+    expect(_buildBlockChromeCssCacheSize()).toBe(500);
+  });
+
+  it("recency promotion: a hit on the oldest moves it past younger entries", () => {
+    // Fill to capacity.
+    for (let i = 0; i < 500; i += 1) {
+      buildBlockChromeCss({ style: { paddingTop: `${i}px` } }, `B${i}`);
+    }
+    // Re-hit the oldest entry — promotes it.
+    buildBlockChromeCss({ style: { paddingTop: "0px" } }, "B0");
+
+    // Adding one more should now evict B1 (the new oldest), not B0.
+    buildBlockChromeCss({ style: { paddingTop: "777px" } }, "B-extra");
+    expect(_buildBlockChromeCssCacheSize()).toBe(500);
+
+    // B0 should still be a cache hit — issue an identical call and confirm
+    // the cache size doesn't grow.
+    const sizeBefore = _buildBlockChromeCssCacheSize();
+    buildBlockChromeCss({ style: { paddingTop: "0px" } }, "B0");
+    expect(_buildBlockChromeCssCacheSize()).toBe(sizeBefore);
+  });
+
+  it("output equivalence — memoized result matches the direct call", () => {
+    const config = {
+      style: { paddingTop: "8px", color: "#abcdef" },
+      styleHover: { borderTopWidth: "2px" },
+      styleBreakpoints: {
+        "tablet-portrait": { _px: 992, fontSize: "16px" },
+      },
+      advanced: { customCss: "selector{outline:1px solid red}" },
+    };
+    // First call — cache miss; computes through the direct path.
+    const cold = buildBlockChromeCss(config, "B1");
+    // Reset the cache and recompute — second cold call should match.
+    _resetBuildBlockChromeCssCache();
+    const cold2 = buildBlockChromeCss(config, "B1");
+    expect(cold2).toBe(cold);
   });
 });

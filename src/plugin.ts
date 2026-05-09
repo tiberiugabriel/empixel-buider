@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { definePlugin } from "emdash";
 import type { RouteContext, PluginContext, PluginStorageConfig } from "emdash";
 import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
@@ -93,6 +94,81 @@ export function layoutDocId(collection: string, entryId: string): string {
  */
 function getLayouts(ctx: { storage: PluginContext["storage"] }): StorageLayoutsCollection {
   return ctx.storage.layouts as StorageLayoutsCollection;
+}
+
+// ─── F4.2: in-memory LRU cache + ETag for /layout GET ───────────────────────
+//
+// `/layout` GET is hit on every admin canvas open and every host-page render
+// of an enabled entry. The full path is fast-but-not-free: two lazy-gate
+// migration checks → slug-resolve → `ctx.storage.layouts.get` →
+// `stripUnknownBlocks` → `JSON.stringify` for the response body. We cache the
+// final response body string keyed by `${collection}::${entryId}`, served back
+// in O(1) on a hit. Capacity 200 entries with LRU eviction (`Map` re-set on
+// hit; insertion order = recency).
+//
+// ETag: SHA-1 of the response body. Returned as `ETag: "<hash>"`. A
+// conditional GET that includes `If-None-Match` matching the cached ETag
+// short-circuits to `304 Not Modified` with no body. ETags are persisted
+// alongside the body in the cache so we don't recompute the hash on hits.
+//
+// Invalidation: every write path that mutates a layout calls
+// `invalidateLayoutCache(collection, entryId)`. Today that's
+// `POST /layout`, `POST /toggle`, and the `content:afterDelete` hook.
+const LAYOUT_CACHE_CAPACITY = 200;
+
+interface LayoutCacheEntry {
+  body: string;
+  etag: string;
+  lastModified: Date;
+}
+
+const layoutCache = new Map<string, LayoutCacheEntry>();
+
+function layoutCacheKey(collection: string, entryId: string): string {
+  return `${collection}::${entryId}`;
+}
+
+function getLayoutCache(collection: string, entryId: string): LayoutCacheEntry | undefined {
+  const key = layoutCacheKey(collection, entryId);
+  const entry = layoutCache.get(key);
+  if (entry === undefined) return undefined;
+  // LRU: re-insert at tail to mark recency.
+  layoutCache.delete(key);
+  layoutCache.set(key, entry);
+  return entry;
+}
+
+function setLayoutCache(collection: string, entryId: string, entry: LayoutCacheEntry): void {
+  const key = layoutCacheKey(collection, entryId);
+  layoutCache.set(key, entry);
+  if (layoutCache.size > LAYOUT_CACHE_CAPACITY) {
+    const oldestKey = layoutCache.keys().next().value;
+    if (oldestKey !== undefined) layoutCache.delete(oldestKey);
+  }
+}
+
+function invalidateLayoutCache(collection: string, entryId: string): void {
+  layoutCache.delete(layoutCacheKey(collection, entryId));
+}
+
+/**
+ * Test-only — clear the entire layout cache. Not part of the runtime
+ * surface; lets `tests/cacheETag.test.ts` start each case from a clean
+ * slate. Kept underscore-prefixed so it's clearly internal.
+ */
+export function _resetLayoutCache(): void {
+  layoutCache.clear();
+}
+
+/**
+ * Test-only — current cache size. Used by tests to assert eviction.
+ */
+export function _layoutCacheSize(): number {
+  return layoutCache.size;
+}
+
+function computeEtag(body: string): string {
+  return `"${createHash("sha1").update(body).digest("hex")}"`;
 }
 
 /**
@@ -453,13 +529,73 @@ export function createPlugin() {
             // Postgres, libSQL, etc.
             pageId = await resolveSlugToUlid(ctx, collection, pageId);
 
+            // F4.2 — cache hit path. If we have a body cached for the
+            // resolved (collection, entryId), check `If-None-Match`
+            // against the stored ETag and return 304 on a match;
+            // otherwise serve the cached body straight away. Both paths
+            // skip the `ctx.storage.layouts.get` round trip + the
+            // `stripUnknownBlocks` walk.
+            const ifNoneMatch = ctx.request.headers.get("if-none-match");
+            const cached = getLayoutCache(collection, pageId);
+            if (cached) {
+              if (ifNoneMatch && ifNoneMatch === cached.etag) {
+                return new Response(null, {
+                  status: 304,
+                  headers: {
+                    ETag: cached.etag,
+                    "Last-Modified": cached.lastModified.toUTCString(),
+                  },
+                });
+              }
+              return new Response(cached.body, {
+                status: 200,
+                headers: {
+                  "Content-Type": "application/json",
+                  ETag: cached.etag,
+                  "Last-Modified": cached.lastModified.toUTCString(),
+                },
+              });
+            }
+
             // Storage-only read. The legacy SQLite fallback was removed
             // in F3.5; `runMigrationToStorageV1` is the bridge for old
             // installs.
             const row = await readLayoutFromStorage(ctx, collection, pageId);
-            if (!row) return { data: null };
-            const sections = stripUnknownBlocks(row.sections);
-            return { data: { sections } };
+            const payload = row
+              ? { data: { sections: stripUnknownBlocks(row.sections) } }
+              : { data: null };
+            const body = JSON.stringify(payload);
+            const etag = computeEtag(body);
+            // `lastModified` derives from the row's `updatedAt` (so
+            // hosts get accurate `If-Modified-Since` semantics on
+            // subsequent reads); fall back to "now" when the row is
+            // absent so the cache still has a value, even though the
+            // 304 path won't actually use it on a missing row.
+            const lastModifiedDate = row?.updatedAt
+              ? new Date(row.updatedAt)
+              : new Date();
+            const lastModified = isNaN(lastModifiedDate.getTime())
+              ? new Date()
+              : lastModifiedDate;
+            setLayoutCache(collection, pageId, { body, etag, lastModified });
+
+            if (ifNoneMatch && ifNoneMatch === etag) {
+              return new Response(null, {
+                status: 304,
+                headers: {
+                  ETag: etag,
+                  "Last-Modified": lastModified.toUTCString(),
+                },
+              });
+            }
+            return new Response(body, {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+                ETag: etag,
+                "Last-Modified": lastModified.toUTCString(),
+              },
+            });
           }
 
           if (method === "POST") {
@@ -496,6 +632,8 @@ export function createPlugin() {
             };
 
             await getLayouts(ctx).put(layoutDocId(collection, pageId), next);
+            // F4.2 — bust the GET cache for this (collection, entryId).
+            invalidateLayoutCache(collection, pageId);
             return { success: true };
           }
 
@@ -601,6 +739,8 @@ export function createPlugin() {
             updatedAt: now,
           };
           await getLayouts(ctx).put(layoutDocId(collection, entryId), next);
+          // F4.2 — bust the GET cache for this (collection, entryId).
+          invalidateLayoutCache(collection, entryId);
 
           // Note: pre-F3.5 the plugin mirrored the enable bit onto
           // `ec_<collection>.empixel_builder` for downstream host queries
@@ -678,6 +818,8 @@ export function createPlugin() {
           // the plugin's perspective.
           try {
             await getLayouts(ctx).delete(layoutDocId(event.collection, entryId));
+            // F4.2 — bust the GET cache for this (collection, entryId).
+            invalidateLayoutCache(event.collection, entryId);
           } catch (err) {
             logCaught(
               ctx,

@@ -21,6 +21,23 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 19:40 · F4.2 done
+- `/layout` GET wrapped in an in-process LRU cache. Capacity 200, key `${collection}::${entryId}` (post-slug-→-ULID resolution), eviction LRU via `Map` re-set on hit (insertion order = recency). Cache value: `{ body: string; etag: string; lastModified: Date }`.
+- ETag via `crypto.createHash("sha1").update(body).digest("hex")`, double-quoted per RFC 7232 (`"<sha1>"`). Conditional GET with matching `If-None-Match` returns **304 Not Modified** with `ETag` + `Last-Modified` headers and an empty body. `Last-Modified` derived from the row's `updatedAt`; falls back to "now" when the row is absent (still cached as `data: null`).
+- Invalidation wired into `POST /layout`, `POST /toggle`, and the `content:afterDelete` hook. New helpers `invalidateLayoutCache` + test-only exports `_resetLayoutCache` / `_layoutCacheSize`.
+- `buildBlockChromeCss` memoized in `src/components/styleUtils.ts` (documented F4.2 cross-domain exception). Capacity 500 LRU, key fingerprint `${JSON.stringify(config)}|${blockId}|${opts?.imgScoped ? "1" : "0"}`. Falls through to the direct call when `opts.resolveMediaUrl` is set (closure dependency makes the cache unsafe — `JSON.stringify` can't fingerprint a function). Test-only exports `_resetBuildBlockChromeCssCache` / `_buildBlockChromeCssCacheSize`. The non-memoized direct path is now `buildBlockChromeCssDirect` (private). F4.1's `coalesceLayoutCss` and the `LayoutRenderer.astro` rewiring are untouched — memoize only wraps `buildBlockChromeCss`.
+- Files: `src/plugin.ts`, `src/components/styleUtils.ts`, `tests/cacheETag.test.ts` (new — 10 cases), `tests/styleUtils.test.ts` (+9 cases), `CHANGELOG.md` (appended F4.2 bullet to existing `## Unreleased — 1.0.0 prep`), `.claude/prd-backend.md` (new "Layout LRU + ETag (v0.9.7 — F4.2)" section + route doc updates), `.claude/prd-frontend.md` (new "`buildBlockChromeCss` memoization (v0.9.7 — F4.2)" section + helper-table row), `.claude/coordination/status/agent-a.md`.
+- Tests: 19 new (10 in `tests/cacheETag.test.ts` covering LRU hit < 5ms bench, ETag round trip, ETag mismatch fresh-body, eviction at 201, recency promotion, POST/toggle/afterDelete invalidation, cross-collection isolation, missing-row caching; 9 in `tests/styleUtils.test.ts` covering memo hit short-circuit, hit-bench < 50ms for 100 iters, blockId / config / imgScoped key separation, resolveMediaUrl skip, eviction at 501, recency promotion, output equivalence). Total 331 → 350.
+- Bench: 5-iter average sub-5ms on the LRU hit path; 100 memo hits run in well under 50ms (≈100× the per-call cache budget). Both observed in test runs.
+- Pipeline: green (lint + typecheck + 350 tests + build).
+- Surprises / blocking: none. Cross-domain edit limited to memoizing `buildBlockChromeCss` per the F4.2 exception. Did not touch `coalesceLayoutCss` / `LayoutRenderer.astro` (B's territory). The `(ctx as { request, headers })` shape on `RouteContext` was already in scope via `ctx.request.headers.get("if-none-match")` — no type-cast hacks needed.
+
+## 2026-05-09 19:30 · F4.2 started (retry after API crash)
+- Spec: in-memory LRU cache on `/layout` GET (200 entries, key `${collection}::${entryId}`), invalidates on POST/toggle/afterDelete.
+- ETag via `crypto.createHash("sha1").update(body).digest("hex")`. `If-None-Match` → 304.
+- Memoize `buildBlockChromeCss` in `src/components/styleUtils.ts` (cross-domain F4.2 exception). Cache key fingerprint = `JSON.stringify(config) + "|" + blockId + "|" + opts.imgScoped`. Skip when `opts.resolveMediaUrl` is set.
+- Tests: extend storage.test.ts + new tests/cacheETag.test.ts + extend styleUtils.test.ts.
+
 ## 2026-05-09 17:00 · F3.6.4-migration started
 
 Phase F3.6 row F3.6.4 — the migration half. Walks every stored layout

@@ -5,6 +5,39 @@ SemVer.
 
 ## Unreleased — 1.0.0 prep
 
+- **F4.2 — In-memory LRU cache on `/layout` GET (200 entries,
+  invalidates on POST/toggle/afterDelete). ETag on GET responses;
+  conditional GET returns 304 when `If-None-Match` matches.
+  `buildBlockChromeCss` memoized per config-hash (~500 LRU);
+  skipped when `opts.resolveMediaUrl` is set.** Cache key is
+  `${collection}::${entryId}` over the resolved (post-slug-→-ULID)
+  identity so admin and host hit the same row. ETag is `"<sha1>"` of the
+  serialized response body, computed once on cold path and cached
+  alongside `body` + `lastModified` (derived from the row's
+  `updatedAt`) so warm hits don't re-hash. The memo wrap around
+  `buildBlockChromeCss` lives in `src/components/styleUtils.ts` (the
+  documented F4.2 cross-domain exception per the report's task
+  allocation table) — fingerprint is
+  `JSON.stringify(config) + "|" + blockId + "|" + (opts.imgScoped ? "1" : "0")`.
+  When `opts.resolveMediaUrl` is provided the wrap falls through to
+  the direct call because the resolver is a closure built per-request
+  from `Astro.locals` and structurally-identical configs would still
+  need different resolved URLs. Files touched:
+  `src/plugin.ts` (LRU + ETag + invalidation; `_resetLayoutCache` /
+  `_layoutCacheSize` test exports), `src/components/styleUtils.ts`
+  (memo wrap + `_resetBuildBlockChromeCssCache` /
+  `_buildBlockChromeCssCacheSize` test exports),
+  `tests/cacheETag.test.ts` (new — 9 cases: cache hit < 5ms, ETag
+  round trip, ETag mismatch, LRU eviction at 201, recency promotion,
+  POST/toggle/afterDelete invalidation, cross-collection
+  non-collision, missing-row caching), `tests/styleUtils.test.ts`
+  (+9 cases — hit short-circuits, hit-bench < 50ms for 100 iters,
+  blockId / config / imgScoped key separation, resolveMediaUrl
+  skip path, LRU eviction at 501, recency promotion,
+  output-equivalence sanity), `CHANGELOG.md`, `.claude/prd-backend.md`,
+  `.claude/prd-frontend.md`, `.claude/coordination/status/agent-a.md`.
+  Tests: 331 → 350 (+19).
+
 - **F4.1 — single `<style>` per page with grouped `@media` queries.**
   Pre-F4.1 every leaf block component emitted its own
   `<style is:global>` at template position; a 30-block page shipped

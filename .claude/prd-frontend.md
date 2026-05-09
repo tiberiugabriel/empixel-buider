@@ -237,6 +237,33 @@ All exports return CSS **strings** (selector-based rules), not inline declaratio
 | `getBlockId(config)` / `getBlockClass(config)` | Reads `advanced.cssId` / `advanced.cssClasses` |
 | `getCustomCss(config, blockId)` | Wraps `advanced.customCss` in `[data-epx-block="<id>"]{…}` |
 | `coalesceLayoutCss(strings)` (F4.1) | Merges per-block CSS strings into one bundle. Groups identical `@media` queries (each breakpoint opens exactly one `@media` block instead of one per block × per bp). Base rules emit first in input order; `@media` blocks emit in first-seen-query order. Whitespace-tolerant on query strings. Powers `LayoutRenderer.astro`'s single-`<style>` emission. |
+| `buildBlockChromeCss(config, blockId, opts?)` — memoized (F4.2) | Wraps the underlying chrome builder in an in-process LRU (capacity 500). Cache key fingerprint is `JSON.stringify(config) + "\|" + blockId + "\|" + (opts.imgScoped ? "1" : "0")`. On hit, the cached string is returned and the entry is reinserted at the tail (LRU). The wrap **falls through to the direct call when `opts.resolveMediaUrl` is set** because the resolver is a closure built per-request from `Astro.locals` — structurally-identical configs would still need different resolved URLs, and `JSON.stringify` cannot fingerprint a function. Test-only `_resetBuildBlockChromeCssCache()` / `_buildBlockChromeCssCacheSize()` are exported for unit coverage. |
+
+### `buildBlockChromeCss` memoization (v0.9.7 — F4.2)
+
+`buildBlockChromeCss` runs five sub-helpers (block / hover / per-bp /
+per-bp-hover / customCss) plus the optional img-scoped pair on every
+render of every block in the layout. The output is deterministic per
+`(config, blockId, opts)`, so F4.2 wraps the helper in an LRU `Map`:
+
+- **Capacity** — 500 entries. Eviction on overflow drops the
+  insertion-order head; on a hit, `delete` + `set` reinserts at the
+  tail so insertion order tracks recency.
+- **Fingerprint** —
+  `${JSON.stringify(config)}|${blockId}|${opts?.imgScoped ? "1" : "0"}`.
+  `JSON.stringify(config)` is the dominant cost of the key build
+  but is still cheaper than running all five sub-helpers (each of
+  which runs its own nested `JSON.stringify` on `styleBreakpoints`).
+- **Skip path — `opts.resolveMediaUrl` set.** The resolver is a
+  closure built per-request from `Astro.locals` and is non-fingerprintable
+  by `JSON.stringify`. Memoizing across requests would silently
+  serve a different host's resolved URL. KISS: when a resolver is
+  passed, the wrap calls the direct builder unconditionally. Astro
+  pages typically only call the helper once per block per request
+  anyway.
+- **Behaviour invariants** — output is byte-identical to the
+  unmemoized v0.9.6 helper. The wrap is purely a performance lever;
+  no public-API change.
 
 ## Database Query (db.ts)
 
