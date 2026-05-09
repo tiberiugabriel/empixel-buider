@@ -1,4 +1,5 @@
 import React, { memo } from "react";
+import { resolveMediaUrl } from "../../components/media.js";
 
 const RESOLUTION_DIMS: Record<string, { w: number; h: number }> = {
   thumbnail: { w: 150, h: 150 },
@@ -95,7 +96,7 @@ export const ImagePreview = memo(function ImagePreview({ config }: { config: Rec
     <figure style={{ margin: 0 }}>
       <div className="epx-img-frame" style={frameStyle}>
         <img
-          src={`/_emdash/api/media/file/${image.storageKey}`}
+          src={resolveMediaUrl(image.storageKey) ?? undefined}
           alt={image.alt ?? image.filename ?? ""}
           style={imgInline}
         />

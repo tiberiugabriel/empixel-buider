@@ -10,6 +10,7 @@
  */
 import { hexToRgba, type GradientStop } from "../colorUtils.js";
 import type { MediaRef } from "../MediaPicker.js";
+import { resolveMediaUrl } from "../../../components/media.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -172,7 +173,7 @@ export function buildBackgroundCss(style: Record<string, unknown>): string {
     const src  = style.backgroundImageSrc as string | undefined;
     const imgUrl = src === "url"
       ? (style.backgroundImageUrl as string | undefined)
-      : (() => { const k = style.backgroundImageStorageKey as string | undefined; return k ? `/_emdash/api/media/file/${k}` : undefined; })();
+      : (resolveMediaUrl(style.backgroundImageStorageKey as string | undefined) ?? undefined);
     if (!imgUrl) return "";
     const size       = (style.backgroundImageSize       as string) || "cover";
     const position   = (style.backgroundImagePosition   as string) || "center";

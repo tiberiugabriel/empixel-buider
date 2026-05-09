@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import type { BreakpointId, RichTextValue } from "../../types.js";
+import { resolveMediaUrl } from "../../components/media.js";
 
 interface PreviewProps {
   config: Record<string, unknown>;
@@ -57,7 +58,7 @@ function renderBlock(block: PortableBlock, idx: number): React.ReactNode {
 
   if (block._type === "image") {
     const sk = block.asset?.storageKey ?? block.storageKey;
-    const url = block.url ?? block.asset?.url ?? (sk ? `/_emdash/api/media/file/${sk}` : undefined);
+    const url = block.url ?? block.asset?.url ?? (resolveMediaUrl(sk) ?? undefined);
     if (!url) return null;
     return <img key={key} src={url} alt={block.alt ?? ""} style={{ maxWidth: "100%", height: "auto", display: "block", margin: "8px 0" }} />;
   }

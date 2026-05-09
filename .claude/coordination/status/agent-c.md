@@ -2578,3 +2578,230 @@ gained a row).
   need the `/entries/:id` API noted above).
 
 **No blockers.**
+
+---
+
+## 2026-05-09 — Debt cleanup — admin `resolveMediaUrl` migration — Start
+
+Tracked debt task #9 — replace 14+ hardcoded
+`/_emdash/api/media/file/${key}` URLs in `src/admin/`
+with `resolveMediaUrl(key)` from
+`empixel-builder/components` (helper introduced in
+F2.2; admin was deferred).
+
+Branch `feature/agentC-admin-resolveMediaUrl`,
+worktree at `fe17cac` (1.0.4).
+
+Pre-edit re-grep across `src/admin/` (one match per
+line):
+
+```
+src/admin/controls/MediaPicker.tsx:315
+src/admin/controls/ImagePreviewCard.tsx:51
+src/admin/controls/background/SlideshowSub.tsx:41
+src/admin/controls/background/VideoSub.tsx:91
+src/admin/controls/background/serialize.ts:175
+src/admin/previews/TextEditorPreview.tsx:60
+src/admin/previews/IconPreview.tsx:22
+src/admin/previews/DividerSpacerPreview.tsx:118
+src/admin/previews/ContainerPreview.tsx:31
+src/admin/previews/ContainerPreview.tsx:44
+src/admin/previews/ButtonPreview.tsx:12
+src/admin/previews/VideoPreview.tsx:23
+src/admin/previews/ImagePreview.tsx:98
+```
+
+13 sites total across 12 files. The brief's pre-F4.7
+audit reported 14+; the F4.7 BackgroundControl split
+shifted them into `controls/background/{Slideshow,
+Video,serialize}` — net 13 after the split (the
+extra "BackgroundControl.tsx" sites in the brief
+were duplicates that vanished when the modes moved
+into per-mode sub-files).
+
+`src/components/` only carries the helper's own
+legacy fallback (`media.ts:65`) plus a comment in
+`styleUtils.ts:846` and the F4.10 detection prefix
+(`media.ts:197`). All three are intentional and
+stay put.
+
+**Strategy**: option (a) from the brief — call
+`resolveMediaUrl(key)` with no opts. Same fallback
+path as the hardcoded literal on local hosts;
+centralizes the future admin-side resolver wiring
+to a single helper. Admin runs in browser context
+without `Astro.locals`, so opts is omitted.
+
+**Import path**: relative `../../components/media.js`
+(or `../../../components/media.js` from the
+`controls/background/` directory). Matches the
+existing relative-import convention in admin files
+(e.g. `controls/colorUtils.js`, `previews/...types.js`).
+The package-surface `empixel-builder/components`
+re-export is fine for external consumers but admin
+can't reach it via the package name from inside
+the same package without circular-ish indirection.
+
+**Plan**:
+1. Edit each of the 13 sites: drop the template
+   literal, call `resolveMediaUrl(key)`. Where the
+   surrounding code already conditionally builds
+   the URL (`?` ternaries, IIFEs in `serialize.ts`),
+   simplify since `resolveMediaUrl` already returns
+   `null` for empty keys.
+2. Keep `tests/styleUtils.test.ts` and
+   `tests/media.test.ts` untouched — those assert
+   the helper's own fallback (which is the
+   identical legacy URL by design).
+3. Append CHANGELOG `## 1.0.5` bullet (coordinate
+   with B's STYLE_PROPS export — append, don't
+   overwrite).
+4. Note the convention in `prd-rightpanel.md` and
+   `prd-previews.md`.
+5. Pipeline → commit → done.
+
+**Acceptance**:
+- Post-grep `src/admin/` returns 0 hits.
+- `src/components/` keeps the 3 intentional
+  references (helper fallback + F4.10 prefix +
+  styleUtils comment).
+- Pipeline green.
+
+---
+
+## 2026-05-09 — Debt cleanup — admin `resolveMediaUrl` migration — Done
+
+**Sites migrated (13)**:
+
+| File | Sites |
+|------|-------|
+| `src/admin/controls/MediaPicker.tsx` | 1 |
+| `src/admin/controls/ImagePreviewCard.tsx` | 1 |
+| `src/admin/controls/background/SlideshowSub.tsx` | 1 |
+| `src/admin/controls/background/VideoSub.tsx` | 1 |
+| `src/admin/controls/background/serialize.ts` | 1 |
+| `src/admin/previews/ButtonPreview.tsx` | 1 |
+| `src/admin/previews/ContainerPreview.tsx` | 2 |
+| `src/admin/previews/DividerSpacerPreview.tsx` | 1 |
+| `src/admin/previews/IconPreview.tsx` | 1 |
+| `src/admin/previews/ImagePreview.tsx` | 1 |
+| `src/admin/previews/TextEditorPreview.tsx` | 1 |
+| `src/admin/previews/VideoPreview.tsx` | 1 |
+| **Total** | **13** |
+
+**Import path**: relative
+`../../components/media.js` from
+`src/admin/controls/*` and
+`src/admin/previews/*`;
+`../../../components/media.js` from
+`src/admin/controls/background/*` (one extra hop
+through the F4.7 split). Matches the existing
+relative-import convention in admin (e.g.
+`controls/colorUtils.js`,
+`previews/...types.js`). External consumers
+still use the package surface
+`empixel-builder/components`.
+
+**Replacement shape**: `resolveMediaUrl(key) ?? undefined`
+where the consumer expects `string | undefined`
+(React `<img src=…>`, `<Tag src=…>` props, the
+`backgroundImage` URL builder); raw
+`resolveMediaUrl(key)` where `string | null`
+flows naturally (early-return guards in
+`ContainerPreview.getBgStyle`). One small
+simplification in `controls/background/serialize.ts`:
+the `(() => { const k = …; return k ? … : undefined; })()`
+IIFE collapses to
+`(resolveMediaUrl(...) ?? undefined)` — same
+behavior, half the LOC.
+
+**Pre-grep**: 13 hits in `src/admin/`.
+**Post-grep**: 0 hits in `src/admin/`. The 6 hits
+remaining in `src/components/` are all
+intentional helper internals (`media.ts:11/65/96/197/219`
++ `styleUtils.ts:846` comment).
+
+**Tests**: untouched. `tests/styleUtils.test.ts`
+asserts the helper's own legacy fallback (which
+is the identical URL the literal-versions
+emitted), so the migration is behavior-preserving
+by construction. `tests/media.test.ts` already
+covered both branches (adapter present, adapter
+absent → fallback). Test count unchanged at 414.
+
+**PRDs updated**:
+- `.claude/prd-previews.md`:
+  - Marked the "All 9 previews share this URL
+    drift" debt note as resolved.
+  - Updated the ImagePreview line under "Current
+    Previews (9)" to reflect the new helper
+    call.
+  - Added a "Media URL Resolution (1.0.5)"
+    convention section under "Key Principles".
+- `.claude/prd-rightpanel.md`:
+  - Added a "Convention — media URL resolution
+    (1.0.5)" section right after the existing
+    breakpoint-indicator convention.
+
+**CHANGELOG**: opened `## 1.0.5 — 2026-05-09`
+with the migration bullet. Coordinates noted —
+Agent B's parallel `STYLE_PROPS` export should
+append below this bullet.
+
+**Pipeline output tail**:
+```
+> empixel-builder@1.0.4 lint
+> eslint src/
+
+> empixel-builder@1.0.4 typecheck
+> tsc -p tsconfig.check.json
+
+> empixel-builder@1.0.4 test
+> vitest run
+
+ RUN  v4.1.5 /Users/tiberiugabriel/Websites/emdash/emdash_plugins/empixel-agent-c
+
+ Test Files  22 passed (22)
+      Tests  414 passed (414)
+
+> empixel-builder@1.0.4 build
+> tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/
+```
+
+**Surprising findings**:
+
+- The brief listed 14+ sites including 3 in
+  `src/admin/controls/BackgroundControl.tsx`
+  (lines 189, 431, 832). Those exact line
+  numbers no longer exist — F4.7 split
+  `BackgroundControl.tsx` (now 182 LOC) into
+  `controls/background/{ColorSub, GradientSub,
+  ImageSub, SlideshowSub, VideoSub, common,
+  serialize, TypeTabs}.{tsx,ts}`. Only 3 of the
+  original 3 BackgroundControl hardcodes
+  survived the split (now in `SlideshowSub:41`,
+  `VideoSub:91`, `serialize:175`); the other
+  duplicates were dead code paths that the
+  split eliminated. Final count: 13.
+
+- `tests/styleUtils.test.ts:175` and `:187`
+  intentionally assert the legacy URL shape on
+  the helper's fallback path — they pin the
+  no-regression behavior for hosts without an
+  adapter. Left untouched.
+
+- The shared `_plugin_storage` / Astro-
+  `getPublicMediaUrl` runtime is server-side
+  only today. Admin (browser context) has no
+  access path until EmDash exposes a
+  browser-side resolver (probably as a
+  `globalThis.__EMDASH_MEDIA_URL__` injection
+  or a fetch-based call). Centralizing the
+  call sites means that future wiring is a
+  single edit in `media.ts`, not a 13-file
+  sweep. The helper's signature is already
+  forward-compatible — extending
+  `ResolveMediaUrlOptions` with an admin-side
+  channel is additive.
+
+**No blockers.**

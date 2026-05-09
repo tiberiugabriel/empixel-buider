@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import type { VideoConfig, VideoSourceValue, VideoOverlayValue } from "../../types.js";
+import { resolveMediaUrl } from "../../components/media.js";
 
 interface PreviewProps {
   config: Record<string, unknown>;
@@ -19,9 +20,7 @@ export const VideoPreview = memo(function VideoPreview({ config }: PreviewProps)
   const overlay = ((config as unknown as VideoConfig).overlay ?? {}) as VideoOverlayValue;
   const aspect = (config.aspectRatio as string) || "16:9";
 
-  const overlayUrl = overlay.image?.storageKey
-    ? `/_emdash/api/media/file/${overlay.image.storageKey}`
-    : undefined;
+  const overlayUrl = resolveMediaUrl(overlay.image?.storageKey) ?? undefined;
 
   const hasSource = !!(video.url || video.media);
 

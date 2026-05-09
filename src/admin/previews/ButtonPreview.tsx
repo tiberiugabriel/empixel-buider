@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import type { IconGroupValue } from "../../types.js";
+import { resolveMediaUrl } from "../../components/media.js";
 
 interface PreviewProps {
   config: Record<string, unknown>;
@@ -8,9 +9,7 @@ interface PreviewProps {
 export const ButtonPreview = memo(function ButtonPreview({ config }: PreviewProps) {
   const text = (config.text as string) || "Click me";
   const icon = (config.icon as IconGroupValue) ?? {};
-  const iconSrc = icon.iconSrc?.storageKey
-    ? `/_emdash/api/media/file/${icon.iconSrc.storageKey}`
-    : undefined;
+  const iconSrc = resolveMediaUrl(icon.iconSrc?.storageKey) ?? undefined;
   const pos = icon.iconPosition ?? "left";
   const style = (config.style ?? {}) as Record<string, string>;
 

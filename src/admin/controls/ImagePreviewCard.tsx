@@ -1,5 +1,6 @@
 import React from "react";
 import type { MediaRef } from "./MediaPicker.js";
+import { resolveMediaUrl } from "../../components/media.js";
 
 function IconClose() {
   return (
@@ -48,7 +49,7 @@ export function ImagePreviewCard({ image, onSelect, onRemove, emptyLabel = "Sele
   }
 
   const filename = image.filename ?? "Image selected";
-  const src = image.storageKey ? `/_emdash/api/media/file/${image.storageKey}` : undefined;
+  const src = resolveMediaUrl(image.storageKey) ?? undefined;
 
   return (
     <div className={cardClass}>

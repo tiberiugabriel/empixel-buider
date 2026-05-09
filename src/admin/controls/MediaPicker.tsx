@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch, parseApiResponse } from "emdash/plugin-utils";
+import { resolveMediaUrl } from "../../components/media.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -312,7 +313,7 @@ export function MediaPicker({
                         </div>
                       ) : (
                         <img
-                          src={`/_emdash/api/media/file/${item.storageKey}`}
+                          src={resolveMediaUrl(item.storageKey) ?? undefined}
                           alt={item.alt ?? item.filename}
                           loading="lazy"
                         />

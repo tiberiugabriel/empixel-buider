@@ -28,6 +28,26 @@ of truth — future style-key additions only need to land in
 No runtime behaviour change. No public API break vs. 1.0.4 (the
 addition is purely additive — a new named export). PRDs updated.
 
+**Debt cleanup — admin `resolveMediaUrl` migration.** All 13 hardcoded
+`/_emdash/api/media/file/${key}` URLs across `src/admin/controls/` +
+`src/admin/previews/` (split by F4.7 from a pre-split count of 14+)
+replaced with `resolveMediaUrl(key)` from `src/components/media.ts`
+(the helper introduced in F2.2 that already migrated all 10 frontend
+`*.astro` components). Same behavior on local hosts — the helper's
+own legacy fallback emits the identical
+`/_emdash/api/media/file/<key>` URL on encode-and-return; the only
+difference is the legacy string is now centralized in one place. A
+future EmDash admin-side resolver (browser-context analog of
+`Astro.locals.emdash.getPublicMediaUrl`) gets routed through the
+same call sites without touching N files again. Files updated:
+`controls/{ImagePreviewCard, MediaPicker}.tsx`,
+`controls/background/{SlideshowSub, VideoSub, serialize}.{tsx,ts}`,
+`previews/{Button, Container, DividerSpacer, Icon, Image, TextEditor,
+Video}Preview.tsx`. Tests untouched —
+`tests/{styleUtils,media}.test.ts` assert the helper's own fallback
+URL (which is the identical string the literal-versions emitted), so
+the migration is behavior-preserving by construction.
+
 ## 1.0.4 — 2026-05-09
 
 **Cleanup — drop legacy `empixel_builder_layouts` provisioning from

@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import type { SectionBlock } from "../../types.js";
 import { hexToRgbVals, hexToRgba, type GradientStop } from "../controls/colorUtils.js";
+import { resolveMediaUrl } from "../../components/media.js";
 
 function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
   const type = style.backgroundType as string | undefined;
@@ -25,10 +26,10 @@ function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
   }
 
   if (type === "image") {
-    const key = style.backgroundImageStorageKey as string | undefined;
-    if (!key) return {};
+    const url = resolveMediaUrl(style.backgroundImageStorageKey as string | undefined);
+    if (!url) return {};
     return {
-      backgroundImage: `url(/_emdash/api/media/file/${key})`,
+      backgroundImage: `url(${url})`,
       backgroundSize: "cover",
       backgroundPosition: "center",
     };
@@ -39,9 +40,10 @@ function getBgStyle(style: Record<string, unknown>): React.CSSProperties {
     let slides: Array<{ storageKey?: string }> = [];
     try { slides = JSON.parse((style.backgroundSlides as string) ?? "[]"); } catch { /**/ }
     const first = slides[0];
-    if (first?.storageKey) {
+    const url = resolveMediaUrl(first?.storageKey);
+    if (url) {
       return {
-        backgroundImage: `url(/_emdash/api/media/file/${first.storageKey})`,
+        backgroundImage: `url(${url})`,
         backgroundSize: "cover",
         backgroundPosition: "center",
       };

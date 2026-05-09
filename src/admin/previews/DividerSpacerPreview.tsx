@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import type { DividerConfig, DividerSpacerConfig, IconGroupValue, DividerGradient } from "../../types.js";
+import { resolveMediaUrl } from "../../components/media.js";
 
 interface PreviewProps {
   config: Record<string, unknown>;
@@ -114,9 +115,7 @@ export const DividerSpacerPreview = memo(function DividerSpacerPreview({ config 
 
   const lineStyle = buildLineStyle(divider, isVertical);
 
-  const iconUrl = icon.iconSrc?.storageKey
-    ? `/_emdash/api/media/file/${icon.iconSrc.storageKey}`
-    : undefined;
+  const iconUrl = resolveMediaUrl(icon.iconSrc?.storageKey) ?? undefined;
   const iconSize = icon.iconSize || "20px";
   const iconColor = icon.iconColor;
   const iconColorAlpha = icon.iconColorAlpha ?? 1;

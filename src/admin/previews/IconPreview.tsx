@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import type { IconGroupValue } from "../../types.js";
+import { resolveMediaUrl } from "../../components/media.js";
 
 interface PreviewProps {
   config: Record<string, unknown>;
@@ -18,9 +19,7 @@ function isSvgFile(filename: string | undefined): boolean {
 
 export const IconPreview = memo(function IconPreview({ config }: PreviewProps) {
   const icon = (config.icon as IconGroupValue) ?? {};
-  const iconSrc = icon.iconSrc?.storageKey
-    ? `/_emdash/api/media/file/${icon.iconSrc.storageKey}`
-    : undefined;
+  const iconSrc = resolveMediaUrl(icon.iconSrc?.storageKey) ?? undefined;
   const style = (config.style ?? {}) as Record<string, unknown>;
 
   // Match Icon.astro precedence: style.iconBlockSize takes the role of the

@@ -10,6 +10,7 @@ import {
   IMG_SIZE_OPTIONS,
 } from "./common.js";
 import type { BackgroundConfig } from "./serialize.js";
+import { resolveMediaUrl } from "../../../components/media.js";
 
 /**
  * Video mode body — Media / URL toggle, video media row or url
@@ -88,7 +89,7 @@ export function VideoSub({ value, onChange, openMainPicker, openFallbackPicker }
           {value.videoFallback?.storageKey ? (
             <img
               className="epx-bg-ctrl__thumb"
-              src={`/_emdash/api/media/file/${value.videoFallback.storageKey}`}
+              src={resolveMediaUrl(value.videoFallback.storageKey) ?? undefined}
               alt={value.videoFallback.filename ?? ""}
             />
           ) : (

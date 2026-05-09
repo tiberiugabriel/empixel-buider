@@ -46,6 +46,9 @@ Brief — full reference (with `controls/` file mapping and props) lives in [`pr
 ## Convention — breakpoint indicator
 Any bp-aware control MUST show the `breakpointIndicator` next to its label on every breakpoint, including `desktop`. Pass `breakpointIndicator={breakpointIndicator}` unconditionally — do NOT gate on `isNonDesktop`. The icon doubles as a "this control is bp-aware" affordance and indicates which breakpoint is currently being edited. Controls that are NOT bp-aware (e.g. `htmlTag`, link fields, plain config-level metadata) must omit the indicator.
 
+## Convention — media URL resolution (1.0.5)
+Controls that resolve a `storageKey` to a fetchable URL (thumbnails in `MediaPicker`, `ImagePreviewCard`, `controls/background/{Slideshow,Video,serialize}`, etc.) **must** call `resolveMediaUrl(key)` from `src/components/media.ts` rather than building the `/_emdash/api/media/file/${key}` literal by hand. Import from the relative path `../../components/media.js` (or `../../../components/media.js` from `controls/background/`). Admin runs in browser context, so call without the `opts.locals` argument — the helper falls back to the legacy local-runtime URL on local hosts and a future EmDash admin-side resolver gets routed through the same call site without touching N files again. The helper returns `string | null`; coerce `null` → `undefined` for React props that expect `undefined` (`<img src={resolveMediaUrl(key) ?? undefined}>`). For background `serialize.ts`, the helper slots into the existing `imgUrl` ternary as `(resolveMediaUrl(key) ?? undefined)` — drop-in.
+
 ## F3.5 — Block Settings Standardization (in progress, 0.9.5 prep)
 
 The 1671-LOC `RightPanel.tsx` today branches imperatively on `block.type` for the Style tab — 9 hardcoded forks across container/text/image/text-editor/video/button/icon/html/divider-spacer. F3.5 replaces this with a declarative `StyleSection[]` list per `BlockDef`.

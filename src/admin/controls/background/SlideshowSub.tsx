@@ -16,6 +16,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { MediaRef } from "../MediaPicker.js";
 import { IconClose, IconDragDots, IconMedia } from "./common.js";
 import type { BackgroundConfig } from "./serialize.js";
+import { resolveMediaUrl } from "../../../components/media.js";
 
 /**
  * Slideshow mode body — "+ Add Images" trigger + sortable list of
@@ -38,7 +39,7 @@ function SortableSlide({ slide, onRemove }: { slide: MediaRef; onRemove: () => v
         <IconDragDots />
       </span>
       {slide.storageKey ? (
-        <img className="epx-bg-ctrl__thumb" src={`/_emdash/api/media/file/${slide.storageKey}`} alt={slide.alt ?? slide.filename ?? ""} />
+        <img className="epx-bg-ctrl__thumb" src={resolveMediaUrl(slide.storageKey) ?? undefined} alt={slide.alt ?? slide.filename ?? ""} />
       ) : (
         <div className="epx-bg-ctrl__thumb-placeholder"><IconMedia /></div>
       )}
