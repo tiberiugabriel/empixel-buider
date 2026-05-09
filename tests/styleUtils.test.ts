@@ -63,10 +63,14 @@ describe("buildBlockCss", () => {
 });
 
 describe("buildHoverCss", () => {
-  it("emits a :hover rule with !important", () => {
+  // F4.5 — `!important` was dropped on hover declarations. Selector
+  // specificity (`darkBlockSelector + :hover` > `darkBlockSelector` >
+  // `:hover` > base) now drives the cascade. See `prd-theme.md`.
+  it("emits a :hover rule without !important (F4.5)", () => {
     const css = buildHoverCss({ styleHover: { borderTopWidth: "2px" } }, "B1");
     expect(css).toContain('[data-epx-block="B1"]:hover{');
-    expect(css).toContain("border-top-width:2px !important");
+    expect(css).toContain("border-top-width:2px");
+    expect(css).not.toContain("!important");
   });
 
   it("returns empty string when nothing to emit", () => {
@@ -143,7 +147,10 @@ describe("buildBlockChromeCss", () => {
       "B1",
     );
     expect(css).toContain("padding-top:8px");
-    expect(css).toContain("border-top-width:2px !important");
+    // F4.5 — hover declarations no longer carry `!important`. Specificity
+    // ladder (dark+hover > dark > hover > base) handles the cascade.
+    expect(css).toContain("border-top-width:2px");
+    expect(css).not.toContain("!important");
     expect(css).toContain("@media(max-width:575px)");
     expect(css).toContain("color: red");
   });

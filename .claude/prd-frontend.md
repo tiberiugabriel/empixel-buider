@@ -225,11 +225,13 @@ All exports return CSS **strings** (selector-based rules), not inline declaratio
 | `buildBlockCss(config, blockId, opts?)` | Same as above wrapped in `[data-epx-block="<id>"]{…}` |
 | `wrapBlockCss(styleStr, blockId)` | Selector wrapper helper |
 | `buildBackgroundCss(style)` | Color / gradient / image / slideshow background CSS (video handled separately) |
-| `buildHoverCss(config, blockId, opts?)` | `:hover` selector with `!important` declarations from `styleHover` |
+| `buildHoverCss(config, blockId, opts?)` | `:hover` selector — declarations from `styleHover`. **F4.5 dropped `!important`** — selector specificity (dark+hover > dark > hover > base) drives the cascade. |
+| `buildHoverDarkCss(config, blockId, opts?)` (F4.5) | `darkBlockHoverSelector` rule — declarations from `styleHoverDark`. Strictly outranks dark/normal AND light/hover by specificity. Emits nothing when `styleHoverDark` is empty (cascade falls back to `styleHover` on dark — byte-identical to pre-F4.5). |
 | `buildBreakpointCss(config, blockId, layoutSelector?)` | Media-query rules from `styleBreakpoints` (visual props on root, layout/gap props on `layoutSelector`) |
-| `buildBreakpointHoverCss(config, blockId)` | `@media + :hover` rules from `styleHoverBreakpoints` |
+| `buildBreakpointHoverCss(config, blockId)` | `@media + :hover` rules from `styleHoverBreakpoints`. F4.5 dropped `!important` here too. |
+| `buildBreakpointHoverDarkCss(config, blockId)` (F4.5) | `@media + darkBlockHoverSelector` rules from `styleBreakpointsHoverDark`. Per-bp counterpart to `buildHoverDarkCss`. |
 | `buildImgVisualCss(config, blockId)` | `[data-epx-block="<id>"] img{…}` — border/radius/shadow scoped to inner `<img>` |
-| `buildImgVisualHoverCss(config, blockId)` | Same as above for `:hover img` |
+| `buildImgVisualHoverCss(config, blockId)` | Same as above for `:hover img`. F4.5 dropped `!important` — the `:hover img` compound selector outranks the bare `img` selector by one pseudo-class. |
 | `getEffectiveStyle(config)` | Returns `config.style` (light variant). Dark emits as a separate scoped rule via `buildDarkBlockStyle`. |
 | `getVideoBackground(config)` | Resolves video URL from storage key or external URL |
 | `getVideoInfo(config)` | Detects YouTube / Vimeo / HTML5 from URL pattern |
@@ -669,7 +671,8 @@ the option.
 The `theme` field in a block's config is **purely an authoring marker** —
 it tracks which variant the author was last editing in the canvas via
 ThemeStyleToggle. Frontend rendering does NOT consult `config.theme`;
-it always emits BOTH variants:
+it always emits BOTH variants (and, post-F4.5, all four state×theme
+combinations — see [`prd-theme.md`](prd-theme.md) for the full matrix).
 
 - light: `[data-epx-block="<id>"]{...config.style...}`
 - dark (only if `config.styleDark` has any entry): one rule under the
@@ -684,9 +687,37 @@ The compound selector also matches when `data-theme="dark"` is on the
 block element itself — used by Canvas (admin) so the ThemeStyleToggle
 preview can show one block in dark while the rest stay light.
 
-Hover and per-breakpoint variants are theme-independent (one set of
-hover / breakpoint declarations applies to both modes; further per-theme
-overrides are not supported at this time).
+### Hover / per-breakpoint variants — F4.5 update
+
+Pre-F4.5 the renderer emitted only one hover variant
+(`styleHover`) and one per-bp hover variant
+(`styleHoverBreakpoints`), with `!important` on every hover
+declaration to beat the same-specificity dark/normal rule. F4.5
+closes the matrix:
+
+- `styleHoverDark` — hover declarations applied only when the host
+  is in dark theme. Selector: `darkBlockSelector + :hover`. Strictly
+  outranks dark/normal AND light/hover by specificity.
+- `styleBreakpointsHoverDark[bpId]` — per-bp version. Wrapped in the
+  matching `@media (max-width:N)` block.
+
+With the new dark-hover slot, the `!important` escape hatch is no
+longer needed. Removed from `buildHoverCss`, `buildBreakpointHoverCss`,
+and `buildImgVisualHoverCss`. Layouts without `styleHoverDark` still
+render the light/hover rule on dark via cascade fallback —
+byte-identical to pre-F4.5 (modulo the `!important` drop).
+
+Full cascade order (lowest → highest specificity):
+
+1. `[data-epx-block="<id>"]` — light/normal
+2. `darkBlockSelector(<id>)` — dark/normal
+3. `[data-epx-block="<id>"]:hover` — light/hover
+4. `darkBlockHoverSelector(<id>)` — dark/hover (F4.5)
+
+Per-bp variants repeat the same 4-rung ladder inside each
+`@media (max-width:N)` block. See [`prd-theme.md`](prd-theme.md) for
+the full table, tie-break audit, customCss interaction, and migration
+notes.
 
 ### Universal dark selector (F1.2)
 

@@ -90,11 +90,21 @@ Why this matters:
   style: { ...EMPTY_STYLE_DEFAULTS },        // every key in STYLE_PROPS, "" by default
   styleHover: {},                            // populated when user toggles a hover state
   styleDark: {},                             // ditto for dark variant
+  styleHoverDark: {},                        // F4.5 — hover-on-dark-mode override (optional; cascade falls back to styleHover when empty)
   styleBreakpoints: {},                      // { [bpId]: { _px, ...keys } }
   styleHoverBreakpoints: {},                 // { [bpId]: { _px, ...keys } }
+  styleBreakpointsHoverDark: {},             // F4.5 — per-bp hover-on-dark-mode override (optional)
   advanced: { ...EMPTY_ADVANCED_DEFAULTS },  // cssId / cssClasses / customCss / position / top / right / bottom / left / zIndex, all ""
 }
 ```
+
+**F4.5 — theme × state matrix completion.** `styleHoverDark` and
+`styleBreakpointsHoverDark` close the dark-hover gap. Authors can now
+declare a different hover treatment on dark theme; selector specificity
+(`darkBlockSelector + :hover` > `darkBlockSelector` > `:hover` > base)
+makes the cascade work without `!important`. See
+[`prd-theme.md`](prd-theme.md) for the full cascade table, tie-break
+audit, and authoring workflows.
 
 `EMPTY_STYLE_DEFAULTS` and `EMPTY_ADVANCED_DEFAULTS` are exported from `src/admin/blockDefinitions.ts`. `EMPTY_STYLE_DEFAULTS` mirrors the canonical `STYLE_PROPS` array in `src/components/styleUtils.ts` (Agent B's column — local `const`, not exported, so we replicate the key set as a contract). The 36 keys cover padding/margin/sizing/border-radius/border-width/overflow/typography/blend-mode/aspect-ratio/filter — every CSS property the plugin's render pipeline knows about.
 
@@ -153,7 +163,7 @@ can read the diff inline without bouncing to a separate file.
 
 F3.6.2 builds the **load-time fill helper** on top of the F3.6.1 schema. Two new exports from `src/admin/blockDefinitions.ts`:
 
-- **`BASE_DEFAULTS`** — shared shape inherited by every block. Contains `theme: "light"` plus the F3.6.1 empty structural placeholders (`style: { ...EMPTY_STYLE_DEFAULTS }`, `styleHover: {}`, `styleDark: {}`, `styleBreakpoints: {}`, `styleHoverBreakpoints: {}`, `advanced: { ...EMPTY_ADVANCED_DEFAULTS }`). Centralises the contract so legacy layouts saved before the F3.6.1 BlockDef edits still backfill correctly.
+- **`BASE_DEFAULTS`** — shared shape inherited by every block. Contains `theme: "light"` plus the F3.6.1 empty structural placeholders (`style: { ...EMPTY_STYLE_DEFAULTS }`, `styleHover: {}`, `styleDark: {}`, `styleBreakpoints: {}`, `styleHoverBreakpoints: {}`, `advanced: { ...EMPTY_ADVANCED_DEFAULTS }`) **plus the F4.5 hover-on-dark slots (`styleHoverDark: {}`, `styleBreakpointsHoverDark: {}`)**. Centralises the contract so legacy layouts saved before the F3.6.1 / F4.5 BlockDef edits still backfill correctly.
 - **`getDefaultBlockConfig(type: BlockType)`** — pure function returning a deep-cloned full-shape config. Internally:
 
   ```ts
@@ -491,12 +501,14 @@ Leaf blocks must be dropped inside a container.
 
 Each block's config may contain any combination of:
 - Block-specific keys (e.g. `items`, `tiers`, `layout`)
-- `theme` — "light" | "dark"
+- `theme` — "light" | "dark" (authoring marker — drives RightPanel routing, not rendering)
 - `style` — CSS properties for normal/light state
 - `styleDark` — CSS properties for dark theme
 - `styleHover` — CSS properties for hover state
+- `styleHoverDark` — F4.5 — CSS properties for hover on dark theme. Optional; cascade falls back to `styleHover` when empty. Selector: `darkBlockHoverSelector(<id>)`
 - `styleBreakpoints` — `{ [bpId]: { _px, ...cssProps } }` breakpoint overrides
 - `styleHoverBreakpoints` — `{ [bpId]: { _px, ...cssProps } }` hover breakpoint overrides
+- `styleBreakpointsHoverDark` — F4.5 — `{ [bpId]: { _px, ...cssProps } }` per-bp hover-on-dark overrides. Optional; cascade falls back to `styleHoverBreakpoints` when empty.
 - `advanced` — `{ position, top, right, bottom, left, zIndex, cssId, cssClasses, customCss }`
 - `htmlTag` — semantic HTML element for container
 - `linkHref`, `linkTarget` — for `<a>` containers

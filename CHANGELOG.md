@@ -5,6 +5,47 @@ SemVer.
 
 ## Unreleased — 1.0.0 prep
 
+- **F4.5 — theme × state × breakpoint matrix complete.** New
+  `styleHoverDark` (CSSProps) + `styleBreakpointsHoverDark`
+  (`{ [bpId]: { _px, ...CSSProps } }`) keys on every `BlockDef`
+  `defaultConfig`. `buildBlockChromeCss` now emits the full 4-variant
+  base (light/normal → dark/normal → light/hover → dark/hover) ×
+  4-variant-per-bp matrix in correct selector-specificity order. New
+  helpers `buildHoverDarkCss(config, blockId, opts?)` +
+  `buildBreakpointHoverDarkCss(config, blockId)` in
+  `src/components/styleUtils.ts` plus `darkBlockHoverSelector(blockId)`
+  internal selector builder. The dark-hover selector
+  (`darkBlockSelector + :hover`) strictly outranks dark-normal AND
+  light-hover by specificity, so `!important` is no longer needed —
+  dropped from `buildHoverCss`, `buildBreakpointHoverCss`, and
+  `buildImgVisualHoverCss`. Existing layouts unchanged in render: no
+  `styleHoverDark` set falls through to `styleHover` on dark via the
+  cascade, byte-identical to pre-F4.5 modulo the `!important` drop
+  (which only mattered for ties the new dark-hover slot now resolves
+  explicitly). New `.claude/prd-theme.md` documents the model: 4 base
+  + 4 per-bp variants, cascade-order table, selector-specificity
+  rationale, customCss interaction, migration semantics, editor
+  surface routing, and authoring workflows. F3.6.7 parity snapshots
+  regenerated cleanly (5 inline snapshots updated — pure
+  `!important` drop on hover declarations); new fixture (`M1`) locks
+  the full 4-base + 4-per-bp matrix output, fallback fixture (`M2`)
+  asserts byte-identical-modulo-!important rendering of layouts
+  without `styleHoverDark`. customCss has no per-theme slot — authors
+  who want dark-specific hover via customCss hand-write the
+  `[data-theme="dark"] selector:hover` clause; documented in
+  `prd-theme.md`. Cross-domain edit to `src/components/styleUtils.ts`
+  is the documented F4.5 exception per task allocation. Tests:
+  363 → 380 (+17: 14 new in `tests/parity/all.test.ts` for the 4×4
+  matrix + fallback case; 3 in `tests/blockDefinitions.test.ts` for
+  the new BASE_DEFAULTS keys + per-block presence). Files:
+  `src/admin/blockDefinitions.ts`, `src/components/styleUtils.ts`,
+  `tests/parity/all.test.ts`, `tests/styleUtils.test.ts`,
+  `tests/canvasCss.test.ts`, `tests/blockDefinitions.test.ts`,
+  `CHANGELOG.md`, `.claude/prd-theme.md` (new), `.claude/prd-blocks.md`,
+  `.claude/prd-frontend.md`, `.claude/prd-rightpanel.md`,
+  `.claude/prd-breakpoints.md`,
+  `.claude/coordination/status/agent-c.md`.
+
 - **F4.10 — image pipeline polish (`srcset` + WebP/AVIF).**
   `Image.astro` now emits responsive `<picture>` markup with
   `<source type="image/avif">` + `<source type="image/webp">` elements

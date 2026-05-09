@@ -56,12 +56,17 @@ describe("buildCanvasBlockCss — frontend parity", () => {
 
     // Block + hover (from buildBlockCss + buildHoverCss).
     expect(css).toContain("padding-top:8px");
-    expect(css).toContain("border-top-width:2px !important");
+    // F4.5 — `!important` dropped from hover declarations. Selector
+    // specificity (`darkBlockSelector + :hover` > `darkBlockSelector`)
+    // makes the cascade work without the escape hatch.
+    expect(css).toContain("border-top-width:2px");
+    expect(css).not.toContain("!important");
     // Breakpoint @media (from buildBreakpointCss).
     expect(css).toContain("@media(max-width:575px)");
     expect(css).toContain("font-size:14px");
-    // Breakpoint hover @media (from buildBreakpointHoverCss).
-    expect(css).toContain("border-top-width:4px !important");
+    // Breakpoint hover @media (from buildBreakpointHoverCss) — also
+    // emitted without `!important` post-F4.5.
+    expect(css).toContain("border-top-width:4px");
     // Custom CSS (from getCustomCss).
     expect(css).toContain("color: red");
   });
@@ -137,7 +142,9 @@ describe("buildCanvasBlockCss — active-breakpoint preview overlay", () => {
 
     // Overlay :hover rule with no @media gate.
     expect(overlay).toContain('[data-epx-block="B1"]:hover{');
-    expect(overlay).toContain("border-top-width:4px !important");
+    // F4.5 — overlay also emits hover declarations without `!important`.
+    expect(overlay).toContain("border-top-width:4px");
+    expect(overlay).not.toContain("!important");
     expect(overlay).not.toContain("@media");
   });
 

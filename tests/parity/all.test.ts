@@ -212,7 +212,7 @@ describe("parity snapshots — container (exhaustive every-key fixture)", () => 
       "C1",
     );
 
-    expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="C1"]{background:rgba(250,250,250,0.9);border-style:solid;border-color:rgba(51,51,51,1);color:#111111;padding-top:16px;padding-right:20px;padding-bottom:16px;padding-left:20px;margin-top:8px;margin-right:0px;margin-bottom:8px;margin-left:0px;width:100%;min-width:240px;max-width:1200px;height:auto;min-height:120px;max-height:800px;border-top-left-radius:8px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:8px;border-top-width:2px;border-right-width:2px;border-bottom-width:2px;border-left-width:2px;overflow-x:hidden;overflow-y:auto;text-align:left;font-family:Inter, sans-serif;font-size:16px;font-weight:500;text-transform:none;font-style:normal;text-decoration:none;line-height:1.5;letter-spacing:0.01em;word-spacing:0.05em;mix-blend-mode:normal;aspect-ratio:16/9;filter:saturate(1.05);box-shadow:0px 4px 12px 0px rgba(0,0,0,0.15);-webkit-text-stroke-width:1px;-webkit-text-stroke-color:#000000;text-shadow:0px 1px 2px rgba(0,0,0,0.5);position:relative;top:0px;right:0px;bottom:auto;left:0px;z-index:10;opacity:1}:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="C1"],[data-epx-block="C1"][data-theme="dark"]{background:rgba(26,26,26,1);border-style:solid;border-color:rgba(68,68,68,1);color:#eeeeee}[data-epx-block="C1"]:hover{background:rgba(240,240,240,1) !important;border-style:solid !important;border-color:rgba(0,0,0,1) !important;box-shadow:0px 8px 20px 0px rgba(0,0,0,0.25) !important;border-top-left-radius:12px !important;border-top-right-radius:12px !important;border-bottom-right-radius:12px !important;border-bottom-left-radius:12px !important;border-top-width:3px !important;border-right-width:3px !important;border-bottom-width:3px !important;border-left-width:3px !important;opacity:0.95 !important}@media(max-width:992px){[data-epx-block="C1"]{font-size:15px;column-gap:8px;row-gap:8px;flex-direction:row;flex-wrap:wrap;justify-content:flex-start;align-items:stretch}}@media(max-width:575px){[data-epx-block="C1"]{border-style:solid;border-color:rgba(204,204,204,1);color:#222222;border-top-left-radius:4px;border-top-right-radius:4px;border-bottom-right-radius:4px;border-bottom-left-radius:4px;font-size:14px;box-shadow:0px 2px 6px 0px rgba(0,0,0,0.1);-webkit-text-stroke-width:0.5px;-webkit-text-stroke-color:#000000;text-shadow:0px 1px 2px rgba(0,0,0,0.4);column-gap:4px;row-gap:4px;flex-direction:column;flex-wrap:nowrap;justify-content:flex-start;align-items:stretch}}@media(max-width:575px){[data-epx-block="C1"]:hover{border-style:solid !important;border-color:rgba(0,0,0,1) !important;border-top-left-radius:6px !important;border-top-right-radius:6px !important;border-bottom-right-radius:6px !important;border-bottom-left-radius:6px !important;border-top-width:4px !important;border-right-width:4px !important;border-bottom-width:4px !important;border-left-width:4px !important;box-shadow:0px 4px 10px 0px rgba(0,0,0,0.2) !important}}[data-epx-block="C1"]{transition:all 200ms ease}[data-epx-block="C1"]:hover{transform:translateY(-2px)}"`);
+    expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="C1"]{background:rgba(250,250,250,0.9);border-style:solid;border-color:rgba(51,51,51,1);color:#111111;padding-top:16px;padding-right:20px;padding-bottom:16px;padding-left:20px;margin-top:8px;margin-right:0px;margin-bottom:8px;margin-left:0px;width:100%;min-width:240px;max-width:1200px;height:auto;min-height:120px;max-height:800px;border-top-left-radius:8px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:8px;border-top-width:2px;border-right-width:2px;border-bottom-width:2px;border-left-width:2px;overflow-x:hidden;overflow-y:auto;text-align:left;font-family:Inter, sans-serif;font-size:16px;font-weight:500;text-transform:none;font-style:normal;text-decoration:none;line-height:1.5;letter-spacing:0.01em;word-spacing:0.05em;mix-blend-mode:normal;aspect-ratio:16/9;filter:saturate(1.05);box-shadow:0px 4px 12px 0px rgba(0,0,0,0.15);-webkit-text-stroke-width:1px;-webkit-text-stroke-color:#000000;text-shadow:0px 1px 2px rgba(0,0,0,0.5);position:relative;top:0px;right:0px;bottom:auto;left:0px;z-index:10;opacity:1}:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="C1"],[data-epx-block="C1"][data-theme="dark"]{background:rgba(26,26,26,1);border-style:solid;border-color:rgba(68,68,68,1);color:#eeeeee}[data-epx-block="C1"]:hover{background:rgba(240,240,240,1);border-style:solid;border-color:rgba(0,0,0,1);box-shadow:0px 8px 20px 0px rgba(0,0,0,0.25);border-top-left-radius:12px;border-top-right-radius:12px;border-bottom-right-radius:12px;border-bottom-left-radius:12px;border-top-width:3px;border-right-width:3px;border-bottom-width:3px;border-left-width:3px;opacity:0.95}@media(max-width:992px){[data-epx-block="C1"]{font-size:15px;column-gap:8px;row-gap:8px;flex-direction:row;flex-wrap:wrap;justify-content:flex-start;align-items:stretch}}@media(max-width:575px){[data-epx-block="C1"]{border-style:solid;border-color:rgba(204,204,204,1);color:#222222;border-top-left-radius:4px;border-top-right-radius:4px;border-bottom-right-radius:4px;border-bottom-left-radius:4px;font-size:14px;box-shadow:0px 2px 6px 0px rgba(0,0,0,0.1);-webkit-text-stroke-width:0.5px;-webkit-text-stroke-color:#000000;text-shadow:0px 1px 2px rgba(0,0,0,0.4);column-gap:4px;row-gap:4px;flex-direction:column;flex-wrap:nowrap;justify-content:flex-start;align-items:stretch}}@media(max-width:575px){[data-epx-block="C1"]:hover{border-style:solid;border-color:rgba(0,0,0,1);border-top-left-radius:6px;border-top-right-radius:6px;border-bottom-right-radius:6px;border-bottom-left-radius:6px;border-top-width:4px;border-right-width:4px;border-bottom-width:4px;border-left-width:4px;box-shadow:0px 4px 10px 0px rgba(0,0,0,0.2)}}[data-epx-block="C1"]{transition:all 200ms ease}[data-epx-block="C1"]:hover{transform:translateY(-2px)}"`);
   });
 });
 
@@ -331,7 +331,7 @@ describe("parity snapshots — image", () => {
     // imgScoped: true mirrors Image.astro's call.
     expect(
       buildBlockChromeCss(block.config, block.id, { imgScoped: true }),
-    ).toMatchInlineSnapshot(`"[data-epx-block="IMG1"]{text-align:center;aspect-ratio:16/9;opacity:0.95}[data-epx-block="IMG1"]:hover{opacity:1 !important}@media(max-width:575px){[data-epx-block="IMG1"]{border-top-left-radius:4px;border-top-right-radius:4px;border-bottom-right-radius:4px;border-bottom-left-radius:4px}}[data-epx-block="IMG1"] img{border-style:solid;border-color:rgba(51,51,51,1);border-top-left-radius:8px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:8px;border-top-width:2px;border-right-width:2px;border-bottom-width:2px;border-left-width:2px}[data-epx-block="IMG1"]:hover img{border-top-width:3px !important;border-right-width:3px !important;border-bottom-width:3px !important;border-left-width:3px !important}"`);
+    ).toMatchInlineSnapshot(`"[data-epx-block="IMG1"]{text-align:center;aspect-ratio:16/9;opacity:0.95}[data-epx-block="IMG1"]:hover{opacity:1}@media(max-width:575px){[data-epx-block="IMG1"]{border-top-left-radius:4px;border-top-right-radius:4px;border-bottom-right-radius:4px;border-bottom-left-radius:4px}}[data-epx-block="IMG1"] img{border-style:solid;border-color:rgba(51,51,51,1);border-top-left-radius:8px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:8px;border-top-width:2px;border-right-width:2px;border-bottom-width:2px;border-left-width:2px}[data-epx-block="IMG1"]:hover img{border-top-width:3px;border-right-width:3px;border-bottom-width:3px;border-left-width:3px}"`);
   });
 });
 
@@ -389,7 +389,7 @@ describe("parity snapshots — video", () => {
       "V1",
     );
 
-    expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="V1"]{width:100%;max-width:960px;border-top-left-radius:8px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:8px;aspect-ratio:16/9;filter:brightness(1.05) saturate(1.1)}[data-epx-block="V1"]:hover{border-top-width:1px !important;border-right-width:1px !important;border-bottom-width:1px !important;border-left-width:1px !important}@media(max-width:575px){[data-epx-block="V1"]{aspect-ratio:4/3}}"`);
+    expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="V1"]{width:100%;max-width:960px;border-top-left-radius:8px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:8px;aspect-ratio:16/9;filter:brightness(1.05) saturate(1.1)}[data-epx-block="V1"]:hover{border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px}@media(max-width:575px){[data-epx-block="V1"]{aspect-ratio:4/3}}"`);
   });
 });
 
@@ -437,7 +437,7 @@ describe("parity snapshots — button", () => {
       "BTN1",
     );
 
-    expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="BTN1"]{background:rgba(51,102,255,1);border-style:solid;border-color:rgba(51,102,255,1);color:#ffffff;padding-top:10px;padding-right:20px;padding-bottom:10px;padding-left:20px;border-top-left-radius:6px;border-top-right-radius:6px;border-bottom-right-radius:6px;border-bottom-left-radius:6px;border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px;text-align:center;font-family:Inter, sans-serif;font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;box-shadow:0px 2px 4px 0px rgba(0,0,0,0.1);overflow:hidden}:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="BTN1"],[data-epx-block="BTN1"][data-theme="dark"]{background:rgba(85,136,255,1)}[data-epx-block="BTN1"]:hover{background:rgba(40,86,230,1) !important;box-shadow:0px 4px 8px 0px rgba(0,0,0,0.15) !important}@media(max-width:575px){[data-epx-block="BTN1"]{font-size:14px}}"`);
+    expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="BTN1"]{background:rgba(51,102,255,1);border-style:solid;border-color:rgba(51,102,255,1);color:#ffffff;padding-top:10px;padding-right:20px;padding-bottom:10px;padding-left:20px;border-top-left-radius:6px;border-top-right-radius:6px;border-bottom-right-radius:6px;border-bottom-left-radius:6px;border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px;text-align:center;font-family:Inter, sans-serif;font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;box-shadow:0px 2px 4px 0px rgba(0,0,0,0.1);overflow:hidden}:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="BTN1"],[data-epx-block="BTN1"][data-theme="dark"]{background:rgba(85,136,255,1)}[data-epx-block="BTN1"]:hover{background:rgba(40,86,230,1);box-shadow:0px 4px 8px 0px rgba(0,0,0,0.15)}@media(max-width:575px){[data-epx-block="BTN1"]{font-size:14px}}"`);
   });
 });
 
@@ -463,7 +463,7 @@ describe("parity snapshots — icon", () => {
       "ICN1",
     );
 
-    expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="ICN1"]{width:32px;height:32px;text-align:center;filter:saturate(0.9);opacity:0.85}[data-epx-block="ICN1"]:hover{opacity:1 !important}@media(max-width:575px){[data-epx-block="ICN1"]{font-size:14px}}"`);
+    expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="ICN1"]{width:32px;height:32px;text-align:center;filter:saturate(0.9);opacity:0.85}[data-epx-block="ICN1"]:hover{opacity:1}@media(max-width:575px){[data-epx-block="ICN1"]{font-size:14px}}"`);
   });
 });
 
@@ -513,5 +513,102 @@ describe("parity snapshots — divider-spacer", () => {
     );
 
     expect(buildBlockChromeCss(block.config, block.id)).toMatchInlineSnapshot(`"[data-epx-block="DS1"]{margin-top:12px;margin-bottom:12px;height:48px;text-align:center}@media(max-width:575px){[data-epx-block="DS1"]{font-size:14px}}"`);
+  });
+});
+
+// ─── F4.5 — theme × state × breakpoint matrix cascade order ──────────────────
+//
+// Locks the cascade order for the four base variants (light/normal,
+// dark/normal, light/hover, dark/hover) plus the four per-bp variants.
+// The fixture sets every variant on the same property (`color`) so the
+// emitted CSS exposes the full ladder. Snapshot assertion is an exact-
+// match — any change to the ladder ordering surfaces here.
+describe("parity snapshots — F4.5 theme × state matrix (every variant set)", () => {
+  it("emits 4 base + 4 per-bp variants in correct cascade order, no !important", () => {
+    const block = makeBlock(
+      "container",
+      {
+        // light/normal — base (lowest specificity)
+        style: { color: "#111111" },
+        // dark/normal — `darkBlockSelector`
+        styleDark: { color: "#222222" },
+        // light/hover — `:hover`
+        styleHover: { borderTopWidth: "2px" },
+        // dark/hover (F4.5) — `darkBlockSelector + :hover`
+        styleHoverDark: { borderTopWidth: "3px" },
+        // per-bp light/normal — `@media + base`
+        styleBreakpoints: {
+          "mobile-portrait": { _px: 575, color: "#333333" },
+        },
+        // per-bp dark/normal lives via the host-driven dark signal cascading
+        // into the @media rule's base selector — no separate emit needed.
+        // per-bp light/hover — `@media + :hover`
+        styleHoverBreakpoints: {
+          "mobile-portrait": { _px: 575, borderTopWidth: "4px" },
+        },
+        // per-bp dark/hover (F4.5) — `@media + darkBlockSelector + :hover`
+        styleBreakpointsHoverDark: {
+          "mobile-portrait": { _px: 575, borderTopWidth: "5px" },
+        },
+      },
+      "M1",
+    );
+    const css = buildBlockChromeCss(block.config, block.id);
+
+    // Verify the cascade order: light/normal → dark/normal → light/hover →
+    // dark/hover, then per-bp in matching order. Each variant sits at a
+    // distinct location in the output.
+    const lightNormalIdx = css.indexOf('[data-epx-block="M1"]{color:#111111');
+    const darkNormalIdx = css.indexOf("dark\"]) [data-epx-block=\"M1\"]");
+    const lightHoverIdx = css.indexOf('[data-epx-block="M1"]:hover{');
+    // Dark hover is the dark selector with `:hover` appended.
+    const darkHoverIdx = css.indexOf("dark\"]) [data-epx-block=\"M1\"]:hover");
+
+    expect(lightNormalIdx).toBeGreaterThanOrEqual(0);
+    expect(darkNormalIdx).toBeGreaterThanOrEqual(0);
+    expect(lightHoverIdx).toBeGreaterThanOrEqual(0);
+    expect(darkHoverIdx).toBeGreaterThanOrEqual(0);
+
+    // Cascade order — source order matters when specificity ties
+    // (dark/normal vs light/hover have different specificity, but the
+    // emit order locks the predictable ladder for reviewers).
+    expect(lightNormalIdx).toBeLessThan(darkNormalIdx);
+    expect(darkNormalIdx).toBeLessThan(lightHoverIdx);
+    expect(lightHoverIdx).toBeLessThan(darkHoverIdx);
+
+    // Per-bp variants come after the base 4-variant block (the @media
+    // rules sit later in the output, in the same 4-variant order).
+    const bpLightNormalIdx = css.indexOf("@media(max-width:575px){[data-epx-block=\"M1\"]{");
+    const bpLightHoverIdx = css.indexOf("@media(max-width:575px){[data-epx-block=\"M1\"]:hover{");
+    const bpDarkHoverIdx = css.indexOf("@media(max-width:575px)", bpLightHoverIdx + 10);
+
+    expect(bpLightNormalIdx).toBeGreaterThan(darkHoverIdx);
+    expect(bpLightHoverIdx).toBeGreaterThan(bpLightNormalIdx);
+    expect(bpDarkHoverIdx).toBeGreaterThan(bpLightHoverIdx);
+
+    // Verify NO `!important` anywhere — F4.5 dropped it on hover.
+    expect(css).not.toContain("!important");
+
+    // Snapshot the exact output.
+    expect(css).toMatchInlineSnapshot(`"[data-epx-block="M1"]{color:#111111;padding-top:12px;padding-right:12px;padding-bottom:12px;padding-left:12px}:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="M1"],[data-epx-block="M1"][data-theme="dark"]{color:#222222}[data-epx-block="M1"]:hover{border-top-width:2px}:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="M1"]:hover,[data-epx-block="M1"][data-theme="dark"]:hover{border-top-width:3px}@media(max-width:575px){[data-epx-block="M1"]{color:#333333}}@media(max-width:575px){[data-epx-block="M1"]:hover{border-top-width:4px}}@media(max-width:575px){:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="M1"]:hover,[data-epx-block="M1"][data-theme="dark"]:hover{border-top-width:5px}}"`);
+  });
+
+  it("dark-hover falls back to light-hover when styleHoverDark is empty", () => {
+    const block = makeBlock(
+      "container",
+      {
+        styleHover: { borderTopWidth: "2px" },
+        // styleHoverDark intentionally omitted — should NOT emit a dark-hover rule.
+      },
+      "M2",
+    );
+    const css = buildBlockChromeCss(block.config, block.id);
+    // Light-hover present
+    expect(css).toContain('[data-epx-block="M2"]:hover{border-top-width:2px}');
+    // No dark-hover rule emitted
+    expect(css).not.toContain('[data-epx-block="M2"]:hover,[data-epx-block="M2"][data-theme="dark"]:hover');
+    // (Pre-F4.5 layouts that don't carry styleHoverDark render byte-
+    // identical to before, modulo the !important drop.)
+    expect(css).not.toContain("!important");
   });
 });

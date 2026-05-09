@@ -266,6 +266,12 @@ describe("F3.6.1 — defaultConfig structural shape", () => {
       expect(cfg, `block "${def.type}" missing style`).toHaveProperty("style");
       expect(cfg, `block "${def.type}" missing styleHover`).toHaveProperty("styleHover");
       expect(cfg, `block "${def.type}" missing styleDark`).toHaveProperty("styleDark");
+      // F4.5 — `styleHoverDark` (hover-on-dark-mode override) and
+      // `styleBreakpointsHoverDark` (per-bp hover-on-dark-mode) close
+      // the theme × state matrix. Empty objects by default; the cascade
+      // falls back to `styleHover` / `styleHoverBreakpoints` on dark
+      // when these are empty (zero emit, byte-identical pre-F4.5).
+      expect(cfg, `block "${def.type}" missing styleHoverDark`).toHaveProperty("styleHoverDark");
       expect(cfg, `block "${def.type}" missing styleBreakpoints`).toHaveProperty(
         "styleBreakpoints",
       );
@@ -273,6 +279,10 @@ describe("F3.6.1 — defaultConfig structural shape", () => {
         cfg,
         `block "${def.type}" missing styleHoverBreakpoints`,
       ).toHaveProperty("styleHoverBreakpoints");
+      expect(
+        cfg,
+        `block "${def.type}" missing styleBreakpointsHoverDark`,
+      ).toHaveProperty("styleBreakpointsHoverDark");
       expect(cfg, `block "${def.type}" missing advanced`).toHaveProperty("advanced");
 
       // Type checks — the empty placeholders are objects (not null/undefined)
@@ -280,8 +290,10 @@ describe("F3.6.1 — defaultConfig structural shape", () => {
       expect(typeof cfg.style).toBe("object");
       expect(typeof cfg.styleHover).toBe("object");
       expect(typeof cfg.styleDark).toBe("object");
+      expect(typeof cfg.styleHoverDark).toBe("object");
       expect(typeof cfg.styleBreakpoints).toBe("object");
       expect(typeof cfg.styleHoverBreakpoints).toBe("object");
+      expect(typeof cfg.styleBreakpointsHoverDark).toBe("object");
       expect(typeof cfg.advanced).toBe("object");
     }
   });
@@ -360,8 +372,11 @@ describe("F3.6.2 — getDefaultBlockConfig", () => {
     expect(BASE_DEFAULTS).toHaveProperty("style");
     expect(BASE_DEFAULTS).toHaveProperty("styleHover");
     expect(BASE_DEFAULTS).toHaveProperty("styleDark");
+    // F4.5 — hover-on-dark + per-bp hover-on-dark slots.
+    expect(BASE_DEFAULTS).toHaveProperty("styleHoverDark");
     expect(BASE_DEFAULTS).toHaveProperty("styleBreakpoints");
     expect(BASE_DEFAULTS).toHaveProperty("styleHoverBreakpoints");
+    expect(BASE_DEFAULTS).toHaveProperty("styleBreakpointsHoverDark");
     expect(BASE_DEFAULTS).toHaveProperty("advanced");
   });
 
@@ -404,9 +419,14 @@ describe("F3.6.2 — getDefaultBlockConfig", () => {
       expect(cfg, `${type} missing style`).toHaveProperty("style");
       expect(cfg, `${type} missing styleHover`).toHaveProperty("styleHover");
       expect(cfg, `${type} missing styleDark`).toHaveProperty("styleDark");
+      // F4.5 — every block carries the new hover-on-dark slots.
+      expect(cfg, `${type} missing styleHoverDark`).toHaveProperty("styleHoverDark");
       expect(cfg, `${type} missing styleBreakpoints`).toHaveProperty("styleBreakpoints");
       expect(cfg, `${type} missing styleHoverBreakpoints`).toHaveProperty(
         "styleHoverBreakpoints",
+      );
+      expect(cfg, `${type} missing styleBreakpointsHoverDark`).toHaveProperty(
+        "styleBreakpointsHoverDark",
       );
       expect(cfg, `${type} missing advanced`).toHaveProperty("advanced");
       expect(cfg, `${type} missing theme`).toHaveProperty("theme");

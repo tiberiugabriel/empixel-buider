@@ -431,6 +431,20 @@ Hover styles are written to `block.config.styleHover`.
 Theme styles are written to `block.config.style` / `block.config.styleDark` via `getThemeStyleKey(theme)`.
 Breakpoint styles are written to `block.config.styleBreakpoints[bpId]` / `block.config.styleHoverBreakpoints[bpId]`.
 
+**F4.5 — hover × dark write paths.** When the active state is `hover`
+AND the active theme (driven by `config.theme` / `ThemeStyleToggle`)
+is `dark`, writes go to `block.config.styleHoverDark` (or
+`block.config.styleBreakpointsHoverDark[bpId]` when a non-desktop bp
+is active). The frontend renderer emits the matching dark-hover CSS
+rule via `buildHoverDarkCss` / `buildBreakpointHoverDarkCss`. When the
+slot is empty (the F3.6.2 default), the cascade falls back to
+`styleHover` / `styleHoverBreakpoints` on dark — byte-identical to
+pre-F4.5 layouts (modulo the `!important` drop on hover declarations,
+which only mattered for the dark/normal vs light/hover specificity
+tie that F4.5 resolves explicitly via the new dark-hover selector).
+See [`prd-theme.md`](prd-theme.md) for the full cascade table and
+write-path matrix.
+
 ### Tab 3: Advanced
 Layout & positioning. **No** Normal/Hover toggle here.
 

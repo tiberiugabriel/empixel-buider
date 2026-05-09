@@ -21,6 +21,161 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-10 · F4.5 done
+
+Branch: `feature/agentC-F4.5`. Single commit (SHA written by HEREDOC
+commit at end of task).
+
+**Files changed**:
+- `src/admin/blockDefinitions.ts` — `BASE_DEFAULTS` + every BlockDef's
+  `defaultConfig` carries the new `styleHoverDark: {}` +
+  `styleBreakpointsHoverDark: {}` slots. 9 BlockDefs × 2 keys + 1
+  BASE_DEFAULTS pair = 20 new key occurrences (verified via grep).
+- `src/components/styleUtils.ts` (cross-domain — F4.5 exception per
+  task allocation):
+  - New helper `buildHoverDarkCss(config, blockId, opts?)` — emits
+    the dark/hover CSS rule using the new
+    `darkBlockHoverSelector(blockId)` internal selector builder.
+    Returns empty string when `styleHoverDark` is empty (cascade
+    fallback to `styleHover` on dark).
+  - New helper `buildBreakpointHoverDarkCss(config, blockId)` —
+    per-bp counterpart to `buildHoverDarkCss`. Wraps
+    `darkBlockHoverSelector` inside `@media (max-width:N)`.
+  - New internal helper `darkBlockHoverSelector(blockId)` — produces
+    the compound `darkBlockSelector + :hover` selector by appending
+    `:hover` to each top-level clause.
+  - Refactored `buildHoverCss` → split into pure
+    `buildHoverBodyFromObject` + thin wrapper, so the 4 hover
+    variants (light/normal-hover, dark/normal-hover, light/bp-hover,
+    dark/bp-hover) share one declaration emitter.
+  - Refactored `buildBreakpointHoverCss` → similar split via
+    `buildHoverBpBodyFromObject` + `sortedBpEntries`.
+  - **Dropped `!important`** from every hover declaration emitted by
+    `buildHoverCss`, `buildBreakpointHoverCss`, and
+    `buildImgVisualHoverCss`. Selector specificity (dark+hover >
+    dark > hover > base) handles the cascade. Verified via
+    `grep -n "!important" src/components/styleUtils.ts` — only
+    matches are inside comments.
+  - Wired `buildHoverDarkCss` + `buildBreakpointHoverDarkCss` into
+    `buildBlockChromeCssDirect` in cascade-order (light/normal →
+    dark/normal → light/hover → dark/hover, then per-bp in matching
+    order).
+- `tests/parity/all.test.ts` — 5 inline snapshots regenerated (pure
+  `!important` drop on hover declarations across container, image,
+  video, button, icon fixtures); added 2 new fixtures (`M1` covering
+  the full 4-base + 4-per-bp matrix; `M2` covering the no-
+  `styleHoverDark` cascade fallback case).
+- `tests/styleUtils.test.ts` — `buildHoverCss` + `buildBlockChromeCss`
+  composition assertions updated to expect no `!important`.
+- `tests/canvasCss.test.ts` — overlay assertions updated to match
+  the `!important` drop.
+- `tests/blockDefinitions.test.ts` — 4 new assertions for the F4.5
+  keys (`styleHoverDark` + `styleBreakpointsHoverDark`) on
+  `BASE_DEFAULTS`, on every `BlockDef.defaultConfig`, and on every
+  `getDefaultBlockConfig(type)` call.
+- `.claude/prd-theme.md` — NEW (per REMAINING.md item 1
+  acceptance criterion).
+- `CHANGELOG.md` — F4.5 entry appended to `## Unreleased — 1.0.0 prep`.
+- `.claude/prd-frontend.md` — Theme model section + helper API table
+  updated with F4.5 helpers.
+- `.claude/prd-blocks.md` — Full-shape config + key glossary updated
+  with new slots.
+- `.claude/prd-rightpanel.md` — Write-path docs extended to cover
+  the dark-hover write paths.
+- `.claude/prd-breakpoints.md` — Per-bp dark-hover write path added.
+
+**New keys added (verbatim)**:
+- `styleHoverDark: CSSProps` — hover-on-dark-mode override.
+- `styleBreakpointsHoverDark: { [bpId]: { _px, ...CSSProps } }` —
+  per-bp hover-on-dark-mode override.
+
+**New helpers added (verbatim signatures)**:
+- `export function buildHoverDarkCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean } & MediaUrlOptions): string`
+- `export function buildBreakpointHoverDarkCss(config: Record<string, unknown>, blockId: string): string`
+- (internal) `function darkBlockHoverSelector(blockId: string): string`
+
+**Cascade-order verification**: new fixture `M1` in
+`tests/parity/all.test.ts` snapshots the full 4-base + 4-per-bp
+matrix output and asserts source-order indices (light/normal <
+dark/normal < light/hover < dark/hover < per-bp variants).
+
+**F3.6.7 parity snapshots regen'd cleanly**: yes — 5 snapshots
+updated (container, image, video, button, icon — exactly the
+fixtures that had hover declarations). Second test run is
+deterministic (run twice, both green: 380 tests passing). Two new
+fixtures added (M1 + M2) so the suite is now 12 parity fixtures.
+
+**`prd-theme.md` outline (top-level sections)**:
+1. TL;DR — two orthogonal axes, no `!important`
+2. The four base variants — table + concrete selectors
+3. Per-breakpoint variants — table + cascade order inside `@media`
+4. Total CSS rule count per block — 4 + 4N + custom
+5. Why `!important` is gone — specificity ladder rationale + tie-break audit
+6. Authoring workflows — 4 common cases
+7. customCss interaction — no per-theme slot, hand-write recipe
+8. Migration: pre-F4.5 layouts — zero migration needed
+9. Editor surface (RightPanel) — write-path table
+10. Files
+11. TODO — optional `styleBreakpointsDark` slot, editor UX hint
+
+**Pipeline output tail**:
+```
+Test Files  21 passed (21)
+      Tests  380 passed (380)
+   Start at  20:11:57
+```
+
+Lint clean. Typecheck clean. Build clean.
+
+**Anything surprising or blocking**: nothing surprising. Initial
+implementation had a bug where I tried to split `darkBlockSelector`
+on `,` to append `:hover` per clause — but the selector contains
+commas inside `:is(...)`, so the split was wrong. Fixed by
+introducing a dedicated `darkBlockHoverSelector(blockId)` builder
+that constructs the compound selector directly with `:hover` already
+in place. Cleaner result; one snapshot regen'd to lock the fixed
+output. Nothing blocking.
+
+## 2026-05-10 · F4.5 start
+
+Branch: `feature/agentC-F4.5` (worktree at latest `main` `f7cd780` —
+F4.7 + F4.10 just landed).
+
+Goal: theme × state × breakpoint matrix completion. REMAINING.md
+item 1 + audit T1 acceptance criterion.
+
+**Part A** — Add new keys `styleHoverDark` (CSSProps) +
+`styleBreakpointsHoverDark` (`{ [bpId]: { _px, ...CSSProps } }`) on
+every BlockDef defaultConfig + emit the matching CSS in
+`src/components/styleUtils.ts`. New helpers
+`buildHoverDarkCss(config, blockId)` + `buildBreakpointHoverDarkCss
+(config, blockId)` wired into `buildBlockChromeCss`. Cascade order:
+light/normal → dark/normal → light/hover → dark/hover, repeated per
+breakpoint inside each `@media` block.
+
+**Part B** — Drop `!important` from hover declarations
+(`buildHoverCss` + `buildBreakpointHoverCss` + `buildImgVisualHoverCss`).
+The new dark-hover selector (compound `darkBlockSelector + :hover`)
+strictly outranks dark-normal by specificity, so `!important` is no
+longer needed. customCss passthrough untouched.
+
+Cross-domain edit limit: ONLY `src/components/styleUtils.ts` (Agent B's
+column) — documented F4.5 exception per task allocation.
+
+Files to touch:
+- Edit: `src/admin/blockDefinitions.ts` — add 2 new keys per BlockDef.
+- Edit (cross-domain): `src/components/styleUtils.ts` — new helpers,
+  drop `!important` on hover declarations.
+- Edit: `tests/parity/all.test.ts` — regen snapshots (expected to
+  shift since `!important` is gone).
+- Edit: `tests/styleUtils.test.ts` — update assertions on hover.
+- Edit: `tests/blockDefinitions.test.ts` — assert the 2 new keys.
+- New: `.claude/prd-theme.md` — design doc per REMAINING.md item 1.
+- Edit: `CHANGELOG.md` (append to `## Unreleased — 1.0.0 prep`).
+- Edit: `.claude/prd-blocks.md`, `.claude/prd-frontend.md`,
+  `.claude/prd-breakpoints.md`, `.claude/prd-rightpanel.md`.
+- Edit: this file (start + done entries).
+
 ## 2026-05-10 · F4.7 start
 
 Branch: `feature/agentC-F4.7` (already at `main` 76e0495 — F4.1+

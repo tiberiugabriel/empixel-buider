@@ -98,6 +98,19 @@ block.config.styleHoverBreakpoints = {
 }
 ```
 
+**F4.5 — per-bp dark hover.** When the active state is `hover` AND
+the active theme (driven by `config.theme` / `ThemeStyleToggle`) is
+`dark` AND the active breakpoint is non-desktop, writes go to
+`block.config.styleBreakpointsHoverDark[bpId]` instead. Same
+`{ _px, ...cssProps }` shape as `styleHoverBreakpoints`. The
+frontend renderer emits the matching CSS via
+`buildBreakpointHoverDarkCss` — wraps `darkBlockHoverSelector` in
+the appropriate `@media (max-width:N)` block. When the slot is
+empty, the cascade falls back to `styleHoverBreakpoints` on dark
+(byte-identical to pre-F4.5). See
+[`prd-theme.md`](prd-theme.md) for the full theme × state ×
+breakpoint matrix.
+
 ### Reading styles in RightPanel
 For a non-desktop breakpoint, the effective style is the merge of base + breakpoint override:
 ```ts

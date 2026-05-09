@@ -390,8 +390,13 @@ export function buildImgVisualHoverCss(config: Record<string, unknown>, blockId:
   const styleHover = (config.styleHover ?? {}) as Record<string, unknown>;
   const css = buildImgVisualStyle(styleHover);
   if (!css) return "";
-  const importantCss = css.split(";").filter(Boolean).map(d => `${d} !important`).join(";");
-  return `[data-epx-block="${blockId}"]:hover img{${importantCss}}`;
+  // F4.5 — `!important` dropped. The `:hover img` compound selector
+  // outranks the bare `[data-epx-block] img` selector by an additional
+  // `:hover` pseudo-class, so the cascade promotes the hover declarations
+  // naturally. Authors who want a per-theme hover treatment use the F4.5
+  // `styleHoverDark` key (emitted by `buildBlockChromeCss` further down)
+  // instead of relying on the escape-hatch.
+  return `[data-epx-block="${blockId}"]:hover img{${css}}`;
 }
 
 // ─── Video background: storage key or URL ────────────────────────────────────
@@ -455,14 +460,32 @@ const HOVER_STYLE_PROPS = [
   "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
 ] as const;
 
-export function buildHoverCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean } & MediaUrlOptions): string {
-  const styleHover = (config.styleHover ?? {}) as Record<string, unknown>;
+/**
+ * Iterate `styleHover` (or any hover-shape style object) and produce the
+ * CSS declarations body (no selector, no `!important`). Pulled out of
+ * `buildHoverCss` so the same code can emit:
+ *
+ *   - `:hover` body (light/hover variant) — `buildHoverCss`.
+ *   - `darkBlockSelector + :hover` body (dark/hover variant) —
+ *     `buildHoverDarkCss` (F4.5).
+ *   - `@media + :hover` body (light/hover-per-bp) — `buildBreakpointHoverCss`.
+ *   - `@media + darkBlockSelector + :hover` body (dark/hover-per-bp) —
+ *     `buildBreakpointHoverDarkCss` (F4.5).
+ *
+ * F4.5 dropped `!important` from every emitted declaration. The selector
+ * specificity ladder now does the cascade work — see `darkBlockSelector`
+ * + `prd-theme.md` for the full table.
+ */
+function buildHoverBodyFromObject(
+  styleHover: Record<string, unknown>,
+  opts?: { imgScoped?: boolean } & MediaUrlOptions,
+): string {
   const imgScoped = !!opts?.imgScoped;
   const parts: string[] = [];
 
   // Background
   const bg = buildBackgroundCss(styleHover, opts);
-  if (bg) parts.push(bg.replace(/;$/, "") + " !important");
+  if (bg) parts.push(bg.replace(/;$/, ""));
 
   // Border style + color
   if (!imgScoped) {
@@ -470,8 +493,8 @@ export function buildHoverCss(config: Record<string, unknown>, blockId: string, 
     if (borderSt && borderSt !== "none") {
       const color = (styleHover.borderColor as string) ?? "#000000";
       const alpha = (styleHover.borderAlpha as number) ?? 1;
-      parts.push(`border-style:${borderSt} !important`);
-      parts.push(`border-color:${hexToRgba(color, alpha)} !important`);
+      parts.push(`border-style:${borderSt}`);
+      parts.push(`border-color:${hexToRgba(color, alpha)}`);
     }
   }
 
@@ -485,7 +508,7 @@ export function buildHoverCss(config: Record<string, unknown>, blockId: string, 
     const hsspread = cssStr(styleHover.shadowSpread);
     if (hsx || hsy || hsblur || hsspread) {
       const inset = styleHover.shadowType === "inset" ? "inset " : "";
-      parts.push(`box-shadow:${inset}${hsx || "0px"} ${hsy || "0px"} ${hsblur || "0px"} ${hsspread || "0px"} ${hexToRgba(hShadowColor, hShadowAlpha)} !important`);
+      parts.push(`box-shadow:${inset}${hsx || "0px"} ${hsy || "0px"} ${hsblur || "0px"} ${hsspread || "0px"} ${hexToRgba(hShadowColor, hShadowAlpha)}`);
     }
   }
 
@@ -493,15 +516,41 @@ export function buildHoverCss(config: Record<string, unknown>, blockId: string, 
   for (const prop of HOVER_STYLE_PROPS) {
     if (imgScoped && IMG_VISUAL_PROP_SET.has(prop)) continue;
     const v = cssStr(styleHover[prop]);
-    if (v) parts.push(`${camelToKebab(prop)}:${v} !important`);
+    if (v) parts.push(`${camelToKebab(prop)}:${v}`);
   }
 
   // Opacity (stored as CSS-native 0..1)
   const opacityH = styleHover.opacity;
-  if (typeof opacityH === "number") parts.push(`opacity:${opacityH} !important`);
+  if (typeof opacityH === "number") parts.push(`opacity:${opacityH}`);
 
-  if (!parts.length) return "";
-  return `[data-epx-block="${blockId}"]:hover{${parts.join(";")}}`;
+  return parts.join(";");
+}
+
+export function buildHoverCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean } & MediaUrlOptions): string {
+  if (!blockId) return "";
+  const styleHover = (config.styleHover ?? {}) as Record<string, unknown>;
+  const body = buildHoverBodyFromObject(styleHover, opts);
+  if (!body) return "";
+  return `[data-epx-block="${blockId}"]:hover{${body}}`;
+}
+
+/**
+ * F4.5 — emit the dark-mode hover variant. `styleHoverDark` lets authors
+ * override hover styles only when the host page is in dark theme. The
+ * compound selector (`darkBlockSelector + :hover`) outranks both
+ * `darkBlockSelector` (dark/normal) and the bare `:hover` (light/hover)
+ * by specificity, so the cascade picks dark/hover whenever the host is
+ * in dark and the block is being hovered. When `styleHoverDark` is empty
+ * (the default), nothing emits — the cascade falls back to the
+ * light/hover rule, matching pre-F4.5 behavior.
+ */
+export function buildHoverDarkCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean } & MediaUrlOptions): string {
+  if (!blockId) return "";
+  const styleHoverDark = (config.styleHoverDark ?? {}) as Record<string, unknown>;
+  if (Object.keys(styleHoverDark).length === 0) return "";
+  const body = buildHoverBodyFromObject(styleHoverDark, opts);
+  if (!body) return "";
+  return `${darkBlockHoverSelector(blockId)}{${body}}`;
 }
 
 // ─── Block CSS (selector-based, replaces inline style) ───────────────────────
@@ -534,6 +583,25 @@ function darkBlockSelector(blockId: string): string {
   return `:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="${blockId}"],[data-epx-block="${blockId}"][data-theme="dark"]`;
 }
 
+/**
+ * F4.5 — compound selector for the dark-hover variant. Appends `:hover` to
+ * each of the two top-level clauses produced by `darkBlockSelector` (the
+ * ancestor-driven one and the self-attribute one). Splitting on the
+ * outer comma is safe because the inner `:is(...)` is a single
+ * pseudo-class selector — it has no top-level commas.
+ *
+ * Result for `<id>`:
+ *   `:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="<id>"]:hover,[data-epx-block="<id>"][data-theme="dark"]:hover`
+ *
+ * Specificity: each clause adds `:hover` (a pseudo-class) to the existing
+ * `darkBlockSelector` clause, strictly outranking both the bare `:hover`
+ * (light/hover) and the `darkBlockSelector` (dark/normal) — see
+ * `prd-theme.md` for the cascade table.
+ */
+function darkBlockHoverSelector(blockId: string): string {
+  return `:is(html.dark, html[data-theme="dark"], [data-theme="dark"], [data-mode="dark"]) [data-epx-block="${blockId}"]:hover,[data-epx-block="${blockId}"][data-theme="dark"]:hover`;
+}
+
 export function buildBlockCss(config: Record<string, unknown>, blockId: string, opts?: { imgScoped?: boolean } & MediaUrlOptions): string {
   if (!blockId) return "";
   const lightRule = wrapBlockCss(buildBlockStyle(config, opts), blockId);
@@ -544,44 +612,101 @@ export function buildBlockCss(config: Record<string, unknown>, blockId: string, 
 
 // ─── Per-breakpoint Hover CSS ─────────────────────────────────────────────────
 
-export function buildBreakpointHoverCss(config: Record<string, unknown>, blockId: string): string {
-  const styleHoverBreakpoints = config.styleHoverBreakpoints as Record<string, Record<string, unknown>> | undefined;
-  if (!styleHoverBreakpoints || !blockId) return "";
+/**
+ * Build the per-bp hover declarations body (no selector, no `!important`)
+ * for a single bp-style object. Shared by `buildBreakpointHoverCss` and
+ * `buildBreakpointHoverDarkCss` (F4.5) so the four hover variants
+ * (light/normal, dark/normal, light/hover, dark/hover) emit identical
+ * declarations apart from the wrapping selector.
+ *
+ * F4.5 dropped `!important` here as in `buildHoverCss` — selector
+ * specificity now drives the cascade.
+ */
+function buildHoverBpBodyFromObject(bpHover: Record<string, unknown>): string {
+  const parts: string[] = [];
 
-  const entries = Object.entries(styleHoverBreakpoints)
-    .filter(([, s]) => typeof (s as Record<string, unknown>)._px === "number")
-    .sort(([, a], [, b]) => ((b as Record<string, unknown>)._px as number) - ((a as Record<string, unknown>)._px as number));
+  const borderSt = cssStr(bpHover.borderStyle);
+  if (borderSt && borderSt !== "none") {
+    const color = (bpHover.borderColor as string) ?? "#000000";
+    const alpha = (bpHover.borderAlpha as number) ?? 1;
+    parts.push(`border-style:${borderSt}`, `border-color:${hexToRgba(color, alpha)}`);
+  }
+
+  for (const prop of HOVER_STYLE_PROPS) {
+    const v = cssStr(bpHover[prop]);
+    if (v) parts.push(`${camelToKebab(prop)}:${v}`);
+  }
+
+  const hsx = cssStr(bpHover.shadowX);
+  const hsy = cssStr(bpHover.shadowY);
+  const hsblur   = cssStr(bpHover.shadowBlur);
+  const hsspread = cssStr(bpHover.shadowSpread);
+  if (hsx || hsy || hsblur || hsspread) {
+    const inset = bpHover.shadowType === "inset" ? "inset " : "";
+    const sc = (bpHover.shadowColor as string) ?? "#000000";
+    const sa = (bpHover.shadowAlpha as number) ?? 1;
+    parts.push(`box-shadow:${inset}${hsx || "0px"} ${hsy || "0px"} ${hsblur || "0px"} ${hsspread || "0px"} ${hexToRgba(sc, sa)}`);
+  }
+
+  return parts.join(";");
+}
+
+/**
+ * Iterate a hover-bp map and yield `(px, bpHover)` entries sorted from
+ * largest px to smallest (preserves the historical ordering for
+ * `@media (max-width:N)` cascading — larger queries match first, smaller
+ * queries override). Shared by `buildBreakpointHoverCss` and
+ * `buildBreakpointHoverDarkCss`.
+ */
+function sortedBpEntries(
+  bpMap: Record<string, Record<string, unknown>> | undefined,
+): Array<[Record<string, unknown>, number]> {
+  if (!bpMap) return [];
+  return Object.entries(bpMap)
+    .filter(([, s]) => typeof s._px === "number")
+    .sort(([, a], [, b]) => (b._px as number) - (a._px as number))
+    .map(([, s]) => [s, s._px as number] as [Record<string, unknown>, number]);
+}
+
+export function buildBreakpointHoverCss(config: Record<string, unknown>, blockId: string): string {
+  if (!blockId) return "";
+  const styleHoverBreakpoints = config.styleHoverBreakpoints as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  if (!styleHoverBreakpoints) return "";
 
   let css = "";
-  for (const [, bpHover] of entries) {
-    const px = (bpHover as Record<string, unknown>)._px as number;
-    const parts: string[] = [];
-
-    const borderSt = cssStr(bpHover.borderStyle);
-    if (borderSt && borderSt !== "none") {
-      const color = (bpHover.borderColor as string) ?? "#000000";
-      const alpha = (bpHover.borderAlpha as number) ?? 1;
-      parts.push(`border-style:${borderSt} !important`, `border-color:${hexToRgba(color, alpha)} !important`);
+  for (const [bpHover, px] of sortedBpEntries(styleHoverBreakpoints)) {
+    const body = buildHoverBpBodyFromObject(bpHover);
+    if (body) {
+      css += `@media(max-width:${px}px){[data-epx-block="${blockId}"]:hover{${body}}}`;
     }
+  }
+  return css;
+}
 
-    for (const prop of HOVER_STYLE_PROPS) {
-      const v = cssStr(bpHover[prop]);
-      if (v) parts.push(`${camelToKebab(prop)}:${v} !important`);
-    }
+/**
+ * F4.5 — emit per-breakpoint dark-hover declarations.
+ * `styleBreakpointsHoverDark[bpId] = { _px, ...CSSProps }` is the
+ * dark-mode counterpart to `styleHoverBreakpoints`. Each entry produces
+ * one `@media (max-width:<px>) { darkBlockSelector + :hover { ... } }`
+ * rule. When the map is empty, nothing emits and the cascade falls back
+ * to `styleHoverBreakpoints` on dark — same behavior as pre-F4.5.
+ */
+export function buildBreakpointHoverDarkCss(config: Record<string, unknown>, blockId: string): string {
+  if (!blockId) return "";
+  const styleBreakpointsHoverDark = config.styleBreakpointsHoverDark as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  if (!styleBreakpointsHoverDark) return "";
 
-    const hsx = cssStr(bpHover.shadowX);
-    const hsy = cssStr(bpHover.shadowY);
-    const hsblur   = cssStr(bpHover.shadowBlur);
-    const hsspread = cssStr(bpHover.shadowSpread);
-    if (hsx || hsy || hsblur || hsspread) {
-      const inset = bpHover.shadowType === "inset" ? "inset " : "";
-      const sc = (bpHover.shadowColor as string) ?? "#000000";
-      const sa = (bpHover.shadowAlpha as number) ?? 1;
-      parts.push(`box-shadow:${inset}${hsx || "0px"} ${hsy || "0px"} ${hsblur || "0px"} ${hsspread || "0px"} ${hexToRgba(sc, sa)} !important`);
-    }
+  const hoverSel = darkBlockHoverSelector(blockId);
 
-    if (parts.length) {
-      css += `@media(max-width:${px}px){[data-epx-block="${blockId}"]:hover{${parts.join(";")}}}`;
+  let css = "";
+  for (const [bpHoverDark, px] of sortedBpEntries(styleBreakpointsHoverDark)) {
+    const body = buildHoverBpBodyFromObject(bpHoverDark);
+    if (body) {
+      css += `@media(max-width:${px}px){${hoverSel}{${body}}}`;
     }
   }
   return css;
@@ -725,11 +850,33 @@ function buildBlockChromeCssDirect(
   opts?: { imgScoped?: boolean } & MediaUrlOptions,
 ): string {
   if (!blockId) return "";
+  // F4.5 — emit the full theme × state matrix in cascade order.
+  //
+  // Selector specificity ladder (low → high):
+  //   1. light/normal       — `[data-epx-block]`
+  //   2. dark/normal        — `darkBlockSelector + [data-epx-block]`
+  //   3. light/hover        — `[data-epx-block]:hover`
+  //   4. dark/hover (F4.5)  — `darkBlockSelector + [data-epx-block]:hover`
+  //
+  // Per-breakpoint variants repeat the same 4-rung ladder inside each
+  // `@media (max-width:N)` block. Source order is light/normal,
+  // dark/normal, light/hover, dark/hover so when two rules tie on
+  // specificity the later one wins — this matters for the bp variants
+  // that all share `@media` + selector specificity.
+  //
+  // `getCustomCss` (advanced.customCss) goes last so author-supplied
+  // overrides cascade over everything we emit.
+  //
+  // `buildBlockCss` packs rules 1+2 (light/normal + dark/normal) into a
+  // single output string in that order. We append rules 3+4 (light/hover
+  // + dark/hover) next, then the bp variants in matching order.
   const parts = [
-    buildBlockCss(config, blockId, opts),
-    buildHoverCss(config, blockId, opts),
-    buildBreakpointCss(config, blockId),
-    buildBreakpointHoverCss(config, blockId),
+    buildBlockCss(config, blockId, opts),         // rules 1 + 2
+    buildHoverCss(config, blockId, opts),         // rule 3
+    buildHoverDarkCss(config, blockId, opts),     // rule 4 — F4.5
+    buildBreakpointCss(config, blockId),          // per-bp 1 + 2 (light + dark via host signal)
+    buildBreakpointHoverCss(config, blockId),     // per-bp 3
+    buildBreakpointHoverDarkCss(config, blockId), // per-bp 4 — F4.5
     getCustomCss(config, blockId),
   ];
   if (opts?.imgScoped) {
