@@ -6,6 +6,7 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 
 | Module | File | Purpose |
 |--------|------|---------|
+| **Adding a new block type** | [prd-blocks.md → author guide](prd-blocks.md#adding-a-new-block-type--author-guide-f358) | 3-step recipe: BlockDef + preview + Astro component (no RightPanel.tsx edit) |
 | **Backend/API** | [prd-backend.md](prd-backend.md) | REST routes, database schema, KV storage |
 | **Block System** | [prd-blocks.md](prd-blocks.md) | Block types, BlockDef schema, config interfaces |
 | **Admin Builder UI** | [prd-builder-ui.md](prd-builder-ui.md) | Builder, Canvas, state reducer, panels, tree ops |
@@ -21,9 +22,17 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
 │                       Admin UI (Builder.tsx)                       │
 ├──────────────┬─────────────────────────┬───────────────────────────┤
 │  LeftPanel   │  Canvas (@dnd-kit)      │  RightPanel + Structure   │
-│ (Palette +   │  (Tree Rendering +      │  (Fields / Style /        │
-│  Breakpoints)│   BlockOverlay)         │   Advanced + LayerTree)   │
+│ (Palette +   │  (Tree Rendering +      │  (thin shell — declares   │
+│  Breakpoints)│   BlockOverlay)         │   header + TabRenderer)   │
 └──────────────┼─────────────────────────┼───────────────────────────┘
+                         ↓                          ↓
+                                 ┌─────────────────────────────┐
+                                 │ TabRenderer (Fields/Style/  │
+                                 │ Advanced) reads BlockDef    │
+                                 │  → FieldRenderer            │
+                                 │  → SectionRenderer          │
+                                 │  → AdvancedTab (universal)  │
+                                 └─────────────────────────────┘
                          ↓
        ┌──────────────────────────────────┐
        │   State (builderReducer.ts)      │
@@ -37,9 +46,9 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
        └────────────┬─────────────────────┘
                     ↓
        ┌──────────────────────────────────┐
-       │   Database (SQLite)              │
-       │   empixel_builder_layouts        │
-       │   (collection + entry_id PK)     │
+       │   Storage (ctx.storage.layouts)  │
+       │   _plugin_storage table          │
+       │   plugin_id="empixel-builder"    │
        └─────────────────────────────────┘
                     ↑
        ┌──────────────────────────────────┐
@@ -48,6 +57,8 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
        │  → Individual block components   │
        └──────────────────────────────────┘
 ```
+
+The right-panel is fully declarative post-F3.5.6: every Fields / Style / Advanced surface renders from `BlockDef.fieldsTab` / `styleTab` data plus a universal Advanced tab. Adding a new block does NOT require editing `RightPanel.tsx` or any of the render-side files (`TabRenderer.tsx`, `SectionRenderer.tsx`, `AdvancedTab.tsx`). See [the block-author guide](prd-blocks.md#adding-a-new-block-type--author-guide-f358).
 
 ## Data Flow
 
@@ -87,11 +98,17 @@ Detailed PRDs split by subsystem. Start here to understand the plugin architectu
   icon: string;
   description: string;
   category: "core" | "general";
-  defaultConfig: {};
-  fields: FieldDef[];
-  styleFields?: FieldDef[];
+  defaultConfig: Record<string, any>;
+  // F3.5 declarative tabs (canonical):
+  fieldsTab?: FieldDef[];      // FieldDef = StandardFieldDef | CustomFieldDef
+  styleTab?: StyleSection[];   // 19 variants (theme/spacing/background/.../custom)
+  // F3.5 transitional aliases (kept until F3.5.6+1):
+  fields: FieldDef[];          // @deprecated — must point at the same array as fieldsTab
+  styleFields?: FieldDef[];    // @deprecated — folded into styleTab
 }
 ```
+
+The full reference (every field, every `FieldDef.type`, every `StyleSection.kind`) lives in [`prd-blocks.md`](prd-blocks.md).
 
 ### Config Key Conventions
 | Key | Type | Purpose |

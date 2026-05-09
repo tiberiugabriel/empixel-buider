@@ -399,16 +399,499 @@ Safely parses JSON array from DB (may be string or already array).
 - **Preview component** must exist for every block
 - **Astro frontend component** must exist for every block
 
-## Adding a New Block
+## Adding a new block type — author guide (F3.5.8)
 
-1. Add `BlockType` to union in `src/types.ts`
-2. Add config interface to `src/types.ts`
-3. Add `BlockDef` entry to `BLOCK_DEFINITIONS` in `blockDefinitions.ts`
-4. Add preview component in `src/admin/previews/`
-5. Register in `src/admin/previews/index.ts` (`PREVIEW_COMPONENTS` map)
-6. Add Astro component in `src/components/`
-7. Register in `src/components/index.ts` (`blockComponents` map)
-8. Register in `src/components/BlockRenderer.astro`
+After F3.5.6 the right-panel is fully declarative: every Fields / Style / Advanced surface renders from data on the matching `BlockDef`. **Adding a new block type is a 3-file task**. You should NOT need to touch `RightPanel.tsx`, `SectionRenderer.tsx`, `TabRenderer.tsx`, `AdvancedTab.tsx`, or `src/types.ts` (orchestrator-owned).
+
+The orchestrator-owned exception: a new `BlockType` literal does need to land in `src/types.ts` via the `types-proposals.md` flow. Append a proposal there (block name, default config interface, expected union slot) and wait for the orchestrator's type PR. Once the type ships, the rest of the block is admin-UI + frontend work and stays inside Agent C / Agent B columns.
+
+### Step-by-step recipe
+
+#### Step 1 — declare the `BlockDef`
+
+File: `src/admin/blockDefinitions.ts`. Add an entry to the exported `BLOCK_DEFINITIONS` array. Use existing block declarations as templates (`text` for the simplest stack; `container` for full-custom Fields; `image` for full-custom Style).
+
+```ts
+// src/admin/blockDefinitions.ts
+const QUOTE_FIELDS: FieldDef[] = [
+  { key: "quote", label: "Quote", type: "textarea", placeholder: "Enter quote…", labelClassName: "epx-row-label--section" },
+  { key: "citation", label: "Citation", type: "text", placeholder: "Author or source", labelClassName: "epx-row-label--section" },
+];
+
+export const BLOCK_DEFINITIONS: BlockDef[] = [
+  // … existing entries …
+  {
+    type: "quote",
+    label: "Quote",
+    icon: "❝",
+    description: "A blockquote with optional citation",
+    category: "general",
+    defaultConfig: { quote: "", citation: "", theme: "light" },
+    fields: QUOTE_FIELDS,           // alias kept until F3.5.6+1 retires it
+    fieldsTab: QUOTE_FIELDS,
+    styleTab: [
+      { kind: "alignment" },
+      { kind: "typography" },
+      { kind: "background" },
+      { kind: "borderRadius" },
+      { kind: "border" },
+      { kind: "boxShadow" },
+    ],
+  },
+];
+```
+
+KISS rules:
+
+- `fields` and `fieldsTab` MUST point at the same array literal so the alias contract holds.
+- `defaultConfig` matches the per-block config interface 1:1 — every key the panel writes should have a default (or be intentionally absent).
+- Pull `FieldDef[]` and `StyleSection[]` schemas from the references below.
+- A block with no Style tab (`html`-style) simply omits `styleTab`. The panel auto-hides Style via `getVisibleTabs(block)`; no other change needed.
+
+#### Step 2 — add a preview component
+
+Files:
+- New: `src/admin/previews/<NewBlock>Preview.tsx`
+- Register: `src/admin/previews/index.ts` — append to `PREVIEW_COMPONENTS`.
+
+Previews are React components that render inside the Canvas (`src/admin/Canvas.tsx`). They receive `PreviewProps` (`{ config, children?, slots?, activeBreakpoint? }`) and should:
+
+- Render a faithful, responsive approximation of the frontend output.
+- Read `config` keys with `as` casts (the surface is `Record<string, unknown>` to keep the registry single-typed) — narrow per-key, not the whole `config`.
+- Treat empty values as "show muted placeholder" (italic gray text). See `TextPreview.tsx` for the canonical placeholder pattern.
+- Wrap in `React.memo` so dragging unrelated blocks doesn't re-render this preview.
+
+Skeleton:
+
+```tsx
+// src/admin/previews/QuotePreview.tsx
+import React, { memo } from "react";
+
+export const QuotePreview = memo(function QuotePreview({ config }: { config: Record<string, unknown> }) {
+  const quote = (config.quote as string) || "";
+  const citation = (config.citation as string) || "";
+  if (!quote) {
+    return <span style={{ color: "#bbb", fontStyle: "italic", fontSize: 12 }}>Quote block</span>;
+  }
+  return (
+    <blockquote style={{ margin: 0, fontStyle: "italic" }}>
+      <p>{quote}</p>
+      {citation && <footer style={{ fontStyle: "normal", fontSize: 12, opacity: 0.7 }}>— {citation}</footer>}
+    </blockquote>
+  );
+});
+```
+
+Then register:
+
+```ts
+// src/admin/previews/index.ts
+import { QuotePreview } from "./QuotePreview.js";
+
+export const PREVIEW_COMPONENTS: Record<BlockType, React.ComponentType<PreviewProps>> = {
+  // …
+  quote: QuotePreview as React.ComponentType<PreviewProps>,
+};
+```
+
+The `PREVIEW_COMPONENTS` map is keyed by `BlockType` — `Record<BlockType, …>` — so once `quote` lands in the `BlockType` union (orchestrator step), TypeScript will fail this map until the entry is added. That's intentional.
+
+#### Step 3 — add the Astro frontend component
+
+Files:
+- New: `src/components/<NewBlock>.astro`
+- Register: `src/components/index.ts` (the `blockComponents` map).
+- Register: `src/components/BlockRenderer.astro` (one dispatch branch).
+
+Frontend components are server-rendered Astro components that emit the actual HTML the user's site ships. Contract:
+
+- Take `Props = { value: <BlockConfig>; blockId?: string }`.
+- Emit `data-epx-block={blockId || undefined}` on the root tag (so per-block CSS scoping works).
+- Honor `advanced.cssId` and `advanced.cssClasses`.
+- Build the chrome CSS via `buildBlockChromeCss(config, blockId, { resolveMediaUrl })` from `styleUtils.js` and emit it inside `<style set:html={allCss} is:global />`.
+- Use `<Image image={…} />` from `"emdash/ui"` for image fields, never raw `<img>` (per global CLAUDE.md rule).
+
+Skeleton:
+
+```astro
+---
+// src/components/Quote.astro
+import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
+
+interface Props {
+  value: { quote?: string; citation?: string; theme?: "light" | "dark" } & Record<string, unknown>;
+  blockId?: string;
+}
+
+const { value, blockId } = Astro.props;
+const { quote = "", citation = "" } = value;
+
+const advanced = (value as Record<string, unknown>).advanced as Record<string, string> | undefined;
+const cssId      = advanced?.cssId      || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const config = value as Record<string, unknown>;
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const allCss = buildBlockChromeCss(config, blockId, { resolveMediaUrl: resolver });
+---
+
+<blockquote
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+>
+  <p>{quote}</p>
+  {citation && <footer>— {citation}</footer>}
+</blockquote>
+
+{allCss && <style set:html={allCss} is:global />}
+```
+
+Then register:
+
+```ts
+// src/components/index.ts
+import Quote from "./Quote.astro";
+
+export const blockComponents: Record<string, unknown> = {
+  // …
+  quote: Quote,
+};
+```
+
+```astro
+---
+// src/components/BlockRenderer.astro
+import Quote from "./Quote.astro";
+---
+
+{block.type === "quote" && (
+  <Quote value={block.config} blockId={block.id} />
+)}
+```
+
+That's it. Run `npm run lint && npm run typecheck && npm test && npm run build`. The block now appears in the LeftPanel palette (categorised by `def.category`), drops into containers, takes its Fields / Style / Advanced surfaces from the declarative pipeline, renders in the Canvas via the new preview, and renders on the frontend via the new Astro component.
+
+### `BlockDef` reference
+
+Defined in `src/admin/blockDefinitions.ts`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `BlockType` | Discriminator. Must match an entry in the `BlockType` union (`src/types.ts`). |
+| `label` | `string` | Human label shown in the LeftPanel palette and the RightPanel header. |
+| `icon` | `string` | Single emoji or short string. Rendered as text in the palette / header. |
+| `description` | `string` | One-line tagline shown under the header in the panel. |
+| `category` | `"core" \| "general"` | Palette grouping. `core` is structural (container, html, divider-spacer); `general` is content. |
+| `defaultConfig` | `Record<string, any>` | Initial `block.config` produced when the block is dropped on the canvas. Should mirror the per-block config interface. |
+| `fields` | `FieldDef[]` | **@deprecated alias** — keep pointing at the same array as `fieldsTab` until F3.5.6+1 retires it. Existing callers (reducer ADD_BLOCK defaults, tests) still read `def.fields`. |
+| `fieldsTab` | `FieldDef[]` | **Canonical Fields-tab schema.** Iterated by `TabRenderer` → `FieldRenderer`. Empty array → empty Fields tab. |
+| `styleFields` | `FieldDef[]?` | **@deprecated alias** — folded into `styleTab` as a leading `kind: "custom"` entry when needed. New blocks should never set this. |
+| `styleTab` | `StyleSection[]?` | **Canonical Style-tab schema.** Iterated by `TabRenderer` → `SectionRenderer`. Omitting the property entirely auto-hides the Style tab (used by `html`). |
+
+Look-up helper: `getBlockDef(type: BlockType): BlockDef | undefined`. It aliases `fieldsTab` from `fields` for any def that omits the new key — so even legacy registrations expose `def.fieldsTab` to new consumers.
+
+### `FieldDef` reference
+
+Discriminated union. The `kind` property selects the variant; standard inputs may omit `kind` (defaults to `"standard"`).
+
+#### `StandardFieldDef`
+
+Use for simple input-driven fields. `FieldRenderer` dispatches on `field.type`:
+
+| `type` | When to use | Required props | Writes to |
+|--------|-------------|----------------|-----------|
+| `text` | Single-line string (titles, identifiers) | `key`, `label` | `block.config[key]: string` |
+| `url` | URL string with browser validation | `key`, `label` | `block.config[key]: string` |
+| `textarea` | Multi-line string (captions, body copy) | `key`, `label` | `block.config[key]: string` |
+| `number` | Numeric scalar | `key`, `label` | `block.config[key]: number` |
+| `select` | Constrained string choice | `key`, `label`, `options: Array<{value, label}>` | `block.config[key]: string` |
+| `toggle` | Boolean switch | `key`, `label` | `block.config[key]: boolean` |
+| `link` | URL + newTab + nofollow + custom attrs | `key`, `label` | `block.config[key]: { href, newTab, nofollow, customAttr }` |
+| `json-array` | Repeating list of sub-records | `key`, `label`, `itemFields: FieldDef[]` (sub-fields must be `StandardFieldDef`) | `block.config[key]: any[]` |
+| `rich-text` | Portable Text body (lazy editor) | `key`, `label` | `block.config[key]: PortableTextBlock[]` |
+| `code` | Code editor (html / css / js) | `key`, `label`, `language?: "html" \| "css" \| "js"` | `block.config[key]: string` |
+| `number-units` | Number with unit picker (px/rem/em/%/vh/vw/deg/turn) | `key`, `label`, `units?: string[]` | `block.config[key]: string` (e.g. `"24px"`) |
+| `icon-group` | Icon picker (src / size / color / shadow / position) | `key`, `label`, `showPosition?: boolean` | `block.config[key]: IconGroupValue` |
+
+Optional props on every `StandardFieldDef`:
+
+- `placeholder?: string` — input placeholder text.
+- `required?: boolean` — visual asterisk; not enforced at save.
+- `labelClassName?: string` — set to `"epx-row-label--section"` to match the rest of the panel (label-left, control-right with bg + border + reset). DO NOT skip this for normal fields — it's the standard styling, not a special variant.
+- `showWhen?: { key: string; value: string }` — conditional render. The Fields-tab dispatcher in `TabRenderer.tsx` filters fields whose `showWhen` doesn't match the current `block.config`.
+
+#### `CustomFieldDef`
+
+Escape hatch for Fields-tab content that doesn't fit the standard input shape (e.g. `container`'s `LayoutControl + GapControl + OverflowControl + HTML tag + LinkControl` group). Use SPARINGLY — prefer composing standard fields when possible.
+
+```ts
+interface CustomFieldDef {
+  kind: "custom";
+  key: string;                                // stable React key
+  render: (props: FieldRenderProps) => ReactNode;
+  showWhen?: { key: string; value: string };
+}
+
+interface FieldRenderProps {
+  block: SectionBlock;
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+}
+```
+
+Custom Fields renderers handle their own breakpoint routing (read/write `configBreakpoints[bpId]` and `styleBreakpoints[bpId]`). They dispatch `onChange` patches that merge into `block.config`. See `src/admin/right-panel/sections/ContainerLayoutPicker.tsx`, `VideoFieldsSection.tsx`, `LinkFieldsSection.tsx`, `TextFieldsExtras.tsx`, `TextEditorFieldsSection.tsx`, `ImageFieldsSection.tsx` for working examples.
+
+`JsonArrayField` filters out `kind: "custom"` entries from `itemFields` — sub-fields inside a JSON-array item must be `StandardFieldDef`.
+
+### `StyleSection` reference
+
+Discriminated union driving the Style tab. Each variant maps to one branch in `src/admin/right-panel/SectionRenderer.tsx`:
+
+| `kind` | Renders | File | Notes |
+|--------|---------|------|-------|
+| `theme` | `ThemeStyleToggle` (Light / Dark / Accent) | `controls/ThemeStyleToggle.tsx` | Avoid declaring this leading a `background` section — `BackgroundSection` already includes the toggle inline (F3.5.6 follow-up Bug 2). |
+| `spacing` | Padding / Margin `SpacingControl` pair | `right-panel/sections/BpAwareStyleSections.tsx` | Optional `targets?: ("padding" \| "margin")[]` to restrict. |
+| `background` | Normal/Hover toggle + `ThemeStyleToggle` + `BackgroundControl` | `right-panel/sections/BackgroundSection.tsx` | Optional `modes?: BackgroundMode[]` (= `BackgroundType[]`) to restrict. |
+| `border` | Normal/Hover toggle + `BorderControl` | `right-panel/sections/StatefulStyleSection.tsx` | |
+| `borderRadius` | Normal/Hover toggle + `BorderRadiusControl` | `right-panel/sections/StatefulStyleSection.tsx` | |
+| `boxShadow` | Normal/Hover toggle + `BoxShadowControl` | `right-panel/sections/StatefulStyleSection.tsx` | |
+| `typography` | `TypographyControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` | Optional `props?: TypographyProp[]` (= `keyof TypographyValue`) to restrict. Subset filter is reserved — currently renders the full stack. |
+| `textStroke` | `TextStrokeControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` | |
+| `textShadow` | `TextShadowControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` | |
+| `alignment` | `AlignControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` | Writes `style.textAlign`. |
+| `blendMode` | `BlendModeControl` (bp-aware) | `right-panel/sections/BpAwareStyleSections.tsx` | |
+| `filter` | `CssFiltersControl` (blur/brightness/contrast/saturate/hue/grayscale/sepia/invert) | `right-panel/sections/BpAwareStyleSections.tsx` | |
+| `overflow` | `OverflowControl` (overflow-x / overflow-y) | `right-panel/sections/BpAwareStyleSections.tsx` | |
+| `opacity` | Normal/Hover toggle + `NumberRow` | `right-panel/sections/OpacitySection.tsx` | Image-only today; reusable. |
+| `imgVisual` | Width / Height / Object Fit / Object Position / Align | `right-panel/sections/ImgVisualSection.tsx` | Image-only — writes to `block.config.imgStyle.*`, not `style.*`. |
+| `videoSource` | Aspect ratio (with custom W/H) + `CssFiltersControl` | `right-panel/sections/VideoSourceSection.tsx` | Video-only. |
+| `iconGroup` | `IconGroup` reading `block.config.icon` | `controls/IconGroup.tsx` | Reserved for future icon/button/divider Style-tab pickers. |
+| `dividerLine` | Full divider-line picker (style/width/length/color/gradient/align/IconGroup) | `right-panel/sections/DividerLineSection.tsx` | Used today by `divider-spacer` declared via `kind: "custom"`. |
+| `custom` | `section.render({ block, onChange, activeBreakpoint })` | declared per-block in `blockDefinitions.ts` | Escape hatch — see below. |
+
+`SectionRenderer.tsx` ends each switch with `assertNever(section)` so adding a new variant to the `StyleSection` union forces a TypeScript error here until you add a matching case.
+
+### Worked example — adding a `quote` block
+
+Hypothetical `quote` block: a blockquote with optional citation. Goal — three file touches plus the `BlockType` proposal.
+
+#### Pre-step (orchestrator) — extend `BlockType` in `src/types.ts`
+
+Append a proposal to `.claude/coordination/types-proposals.md` with the new union member and a draft `QuoteConfig` interface. Wait for the orchestrator's type PR. Once merged:
+
+```ts
+// src/types.ts (orchestrator-owned)
+export type BlockType =
+  | "container" | "text" | "image" | "text-editor" | "video"
+  | "button" | "icon" | "html" | "divider-spacer"
+  | "quote"; // ← new
+
+export interface QuoteConfig extends BaseBlockConfig {
+  quote?: string;
+  citation?: string;
+}
+```
+
+Now the rest is admin + frontend work.
+
+#### File touch 1 — `src/admin/blockDefinitions.ts`
+
+```ts
+const QUOTE_FIELDS: FieldDef[] = [
+  { key: "quote", label: "Quote", type: "textarea", placeholder: "Enter quote…", labelClassName: "epx-row-label--section" },
+  { key: "citation", label: "Citation", type: "text", placeholder: "Author or source", labelClassName: "epx-row-label--section" },
+];
+
+// inside BLOCK_DEFINITIONS:
+{
+  type: "quote",
+  label: "Quote",
+  icon: "❝",
+  description: "A blockquote with optional citation",
+  category: "general",
+  defaultConfig: { quote: "", citation: "", theme: "light" },
+  fields: QUOTE_FIELDS,
+  fieldsTab: QUOTE_FIELDS,
+  styleTab: [
+    { kind: "alignment" },
+    { kind: "typography" },
+    { kind: "background" },
+    { kind: "borderRadius" },
+    { kind: "border" },
+    { kind: "boxShadow" },
+  ],
+},
+```
+
+#### File touch 2 — preview component
+
+```tsx
+// src/admin/previews/QuotePreview.tsx
+import React, { memo } from "react";
+
+export const QuotePreview = memo(function QuotePreview({ config }: { config: Record<string, unknown> }) {
+  const quote = (config.quote as string) || "";
+  const citation = (config.citation as string) || "";
+  if (!quote) {
+    return <span style={{ color: "#bbb", fontStyle: "italic", fontSize: 12 }}>Quote block</span>;
+  }
+  return (
+    <blockquote style={{ margin: 0, fontStyle: "italic" }}>
+      <p style={{ margin: 0 }}>{quote}</p>
+      {citation && <footer style={{ marginTop: 6, fontStyle: "normal", fontSize: 12, opacity: 0.7 }}>— {citation}</footer>}
+    </blockquote>
+  );
+});
+```
+
+```ts
+// src/admin/previews/index.ts (one-line addition)
+import { QuotePreview } from "./QuotePreview.js";
+
+export const PREVIEW_COMPONENTS: Record<BlockType, React.ComponentType<PreviewProps>> = {
+  // …
+  quote: QuotePreview as React.ComponentType<PreviewProps>,
+};
+```
+
+#### File touch 3 — Astro frontend component
+
+```astro
+---
+// src/components/Quote.astro
+import { buildBlockChromeCss } from "./styleUtils.js";
+import { resolveMediaUrl } from "./media.js";
+
+interface Props {
+  value: { quote?: string; citation?: string; theme?: "light" | "dark" } & Record<string, unknown>;
+  blockId?: string;
+}
+
+const { value, blockId } = Astro.props;
+const { quote = "", citation = "" } = value;
+
+const advanced = (value as Record<string, unknown>).advanced as Record<string, string> | undefined;
+const cssId      = advanced?.cssId      || undefined;
+const cssClasses = advanced?.cssClasses || undefined;
+
+const config = value as Record<string, unknown>;
+const resolver = (key: string) => resolveMediaUrl(key, { locals: Astro.locals });
+const allCss = buildBlockChromeCss(config, blockId, { resolveMediaUrl: resolver });
+---
+
+<blockquote
+  data-epx-block={blockId || undefined}
+  id={cssId}
+  class={cssClasses || undefined}
+>
+  <p>{quote}</p>
+  {citation && <footer>— {citation}</footer>}
+</blockquote>
+
+{allCss && <style set:html={allCss} is:global />}
+```
+
+```ts
+// src/components/index.ts (one-line addition)
+import Quote from "./Quote.astro";
+
+export const blockComponents: Record<string, unknown> = {
+  // …
+  quote: Quote,
+};
+```
+
+```astro
+---
+// src/components/BlockRenderer.astro (one branch)
+import Quote from "./Quote.astro";
+---
+
+{block.type === "quote" && (
+  <Quote value={block.config} blockId={block.id} />
+)}
+```
+
+That's everything. Run the pipeline (`npm run lint && npm run typecheck && npm test && npm run build`). The new block:
+
+- Appears in the LeftPanel palette under "general" with the `❝` icon.
+- Drops into containers (root-allowed list is `container` / `html` / `divider-spacer` only — see `isRootAllowedType` in `src/types.ts`; non-root leaves go inside containers).
+- Renders `quote` and `citation` text inputs in the Fields tab (auto-styled with section labels because `labelClassName` is set).
+- Renders Alignment / Typography / Background / Border Radius / Border / Box Shadow in the Style tab via `SectionRenderer`.
+- Renders the universal Width / Height / Padding / Margin / Position / Z-Index / CSS ID / CSS Classes / Custom CSS in the Advanced tab via `AdvancedTab`.
+- Reflects edits live on the Canvas via `QuotePreview`.
+- Renders to the frontend via `Quote.astro` with `data-epx-block` scoping, `cssId` / `cssClasses` honored, and the chrome CSS bundle injected.
+
+No edits to `RightPanel.tsx`, `SectionRenderer.tsx`, `TabRenderer.tsx`, or `AdvancedTab.tsx`.
+
+### What NOT to touch
+
+Adding a new block should NEVER require editing these files. If you find yourself needing to, stop and reconsider — chances are the existing schema covers your case via a `kind: "custom"` entry, or you're missing a default in `defaultConfig`.
+
+| File | Why off-limits |
+|------|----------------|
+| `src/admin/RightPanel.tsx` | Thin shell only — header + tab dispatch + unknown-block placeholder. Has no per-block branching. The only reasons to edit it are top-shell concerns (header chrome, breakpoint indicator, hover toggle) — not block additions. |
+| `src/admin/right-panel/SectionRenderer.tsx` | Pure dispatch on `StyleSection.kind`. Add a new variant ONLY when introducing a new type of Style section that's reusable across multiple blocks (rare) — otherwise use `kind: "custom"` from the BlockDef. |
+| `src/admin/right-panel/TabRenderer.tsx` | Tab visibility + Fields/Style/Advanced dispatch. Driven by `getVisibleTabs(block)` which reads only from `BlockDef`. |
+| `src/admin/right-panel/AdvancedTab.tsx` | Universal — every block uses the same Advanced tab. There is no per-block branching here, by design. If a block needs different Advanced behavior, that's an architecture conversation, not a block-author task. |
+| `src/admin/right-panel/sections/*` | Existing custom renderers. Only add a new file here when introducing a NEW reusable `kind: "custom"` renderer that multiple blocks can share — and put it in `right-panel/sections/`, not inline in `blockDefinitions.ts`. Single-block custom renderers can live there too if they're complex; very small ones can be defined inline in the BlockDef. |
+| `src/types.ts` | Orchestrator-owned. Append to `.claude/coordination/types-proposals.md` and wait for the type PR — never edit directly from an agent branch. |
+
+### Custom-section escape hatch
+
+When the existing `StyleSection` kinds don't fit (or when a Fields-tab UI doesn't compose from the standard FieldDef types), use the `kind: "custom"` entry. There's a Style-tab variant on `StyleSection` and a Fields-tab variant on `FieldDef` (introduced in F3.5.6). Both take a `render` prop that receives the panel's `block` / `onChange` / `activeBreakpoint` context.
+
+```ts
+// Style-tab custom — mounted by SectionRenderer
+{
+  kind: "custom",
+  render: ({ block, onChange, activeBreakpoint }: SectionRenderProps) => {
+    // Read block.config; write back via onChange. Handle bp routing
+    // yourself — write to style on desktop, styleBreakpoints[bp] otherwise.
+    return <YourCustomStyleSection block={block} onChange={onChange} bp={activeBreakpoint} />;
+  },
+}
+
+// Fields-tab custom — mounted by FieldRenderer (via TabRenderer's customCtx)
+{
+  kind: "custom",
+  key: "my-bespoke-fields",  // stable React key
+  render: ({ block, onChange, activeBreakpoint }: FieldRenderProps) => {
+    return <YourCustomFieldsSection block={block} onChange={onChange} bp={activeBreakpoint} />;
+  },
+}
+```
+
+`SectionRenderProps` and `FieldRenderProps` are structurally identical:
+
+```ts
+interface SectionRenderProps {
+  block: SectionBlock;
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+}
+
+interface FieldRenderProps {
+  block: SectionBlock;
+  onChange: (next: Record<string, any>) => void;
+  activeBreakpoint: BreakpointId;
+}
+```
+
+The two names exist to advertise intent at the call site (Style vs Fields). A renderer can be reused on either tab if the shape is right.
+
+Place the custom component in `src/admin/right-panel/sections/<MyBlock><Section\|Fields>.tsx` so it's discoverable next to existing examples (`ContainerLayoutPicker`, `VideoFieldsSection`, `DividerLineSection`, etc.). Import it into `blockDefinitions.ts` and reference it from the `render` prop. Don't inline 200-line components inside the BlockDef — keep `blockDefinitions.ts` declarative.
+
+## Adding a New Block — TL;DR (legacy short list)
+
+1. Add `BlockType` literal + per-block `*Config` interface to `src/types.ts` (orchestrator PR).
+2. Add `BlockDef` to `BLOCK_DEFINITIONS` in `src/admin/blockDefinitions.ts`.
+3. Add preview component in `src/admin/previews/<NewBlock>Preview.tsx` and register in `previews/index.ts`.
+4. Add Astro component in `src/components/<NewBlock>.astro`, register in `components/index.ts`, and add a dispatch branch in `BlockRenderer.astro`.
+
+See [Adding a new block type — author guide (F3.5.8)](#adding-a-new-block-type--author-guide-f358) above for the full recipe.
 
 ## Blocks To Add
 

@@ -3,6 +3,46 @@
 ## Role
 Reusable UI components for editing block properties: fields, controls, and styling inputs.
 
+## Adding a new block? Read the block-author guide
+
+**If you're adding a new block type, do NOT start from this file.** Start from [`prd-blocks.md` — Adding a new block type — author guide (F3.5.8)](prd-blocks.md#adding-a-new-block-type--author-guide-f358). The right-panel is fully declarative — Fields / Style / Advanced render from `BlockDef.fieldsTab` / `styleTab` data, not from imperative branches. You should NOT need to edit `RightPanel.tsx`, `TabRenderer.tsx`, `SectionRenderer.tsx`, or `AdvancedTab.tsx` to add a block.
+
+## When you'd modify `RightPanel.tsx` (you usually wouldn't)
+
+Post-F3.5.6 the panel is a 162-LOC thin shell. The only reasons to edit `RightPanel.tsx` itself are top-shell concerns:
+
+- **Tab header chrome** — the icon/label/description rendered above the tab strip. Header layout is owned here; per-block content is not.
+- **Breakpoint indicator chrome** — the indicator icon/label that surfaces on bp-aware controls. Per-control plumbing happens inside the controls themselves; the panel only owns global indicator state.
+- **Hover toggle UI plumbing** — Normal/Hover state toggles live inside the section components (`StatefulStyleSection`, `BackgroundSection`, `OpacitySection`); the panel only sets the active block.
+- **Unknown-block placeholder** — `UnknownBlockPanel` for orphan blocks whose `BlockDef` is missing.
+- **`useAutoSelectTab` snap behavior** — auto-snap when the active tab disappears as the block type changes.
+
+For everything else (new block types, new control types, new Style sections), follow the block-author guide and stay out of `RightPanel.tsx`.
+
+The same rule applies to `TabRenderer.tsx`, `SectionRenderer.tsx`, and `AdvancedTab.tsx`:
+
+- `TabRenderer.tsx` — only edit when changing global tab visibility / dispatch behavior across all blocks.
+- `SectionRenderer.tsx` — only edit when introducing a new reusable `StyleSection.kind` variant. For one-block custom sections, use `kind: "custom"` from the BlockDef instead.
+- `AdvancedTab.tsx` — universal across every block. There is no per-block branching here, by design.
+
+## StyleSection kind — quick reference
+
+Brief — full reference (with `controls/` file mapping and props) lives in [`prd-blocks.md` — `StyleSection` reference](prd-blocks.md#stylesection-reference).
+
+| `kind` | Use for |
+|--------|---------|
+| `theme` | Light/Dark/Accent toggle (avoid leading a `background` section — Background already includes it) |
+| `spacing` | Padding/Margin pair |
+| `background` | Background type (color/gradient/image/slideshow/video) — also surfaces theme inline |
+| `border` / `borderRadius` / `boxShadow` | Stateful Normal/Hover triplet |
+| `typography` / `textStroke` / `textShadow` / `alignment` / `blendMode` / `filter` / `overflow` | Bp-aware text/visual primitives |
+| `opacity` | Stateful Normal/Hover opacity (image-only today) |
+| `imgVisual` | Width/Height/Object-Fit/Position/Align (image-only — writes to `imgStyle`, not `style`) |
+| `videoSource` | Aspect ratio + filters (video-only) |
+| `iconGroup` | Reusable icon picker section |
+| `dividerLine` | Divider style/width/length/color/gradient picker |
+| `custom` | Escape hatch — `render({ block, onChange, activeBreakpoint })` |
+
 ## Convention — breakpoint indicator
 Any bp-aware control MUST show the `breakpointIndicator` next to its label on every breakpoint, including `desktop`. Pass `breakpointIndicator={breakpointIndicator}` unconditionally — do NOT gate on `isNonDesktop`. The icon doubles as a "this control is bp-aware" affordance and indicates which breakpoint is currently being edited. Controls that are NOT bp-aware (e.g. `htmlTag`, link fields, plain config-level metadata) must omit the indicator.
 

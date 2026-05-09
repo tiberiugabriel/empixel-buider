@@ -5,6 +5,21 @@ SemVer.
 
 ## Unreleased — 0.9.5 prep
 
+- **F3.5.8 — block-author guide added to `.claude/prd-blocks.md`.** Phase
+  F3.5 (Block Settings Standardization) is now complete: declarative
+  `BlockDef.fieldsTab` + `styleTab` replaces 1671 LOC of imperative
+  `RightPanel.tsx` branching with a 3-step workflow (BlockDef + preview
+  + Astro component). Adding a new block type no longer requires
+  touching `RightPanel.tsx`, `SectionRenderer.tsx`, `TabRenderer.tsx`,
+  or `AdvancedTab.tsx`. The new author guide documents the recipe,
+  full `BlockDef` / `FieldDef` / `StyleSection` references, a worked
+  example (`quote` block), the explicit "what NOT to touch" list, and
+  the `kind: "custom"` escape hatch for both Style and Fields tabs.
+  `prd-rightpanel.md` cross-links to the guide and adds a
+  "When you'd modify RightPanel.tsx" section (top-shell concerns
+  only). `prd-index.md` Quick Links surface the guide as the entry
+  point for new-block work; the architecture diagram + BlockDef schema
+  snippet now reflect the post-F3.5.6 declarative shape.
 - **Hotfix follow-up — `getBuilderLayout(...)` is now polymorphic over the
   3-arg legacy and 4-arg `Astro`-first signatures.** F3.4 (and the earlier
   `fix/F3.4-frontend-empty` follow-up) changed the signature from

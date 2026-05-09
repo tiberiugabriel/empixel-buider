@@ -21,6 +21,27 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 22:30 · F3.5.8 (block-author guide) started
+
+Branch: `feature/agentC-F3.5.8`. Worktree at latest `main` (`f8fcab8`).
+Docs-only PR. Goal: a future block-author can read
+`.claude/prd-blocks.md` + `.claude/prd-rightpanel.md` and add a new
+block in 3 file touches without spelunking the panel internals.
+
+Planned scope:
+- `.claude/prd-blocks.md` — main author guide (recipe + BlockDef +
+  FieldDef + StyleSection references + worked example +
+  what-NOT-to-touch + custom-section escape hatch).
+- `.claude/prd-rightpanel.md` — architecture summary refresh + cross
+  link + brief StyleSection table.
+- `.claude/prd-index.md` — link to author guide + diagram refresh.
+- `CHANGELOG.md` — closing F3.5.8 bullet under
+  `## Unreleased — 0.9.5 prep`.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+No `.ts` / `.tsx` / `.astro` source touches. `src/types.ts` untouched
+(no proposal needed — pure docs).
+
 ## 2026-05-09 21:30 · F3.5.6 followup (Style spacing + theme dup) started
 
 Branch: `fix/F3.5.6-style-spacing-and-theme-dup`. Worktree at latest
@@ -194,6 +215,75 @@ rewrite yet (F3.5.6).
 *(see "Current task")*
 
 ## Done
+
+## 2026-05-09 22:55 · F3.5.8 (block-author guide) done
+
+Branch: `feature/agentC-F3.5.8`. Single commit. Docs-only PR — no
+`.ts` / `.tsx` / `.astro` source changes; no `src/types.ts` proposal.
+
+**Files changed** (5):
+- `.claude/prd-blocks.md` — added the F3.5.8 author guide section
+  (recipe + BlockDef + FieldDef + StyleSection references + worked
+  example + what-NOT-to-touch + custom-section escape hatch).
+  3026 words → 6197 words (+3171). Replaced the 8-line legacy
+  "Adding a New Block" stub with the new full guide; kept a
+  TL;DR linking back into the guide as a nav aid.
+- `.claude/prd-rightpanel.md` — added a leading "Adding a new block?
+  Read the block-author guide" pointer + a "When you'd modify
+  RightPanel.tsx (you usually wouldn't)" section + a brief
+  StyleSection kind table (full reference cross-linked into
+  prd-blocks.md). 4877 words → 5308 words (+431). The post-F3.5.6
+  Architecture diagram block was already accurate (162-LOC thin shell)
+  so it was left in place.
+- `.claude/prd-index.md` — Quick Links table now leads with "Adding a
+  new block type" → the prd-blocks guide; system-architecture diagram
+  reflects the post-F3.5.6 declarative pipeline (TabRenderer →
+  FieldRenderer / SectionRenderer / AdvancedTab); BlockDef schema
+  snippet now shows `fieldsTab` / `styleTab` as canonical with
+  `fields` / `styleFields` flagged @deprecated transitional aliases.
+  1380 words → 1530 words (+150).
+- `CHANGELOG.md` — appended F3.5.8 bullet at the top of
+  `## Unreleased — 0.9.5 prep`. Records phase F3.5 closure (1671
+  LOC → 162) and links the new docs.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Worked-example block**: `quote` (blockquote with optional citation).
+Goal — three file touches plus the orchestrator-level `BlockType`
+proposal. Body of the worked example shows BlockDef declaration,
+preview component skeleton, Astro component skeleton, and the
+`PREVIEW_COMPONENTS` / `blockComponents` / `BlockRenderer.astro`
+registrations. Verified each skeleton compiles against the actual
+type shapes in `src/admin/blockDefinitions.ts`,
+`src/admin/previews/index.ts`, `src/components/index.ts`, and
+`src/components/BlockRenderer.astro` (cross-checked via
+`buildBlockChromeCss(config, blockId, { resolveMediaUrl })` shape
+in `src/components/Text.astro` L43–L45).
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test &&
+npm run build` all green. **219 tests pass** (213 → 219, +6 new
+from prior commit on `feature/agentC-F3.5.8` baseline — F3.5.8
+itself adds no new tests; the deltas are docs-only).
+
+Pipeline tail:
+```
+> empixel-builder@0.9.0 test
+> vitest run
+ Test Files  14 passed (14)
+      Tests  219 passed (219)
+   Duration  708ms
+
+> empixel-builder@0.9.0 build
+> tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/
+```
+
+**No `src/types.ts` proposal**: pure docs PR.
+
+**Surprises / blockers**: none. Manual cross-check of the example
+skeleton against the live `Text.astro` / `TextPreview.tsx` /
+`HtmlPreview.tsx` shapes confirmed that the snippets compile against
+`BlockDef`, `PreviewProps`, the `Astro.locals` resolver pattern, and
+the `data-epx-block` chrome contract — so a future block-author can
+copy the worked example verbatim.
 
 ## 2026-05-09 21:55 · F3.5.6 followup (Bug 1 + Bug 2) done
 
