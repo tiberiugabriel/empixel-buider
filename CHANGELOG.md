@@ -3,6 +3,22 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## 1.0.3 — 2026-05-09
+
+**P0 fix — restore double-envelope `{ data: payload }` on GET /layout return.**
+1.0.2 fixed the EmDash route-wrap mismatch but went one step too far: the
+plugin's client convention is **double-envelope** — handler returns
+`{ data: payload }`, EmDash wraps once more so the HTTP body becomes
+`{"data":{"data":payload}}`, `parseApiResponse` strips one envelope, the
+client destructures `{ data }` to reach `payload`. Other routes
+(`/collections`, `/entries`, `/breakpoints`) follow this convention; only
+`/layout` GET regressed. After 1.0.2 the builder canvas loaded empty
+because `parseApiResponse` returned `{sections:[...]}`, then
+`({ data })` destructure gave `undefined`, then `data?.sections ?? []`
+gave `[]`. 1.0.3 wraps both `/layout` GET return paths (cache hit + cache
+miss) in `{ data: payload }` to match. Tests in `cacheETag.test.ts`
+adapted (assertions wrap in `{ data: ... }`).
+
 ## 1.0.2 — 2026-05-09
 
 **P0 fix — F4.2 ETag/304 dropped; GET handler now returns plain object.**

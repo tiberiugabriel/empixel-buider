@@ -549,7 +549,13 @@ export function createPlugin() {
             // `LayoutCacheEntry` above + the 1.0.2 P0 fix).
             const cached = getLayoutCache(collection, pageId);
             if (cached) {
-              return cached.payload;
+              // Match the plugin's double-envelope client convention:
+              // handler returns { data: payload } → EmDash wraps once →
+              // HTTP body is `{"data":{"data":payload}}` → client's
+              // `parseApiResponse` strips one → builder destructures
+              // `{ data }` → reaches `payload`. Same shape as
+              // /collections, /entries, /breakpoints below.
+              return { data: cached.payload };
             }
 
             // Storage-only read. The legacy SQLite fallback was removed
@@ -570,10 +576,8 @@ export function createPlugin() {
               ? new Date()
               : lastModifiedDate;
             setLayoutCache(collection, pageId, { payload, lastModified });
-            // EmDash wraps `null` to `{ data: null }`; the client's
-            // `useBuilderPersistence.ts` handles that path via
-            // `data?.sections ?? []`.
-            return payload;
+            // Double-envelope convention — see the cache-hit return above.
+            return { data: payload };
           }
 
           if (method === "POST") {

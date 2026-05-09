@@ -178,7 +178,7 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
       storage: { layouts },
     });
     const res = await handler(ctx);
-    expect(res).toEqual({ sections: [{ id: "x", type: "container", config: {} }] });
+    expect(res).toEqual({ data: { sections: [{ id: "x", type: "container", config: {} }] } });
   });
 
   it("returns null for a missing row (EmDash wraps to { data: null })", async () => {
@@ -192,7 +192,7 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
         storage: { layouts },
       })
     );
-    expect(res).toBeNull();
+    expect(res).toEqual({ data: null });
     // Missing rows are still cached so a re-read short-circuits.
     expect(_layoutCacheSize()).toBe(1);
   });
@@ -217,7 +217,7 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
       storage: { layouts },
     });
     const res1 = await handler(ctx1);
-    expect(res1).toEqual({ sections: [{ id: "x", type: "container", config: {} }] });
+    expect(res1).toEqual({ data: { sections: [{ id: "x", type: "container", config: {} }] } });
     expect(_layoutCacheSize()).toBe(1);
 
     // Warm — second call should be served from cache fast.
@@ -232,7 +232,7 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
       const t0 = performance.now();
       const res = await handler(ctx);
       ts.push(performance.now() - t0);
-      expect(res).toEqual({ sections: [{ id: "x", type: "container", config: {} }] });
+      expect(res).toEqual({ data: { sections: [{ id: "x", type: "container", config: {} }] } });
     }
     const avg = ts.reduce((s, x) => s + x, 0) / ts.length;
     expect(avg).toBeLessThan(5);
@@ -262,8 +262,8 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
       request: new Request(url, { method: "GET" }),
       storage: { layouts },
     }));
-    expect(r1).toEqual({ sections });
-    expect(r2).toEqual({ sections });
+    expect(r1).toEqual({ data: { sections } });
+    expect(r2).toEqual({ data: { sections } });
   });
 
   it("LRU eviction: 201st distinct entry evicts the oldest", async () => {
@@ -284,7 +284,7 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
         storage: { layouts },
       });
       const res = await handler(ctx);
-      expect(res).toEqual({ sections: [] });
+      expect(res).toEqual({ data: { sections: [] } });
     }
     expect(_layoutCacheSize()).toBe(200);
 
@@ -363,7 +363,7 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
       request: new Request(`http://localhost/layout?pageId=${ids[0]}&collection=pages`, { method: "GET" }),
       storage: { layouts },
     }));
-    expect(r1).toEqual({ sections: [] });
+    expect(r1).toEqual({ data: { sections: [] } });
   });
 
   it("invalidation: POST /layout busts the cached entry", async () => {
@@ -403,7 +403,7 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
       request: new Request(url, { method: "GET" }),
       storage: { layouts },
     }));
-    expect(res).toEqual({ sections: [{ id: "new", type: "container", config: {} }] });
+    expect(res).toEqual({ data: { sections: [{ id: "new", type: "container", config: {} }] } });
   });
 
   it("invalidation: POST /toggle busts the cached entry", async () => {
@@ -487,8 +487,8 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
       storage: { layouts },
     }));
 
-    expect(r1).toEqual({ sections: [{ id: "p", type: "text", config: {} }] });
-    expect(r2).toEqual({ sections: [{ id: "post-x", type: "text", config: {} }] });
+    expect(r1).toEqual({ data: { sections: [{ id: "p", type: "text", config: {} }] } });
+    expect(r2).toEqual({ data: { sections: [{ id: "post-x", type: "text", config: {} }] } });
     expect(_layoutCacheSize()).toBe(2);
   });
 
@@ -501,14 +501,14 @@ describe("LRU cache on /layout GET (1.0.2 — payload-only, no HTTP-level cache)
       request: new Request(url, { method: "GET" }),
       storage: { layouts },
     }));
-    expect(r1).toBeNull();
+    expect(r1).toEqual({ data: null });
     expect(_layoutCacheSize()).toBe(1);
 
     const r2 = await handler(buildCtx({
       request: new Request(url, { method: "GET" }),
       storage: { layouts },
     }));
-    expect(r2).toBeNull();
+    expect(r2).toEqual({ data: null });
     // Still 1 — second call hit the cache, not storage.
     expect(_layoutCacheSize()).toBe(1);
   });
