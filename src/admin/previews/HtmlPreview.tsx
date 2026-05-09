@@ -80,13 +80,26 @@ export const HtmlPreview = memo(function HtmlPreview({ config }: PreviewProps) {
     return <span style={{ color: "#bbb", fontStyle: "italic", fontSize: 12 }}>HTML block</span>;
   }
 
+  // Mirror Html.astro's iframe override CSS: `display:block; width:100%;
+  // border:none; box-sizing:border-box`. The frontend's `flex:1 1 100%`
+  // and `align-self:stretch` are no-ops here because the canvas wraps
+  // every preview in a `display:block` `epx-canvas-block-host` rather
+  // than a flex/grid parent — but matching `box-sizing` keeps the iframe
+  // consistent with the host page layout when the user copies the block
+  // back into a flex/grid container at runtime.
   return (
     <iframe
       ref={iframeRef}
       sandbox="allow-scripts allow-same-origin"
       scrolling="no"
       srcDoc={buildSrcdoc(code)}
-      style={{ width: "100%", height: height || 0, border: 0, display: "block" }}
+      style={{
+        display: "block",
+        width: "100%",
+        height: height || 0,
+        border: 0,
+        boxSizing: "border-box",
+      }}
     />
   );
 });

@@ -5,6 +5,37 @@ SemVer.
 
 ## Unreleased — 0.9.6 prep
 
+- **F3.6.6 — audit + reconcile preview / Astro DOM.** 1:1 walked every
+  pair `src/admin/previews/<Block>Preview.tsx` ↔ `src/components/<Block>.astro`
+  for the 9 block types and pinned the audit table in
+  `.claude/prd-previews.md`. **3 unintentional drift fixes applied**:
+  (a) `TextPreview.tsx` was hardcoded `<span>`; now mirrors `Text.astro`'s
+  `<Tag(htmlTag)>` with whitelist `[p, div, span, h1, h2, h3, h4, h5, h6]`
+  (defaults to `<p>`) so headings look heading-sized on canvas.
+  (b) `IconPreview.tsx` was raw `<img color=...>` (color is a no-op on
+  `<img>`); now mirrors `Icon.astro`'s SVG-vs-PNG branch — `<span style="
+  mask:url(...); background-color:hexA(iconColor, alpha)">` for SVG +
+  iconColor set, plain `<img>` otherwise. SVG icons now actually recolor
+  on canvas. (c) `HtmlPreview.tsx` iframe style now emits `display:block;
+  box-sizing:border-box` to match `Html.astro`'s `iframeOverrideCss`. **6
+  intentional differences documented** with rationale: container preview
+  is dead code (Canvas routes to `ContainerBlock`); image preview always
+  uses `<figure>` outer wrapper (canvas already wraps in
+  `<div data-epx-block>`); image preview hand-builds
+  `/_emdash/api/media/file/<key>` URL (cross-cuts all 9 previews — tracked
+  by orchestrator task #9 "admin resolveMediaUrl migration debt"); video
+  preview uses `padding-top: <ratio>%` hack (Canvas chrome doesn't emit
+  `aspect-ratio`); button preview hardcodes default visual chrome (so a
+  fresh button looks button-shaped before configuration); html preview's
+  `data-epx-block` lives one element above the iframe (Canvas wrapper
+  pattern). Tests: new `tests/previewParity.test.ts` (+14 cases). 292 →
+  306 tests pass. Files: `src/admin/previews/TextPreview.tsx`,
+  `src/admin/previews/IconPreview.tsx`,
+  `src/admin/previews/HtmlPreview.tsx` (drift fixes);
+  `tests/previewParity.test.ts` (+14 cases);
+  `.claude/prd-previews.md` (audit table + drift summary);
+  `.claude/coordination/status/agent-c.md` (start + done entries).
+
 - **F3.6.5 — Canvas wraps each root-level block in
   `.epx-canvas-block-host` (full-width).** Solves the "leaf block at canvas
   root collapses to content width" issue: `.epx-canvas__list` was

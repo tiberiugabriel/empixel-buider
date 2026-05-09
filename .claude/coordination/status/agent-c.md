@@ -21,7 +21,189 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
-## 2026-05-10 02:18 · F3.6.3 done
+## 2026-05-10 · F3.6.6 done
+
+Branch: `feature/agentC-F3.6.6`. Single commit (commit SHA filled in
+below after `git commit`).
+
+**Files changed**:
+- `src/admin/previews/TextPreview.tsx` — was hardcoded `<span>`; now
+  reads `config.htmlTag` and renders the matching tag from a
+  whitelist `[p, div, span, h1, h2, h3, h4, h5, h6]` (anti-XSS guard
+  — corrupted/legacy configs can't render `<script>` or `<iframe>`).
+  Defaults to `<p>` when `htmlTag` is missing or not in the
+  whitelist. Inline `style={{ margin: 0 }}` neutralises browser
+  default heading/paragraph margins so spacing on canvas comes from
+  `buildBlockChromeCss` (the chrome CSS Canvas already emits via
+  `collectAllBlockCss`).
+- `src/admin/previews/IconPreview.tsx` — was a raw `<img>` with
+  `color: <iconColor>` (which is a no-op on `<img>`, so SVG icons
+  stayed in their native colors regardless of the user's color
+  picker). Now mirrors `Icon.astro`'s SVG-vs-PNG branch: `<span
+  role="img" style="mask:url(<iconSrc>) ...;
+  background-color:hexToRgba(iconColor,alpha)">` for SVG + `iconColor`
+  set; plain `<img>` for PNG or SVG without `iconColor` override.
+  Style-level `style.iconColor` takes precedence over the icon
+  group's own `iconColor` (frontend parity).
+- `src/admin/previews/HtmlPreview.tsx` — added `display: block` and
+  `box-sizing: border-box` to the inline iframe style so it matches
+  `Html.astro`'s `iframeOverrideCss`. Dropped the now-redundant
+  `border:0` (kept) — the frontend's `flex:1 1 100%; align-self:stretch;
+  min-width:0` keys remain absent on canvas because `epx-canvas-block-host`
+  is always `display:block` (F3.6.5), so they'd be no-ops.
+- `tests/previewParity.test.ts` — new file. 14 cases across three
+  describe blocks: (a) **TextPreview tag honoring** — 8 cases pinning
+  `<p>`, `<h1>`, `<h2…h6>`, `<span>/<div>`, missing-htmlTag
+  fallback, anti-XSS whitelist (`<script>` rejected), `margin:0`
+  neutralisation, empty-state placeholder. (b) **IconPreview SVG
+  mask** — 4 cases pinning the SVG + iconColor → `<span>` with
+  `mask:url(...)` branch, PNG → plain `<img>` branch, SVG without
+  iconColor → plain `<img>` branch, and the
+  `style.iconColor`-over-`icon.iconColor` precedence. (c)
+  **HtmlPreview iframe sizing** — 2 cases pinning `display:block;
+  width:100%; box-sizing:border-box; border:0` and the empty-state
+  placeholder.
+- `CHANGELOG.md` — F3.6.6 entry added at the top of `## Unreleased —
+  0.9.6 prep` above F3.6.5.
+- `.claude/prd-previews.md` — new "F3.6.6 — Preview / Astro DOM
+  parity audit" section with the 9-row audit table (block, Astro
+  DOM, Preview DOM, intentional?, notes), the wrapping-context
+  preface explaining how Canvas wraps every preview in
+  `<div data-epx-block>`, and a drift-fixes summary listing the 3
+  unintentional fixes applied + 6 intentional differences
+  documented. Existing "Current Previews (9)" entries 2 (text) and
+  7 (icon) updated to reflect the F3.6.6 changes.
+- `.claude/coordination/status/agent-c.md` — start + done entries.
+
+**Pipeline**: `npm run lint && npm run typecheck && npm test && npm run build`
+all green. **306 tests pass (292 → 306, +14 new from
+`previewParity.test.ts`).**
+
+**Drift count**:
+- **Unintentional drift fixed**: 3
+  - `TextPreview` ignored `htmlTag` (always `<span>`) → now mirrors
+    `Tag(htmlTag)` with whitelist.
+  - `IconPreview` shipped `<img color=…>` (no-op for SVG) → now uses
+    CSS mask for SVG + iconColor.
+  - `HtmlPreview` iframe was missing `display:block; box-sizing:border-box`
+    → now matches `iframeOverrideCss`.
+- **Intentional differences documented**: 6 (one per block: container
+  is dead code, image preview always uses `<figure>` + hand-built URL
+  for the local-storage adapter, text-editor uses internal scope class
+  for `::first-letter`-style scoped CSS, video preview uses
+  `padding-top: <ratio>%` hack for sizing, button preview hardcodes
+  default chrome, html preview's `data-epx-block` lives on Canvas's
+  wrapper rather than on the iframe).
+
+**Per-block summary**:
+- `container` — drift none, intentional 1 (dead code path; preview
+  shows authoring chrome).
+- `text` — drift fixed (1: `<span>` → `<Tag(htmlTag)>`), intentional 0.
+- `image` — drift none, intentional 3 (figure-only outer; hand-built
+  URL — tracked debt task #9; inline `imgVisualStyle`).
+- `text-editor` — drift none, intentional 2 (scope class;
+  React-mini-PortableText).
+- `video` — drift none, intentional 3 (padding-top hack; placeholder
+  ▶ marker; default visual chrome).
+- `button` — drift none, intentional 2 (always `<button>`; hardcoded
+  default visual chrome).
+- `icon` — drift fixed (1: `<img color=...>` → CSS-mask span for SVG),
+  intentional 2 (no `<a>` link wrapper; inline mask declarations).
+- `html` — drift fixed (1: missing `display:block; box-sizing`),
+  intentional 3 (`data-epx-block` on Canvas wrapper; dropped
+  `flex/align-self/min-width`; React-useEffect resize vs inline-script).
+- `divider-spacer` — drift none, intentional 2 (inline mask + line
+  declarations).
+
+**No `src/types.ts` proposal**: all changes are admin-UI-only. The
+preview components live in Agent C's column (`src/admin/previews/*`).
+Frontend Astro components and plugin runtime do not consume the
+preview implementations.
+
+**No blockers.**
+
+## 2026-05-10 · F3.6.6 starting
+
+Branch: `feature/agentC-F3.6.6`.
+
+**Goal**: 1:1 audit of `src/admin/previews/*Preview.tsx` against
+`src/components/*.astro`. Each preview should render the same DOM
+shape (or a documented intentional difference) so what the user sees
+on canvas matches the host page render.
+
+**Key context — Canvas wrapping pattern.** Canvas.tsx wraps every
+preview in its own `<div data-epx-block={section.id}>` for
+non-container blocks (line 436–450). Container blocks bypass
+PREVIEW_COMPONENTS entirely and route through `ContainerBlock` (line
+300). So:
+- `ContainerPreview.tsx` is dead code in the canvas render path —
+  kept in `PREVIEW_COMPONENTS` only for symmetry / fallback. Its
+  visual chrome (dashed border + label) is intentional documentation
+  of "this is a container".
+- For all other blocks, the preview emits the **inner DOM** that goes
+  inside Canvas's `data-epx-block` wrapper. Frontend Astro emits the
+  outer wrapper IS the data-epx-block element. So previews should
+  NOT render their own `data-epx-block` attribute (Canvas handles it),
+  but the DOM structure underneath should mirror what the Astro
+  component would emit underneath its own root.
+
+**Plan — drift fixes I expect to apply**:
+1. **TextPreview**: hardcodes `<span>`. Frontend uses `<Tag(htmlTag)>`
+   (default `p`, can be `h1`/`h2`/etc). Fix: read `config.htmlTag`,
+   render the matching tag (whitelist: `p, h1, h2, h3, h4, h5, h6,
+   span, div`). This affects vertical spacing of text on canvas (a
+   text block configured as `<h1>` should look heading-sized, not
+   span-sized).
+2. **IconPreview**: missing SVG-mask handling. Frontend renders a
+   `<span>` with `mask: url(...)` when icon source is `.svg` and an
+   `iconColor` is set, so SVG icons recolor. Preview shows raw
+   `<img>` with `color` prop (which has no effect on `<img>`). Fix:
+   mirror the same SVG/PNG branch DividerSpacerPreview already
+   implements (and that the Icon.astro component does).
+3. **HtmlPreview**: hardcodes `border:0`. Frontend's CSS rule pins
+   `border:none!important; outline:none; box-sizing:border-box;
+   display:block; width:100%; flex:1 1 100%; min-width:0;
+   align-self:stretch`. Preview drops `box-sizing` / `flex` /
+   `min-width` / `align-self`. Inside Canvas's
+   `epx-canvas-block-host` wrapper (which is `display: block` /
+   `width: 100%`), the preview iframe never sits in a flex/grid
+   parent, so the `flex/align-self` keys are no-ops on canvas. Fix:
+   keep preview minimal but match `display:block; width:100%;
+   border:0; box-sizing:border-box;`. Mostly a no-op; documents
+   intent.
+4. **ImagePreview**: builds the URL by hand
+   (`/_emdash/api/media/file/<key>`). The F2.2 frontend swap routed
+   Astro through `resolveMediaUrl(key, { locals })` so non-local
+   storage adapters (S3 / R2) work. Admin previews still hardcode
+   the local URL — task #9 in the orchestrator log tracks this debt.
+   Out-of-scope for F3.6.6 (all 9 previews still use the legacy URL
+   construction; F3.6.6 is DOM parity not URL plumbing). Document as
+   intentional + cross-link the migration debt.
+5. **ContainerPreview**: dashed-border / "Container" label / N
+   blocks inside text. Intentional — preview is a placeholder for
+   when a custom render path bypasses ContainerBlock. Document.
+6. **VideoPreview**: padding-top hack for aspect-ratio sizing.
+   Intentional — Canvas's chrome CSS doesn't emit `aspect-ratio`
+   (Video.astro emits its own wrapperCss). Document.
+7. **ButtonPreview**: hardcodes `padding: 8px 14px` plus a few
+   default style values. Intentional — preview is the only path that
+   shows the button, and Canvas's `[data-epx-block]` rule emits the
+   real chrome on top of this anyway. Document.
+8. **TextEditorPreview**: extra `epx-textedit-preview` class for
+   scoped CSS (drop-cap / link-color / paragraph-spacing
+   `<style>` tag). Intentional — preview can't reliably hit
+   `[data-epx-block="<id>"]` because the wrapping div is owned by
+   Canvas, not the preview. Document.
+9. **DividerSpacerPreview**: structurally matches Astro. No drift.
+
+**Risk**: changing `TextPreview` from `<span>` to `<p>`/`<h1>`
+inherits browser default margins on the canvas. Need to neutralize
+inline-margin so the spacing comes from `[data-epx-block]`'s
+`buildBlockChromeCss` output (which honors any margin / padding the
+author set). Strategy: emit `style={{ margin: 0 }}` on the rendered
+tag — the same `margin: 0` ImagePreview already uses for `<figure>`.
+
+**No `src/types.ts` change** — all changes are admin-UI-only.
 
 Branch: `feature/agentC-F3.6.3`. Single commit (see git log).
 
