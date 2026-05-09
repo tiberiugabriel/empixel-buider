@@ -21,6 +21,24 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-10 · F4.7 start
+
+Branch: `feature/agentC-F4.7` (already at `main` 76e0495 — F4.1+
+F4.2 + F4.3).
+
+Goal: split `src/admin/controls/BackgroundControl.tsx` (~939 LOC)
+into 5 per-mode sub-files under `src/admin/controls/background/`
+(`ColorSub`, `GradientSub`, `ImageSub`, `SlideshowSub`,
+`VideoSub`) plus a shared `serialize.ts` for the parse/serialize/
+buildBackgroundCss helpers and a `shared.tsx` for the small
+internal widgets (`BgOptionRow`, `BgNumRow`, `BgToggleRow`,
+`SortableSlide`, icon helpers). The main control becomes a thin
+mode-switcher + dispatcher under 200 LOC. Behavior unchanged —
+refactor only.
+
+Concurrent: Agent B on F4.10 (image pipeline). Separate branch.
+No file overlap expected.
+
 ## 2026-05-10 · F3.6.6 done
 
 Branch: `feature/agentC-F3.6.6`. Single commit (commit SHA filled in
@@ -1863,3 +1881,191 @@ observed.
 
 **No blockers.**
 
+
+
+---
+
+## 2026-05-09 — Agent C — F4.7 split BackgroundControl per mode — STARTING
+
+Task: split the 939-LOC `src/admin/controls/BackgroundControl.tsx`
+into 5 per-mode sub-files under
+`src/admin/controls/background/`. The main control becomes a thin
+mode-switcher + dispatcher under 200 LOC. Behavior unchanged —
+refactor only. F4.3's lazy boundary at `SectionRenderer.tsx` still
+wraps the entire control via `BackgroundSection`.
+
+Plan:
+1. Create `src/admin/controls/background/` directory.
+2. Extract shared serializer / parser helpers into
+   `src/admin/controls/background/serialize.ts` (cleaner than leaving
+   them in the main control alongside the new mode files).
+3. Extract each mode body to `<Mode>Sub.tsx`. Each sub takes the
+   right slice of `BackgroundConfig` plus the helpers it needs
+   (color picker callbacks, media picker open callback, etc.).
+4. Reduce `BackgroundControl.tsx` to: type tabs + mode dispatch +
+   color picker popup + media picker modal. Keep the
+   `parseBackground` / `serializeBackground` re-exports so existing
+   import sites (`right-panel/sections/BackgroundSection.tsx`,
+   `tests/codeSplit.test.ts`) continue working.
+5. Run pipeline after each extraction.
+
+
+## 2026-05-09 — Agent C — F4.7 split BackgroundControl per mode — DONE
+
+`src/admin/controls/BackgroundControl.tsx`: 939 → 182 LOC.
+Behavior identical — the file becomes a mode-switcher + dispatcher
+that owns the shared color-picker popup state and the
+media-picker modal state, then renders the matching `<Mode>Sub`
+under `controls/background/`. The shared serializer + parser +
+`buildBackgroundCss` live in `background/serialize.ts` (no React),
+re-exported from `BackgroundControl.tsx` so every existing import
+site keeps working.
+
+**New files** (8 — 5 per-mode subs + 3 helpers):
+
+| File | LOC | Role |
+|------|-----|------|
+| `src/admin/controls/background/serialize.ts` | 190 | `BackgroundConfig` type + `parseBackground`/`serializeBackground`/`buildBackgroundCss`. No React. |
+| `src/admin/controls/background/common.tsx` | 195 | Shared `BgNumRow` / `BgToggleRow` / `BgOptionRow` + dropdown + IMG_*_OPTIONS + small icons (`IconImage`, `IconVideo`, `IconClose`, `IconMedia`, `IconDragDots`, `IconPenSm`). |
+| `src/admin/controls/background/TypeTabs.tsx` | 60 | 5-tab strip (color / gradient / image / video / slideshow) with inline SVG icons. |
+| `src/admin/controls/background/ColorSub.tsx` | 40 | Color mode body (swatch trigger + hex + alpha %). |
+| `src/admin/controls/background/GradientSub.tsx` | 188 | Gradient mode body (angle scrubber, sortable stops, preview bar with draggable markers). |
+| `src/admin/controls/background/ImageSub.tsx` | 74 | Image mode body (Media/URL toggle, ImagePreviewCard or url input, size/position/repeat/attachment rows). |
+| `src/admin/controls/background/VideoSub.tsx` | 109 | Video mode body (Media/URL toggle, video media row or url input, size/position/start/end/play-once + fallback poster). |
+| `src/admin/controls/background/SlideshowSub.tsx` | 94 | Slideshow mode body (+ Add Images trigger + sortable DnD slide list). |
+
+**`BackgroundControl.tsx`** (parent dispatcher) is now 182 LOC,
+under the 200-LOC target. It owns:
+
+- The 5 type tabs (delegated to `<TypeTabs>`).
+- `setType()` which seeds defaults when the user picks a new mode.
+- The `pickerKey` / `pickerPos` / `colorFormat` state for the
+  shared `<ColorPicker>` popup. `openPicker(key, el)` is passed
+  down to `ColorSub` and `GradientSub` so they can position the
+  popup against the right swatch.
+- The `mediaPicker` state + the 4 `<MediaPicker>` modal branches.
+  Sub-files only call `openMediaPicker()` / `openMainPicker()` /
+  `openFallbackPicker()` — they never know about the modal.
+
+**Why the popups stay in the parent**: the color picker is shared
+by Color (main swatch) and Gradient (per-stop swatches), so its
+state has to live above both. The media picker is shared by
+Image, Video (main + fallback), and Slideshow — same reason.
+Pushing them into the subs would either duplicate the popup
+state per mode (bug-prone) or require a context provider for one
+shared popup (over-engineered for KISS).
+
+**Public API preserved**:
+
+```ts
+// All these still resolve from "src/admin/controls/BackgroundControl.tsx":
+import { BackgroundControl } from "...";              // unchanged
+import { parseBackground, serializeBackground } from "..."; // re-exported from serialize.ts
+import { buildBackgroundCss } from "...";              // re-exported from serialize.ts
+import { hexToRgba, hexToRgbVals } from "...";          // re-exported from colorUtils.ts (was already split)
+import type { BackgroundConfig, BackgroundType, MediaRef, GradientStop } from "..."; // re-exported
+```
+
+Existing import sites (`right-panel/sections/BackgroundSection.tsx`,
+`tests/codeSplit.test.ts`, `src/components/styleUtils.ts` (uses
+its own copy), downstream plugins) need no changes.
+
+**F4.3 lazy boundary**: still wraps the entire control via
+`SectionRenderer.tsx` → `case "background"` → `<Suspense
+fallback={<.epx-bg-ctrl--loading />}><BackgroundSection
+{...} /></Suspense>`. The new sub-files load as part of the same
+deferred chunk because they're statically imported from
+`BackgroundControl.tsx` which is statically imported from
+`BackgroundSection.tsx`. Splitting per-mode lazily (e.g.
+`const VideoSub = lazy(...)`) is trivial in a future PR if the
+profile shows the gradient or video bodies as the chunk hot-spot,
+but out of scope for F4.7 (refactor only).
+
+**Tests**:
+
+- New: `tests/backgroundSubs.test.ts` — 13 cases.
+  - 1 SSR shape check per `<Mode>Sub` (5 cases).
+  - `TypeTabs` — renders all 5 by default, filters by
+    `allowedTypes` (2 cases).
+  - `serialize.ts` round-trip — color, gradient (3 stops),
+    image (with media ref + URL fields), `buildBackgroundCss`
+    color, `buildBackgroundCss` gradient, `buildBackgroundCss`
+    no-type-empty (6 cases).
+- Existing tests: zero changes needed. The `tests/codeSplit.test.ts`
+  comment that mentions "BackgroundControl + parseBackground /
+  serializeBackground" still holds — those symbols re-export from
+  the same module path, so the lazy boundary is unaffected.
+
+**Pipeline** (final run, after PRD + CHANGELOG edits):
+
+```
+> empixel-builder@0.9.6 lint
+> eslint src/
+
+> empixel-builder@0.9.6 typecheck
+> tsc -p tsconfig.check.json
+
+> empixel-builder@0.9.6 test
+> vitest run
+
+ RUN  v4.1.5 /Users/tiberiugabriel/Websites/emdash/emdash_plugins/empixel-agent-c
+
+ Test Files  21 passed (21)
+      Tests  363 passed (363)
+
+> empixel-builder@0.9.6 build
+> tsc && mkdir -p dist/admin/builder/styles && cp src/admin/builder/styles/*.css dist/admin/builder/styles/
+```
+
+Tests: 350 → 363 (+13 new, 0 changed).
+
+**Files in scope (Agent C column)**:
+
+- New: 8 (`background/serialize.ts`, `background/common.tsx`,
+  `background/TypeTabs.tsx`, `background/ColorSub.tsx`,
+  `background/GradientSub.tsx`, `background/ImageSub.tsx`,
+  `background/VideoSub.tsx`, `background/SlideshowSub.tsx`).
+- New test: `tests/backgroundSubs.test.ts`.
+- Edited: `src/admin/controls/BackgroundControl.tsx` (gut to
+  dispatcher), `CHANGELOG.md` (append F4.7 entry to
+  `Unreleased — 1.0.0 prep`), `.claude/prd-rightpanel.md`
+  (add new file structure to controls tree + add "File layout
+  (F4.7)" subsection under `## BackgroundControl`),
+  `.claude/coordination/status/agent-c.md` (this entry).
+
+**No `src/types.ts` proposal**: refactor only — no shared types
+moved or changed. The `BackgroundConfig` / `BackgroundType` types
+remain in admin-controls land (re-exported from
+`BackgroundControl.tsx` AND from `background/serialize.ts` so
+both paths resolve). Hard restrictions all observed.
+
+**Surprising findings**:
+
+- `BackgroundControl.tsx` had a private `buildBackgroundCss`
+  (line 169–204 in the pre-F4.7 file) that was orphaned —
+  `grep -rn "buildBackgroundCss" src/admin/` returns only the
+  declaration. The frontend has a separate, full-featured copy
+  in `src/components/styleUtils.ts` that's the actually-consumed
+  one. I kept the admin copy alive because it's exported and a
+  downstream plugin could be importing it; moved it to
+  `background/serialize.ts` and re-exported from the same path.
+  If a future audit confirms zero external consumers, drop the
+  admin copy in a follow-up PR.
+- The `BackgroundControl.tsx` first-pass extraction landed at
+  263 LOC because the 5 type-tab icons (large inline SVGs)
+  added ~30 LOC even after pulling the per-mode bodies out. The
+  fix was to push the tabs into their own small file
+  (`TypeTabs.tsx`, 60 LOC) — pure presentational, zero shared
+  state, so it's a clean split. After that the dispatcher landed
+  at 182 LOC.
+- The Color mode body was the smallest (40 LOC) and the
+  Gradient body the biggest (188 LOC). The size asymmetry
+  reflects the underlying complexity (Gradient has stops,
+  positioning scrubs, an SVG preview bar with markers, and
+  an inline scrubber on the angle row). This is a hint that
+  if any future refactor wants to lazy-load by mode rather
+  than by control, Gradient + Image + Video + Slideshow are
+  the four to chunk-split — Color barely justifies its own
+  file and probably stays inline.
+
+**No blockers.**

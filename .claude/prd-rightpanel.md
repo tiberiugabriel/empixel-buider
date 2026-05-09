@@ -333,7 +333,16 @@ RightPanel.tsx (thin shell — header + frame + unknown-block panel)  # 162 LOC
    ├─ BorderRadiusControl.tsx
    ├─ BorderControl.tsx
    ├─ BoxShadowControl.tsx      # Box shadow (x, y, blur, spread, color, inset)
-   ├─ BackgroundControl.tsx     # Color / gradient / image / slideshow / video
+   ├─ BackgroundControl.tsx     # F4.7 — thin mode-switcher (~180 LOC); per-mode bodies live under `background/`
+   ├─ background/
+   │  ├─ ColorSub.tsx           # F4.7 — Color mode body (swatch + hex + alpha)
+   │  ├─ GradientSub.tsx        # F4.7 — Gradient mode body (angle, stops, preview bar)
+   │  ├─ ImageSub.tsx           # F4.7 — Image mode body (Media/URL toggle + size/position/repeat/attachment rows)
+   │  ├─ VideoSub.tsx           # F4.7 — Video mode body (Media/URL toggle + size/position/start/end/play-once + fallback)
+   │  ├─ SlideshowSub.tsx       # F4.7 — Slideshow mode body (Add Images + DnD slide list)
+   │  ├─ TypeTabs.tsx           # F4.7 — 5-tab strip (color / gradient / image / video / slideshow)
+   │  ├─ common.tsx             # F4.7 — shared row components + IMG_*_OPTIONS + small icons
+   │  └─ serialize.ts           # F4.7 — `BackgroundConfig` type + parseBackground/serializeBackground/buildBackgroundCss
    ├─ GapControl.tsx            # Column + row gap
    ├─ LayoutControl.tsx         # Flex/Grid layout properties
    ├─ OverflowControl.tsx       # Overflow x/y
@@ -524,6 +533,36 @@ Accepts `breakpointIndicator` prop.
 `allowedTypes` prop: restricts to subset (e.g. hover state limited to `["color", "gradient", "image"]`).
 
 Background config is serialized into `style.backgroundType` + per-type fields (`backgroundColor`, `backgroundGradStops`, `backgroundImageStorageKey`, `backgroundVideoSrc`, etc.) and consumed by `buildBackgroundCss` on the frontend.
+
+### File layout (F4.7)
+
+`BackgroundControl.tsx` is a thin mode-switcher + dispatcher
+(~180 LOC). The 5 mode bodies each live in their own file under
+`controls/background/`:
+
+| File | Role |
+|------|------|
+| `BackgroundControl.tsx` | Mode-tabs strip + dispatch + shared color-picker popup + shared media-picker modal. Re-exports `parseBackground`, `serializeBackground`, `buildBackgroundCss`, `BackgroundConfig`, `BackgroundType`, `MediaRef`, `hexToRgba`, `hexToRgbVals`, `GradientStop` so existing import sites keep working. |
+| `background/serialize.ts` | `BackgroundConfig` type + `parseBackground`/`serializeBackground`/`buildBackgroundCss`. No React. |
+| `background/ColorSub.tsx` | Color mode (swatch trigger + hex + alpha %). |
+| `background/GradientSub.tsx` | Gradient mode (angle scrubber, sortable stops, preview bar with draggable markers). |
+| `background/ImageSub.tsx` | Image mode (Media/URL toggle, ImagePreviewCard or url input, size/position/repeat/attachment rows). |
+| `background/VideoSub.tsx` | Video mode (Media/URL toggle, video media row or url input, size/position/start/end/play-once + fallback poster). |
+| `background/SlideshowSub.tsx` | Slideshow mode (+ Add Images trigger + sortable DnD slide list). |
+| `background/TypeTabs.tsx` | 5-tab strip with inline SVG icons (color / gradient / image / video / slideshow). |
+| `background/common.tsx` | `BgNumRow` / `BgToggleRow` / `BgOptionRow` row components, `IMG_SIZE_OPTIONS` / `IMG_POSITION_OPTIONS` / `IMG_REPEAT_OPTIONS` / `IMG_ATTACHMENT_OPTIONS`, and small icons (`IconImage`, `IconVideo`, `IconClose`, `IconMedia`, `IconDragDots`). |
+
+The color-picker popup (used by Color + Gradient subs) and the
+media-picker modal (used by Image / Video / Slideshow + the
+video-fallback) stay in the parent `BackgroundControl` so they
+can be dispatched against any mode without round-tripping
+through the sub-files. F4.3's lazy boundary at
+`SectionRenderer.tsx`'s `case "background"` still wraps the
+entire control via `BackgroundSection`, so the new sub-files
+load as part of the same deferred chunk — splitting them
+further (e.g. `lazy()` per mode) is out of scope for F4.7 but
+trivial if a future audit reports the gradient or video bodies
+as the heaviest.
 
 ## GapControl
 

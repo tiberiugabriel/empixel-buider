@@ -45,6 +45,28 @@ SemVer.
   `src/components/Image.astro`, `src/components/index.ts`,
   `tests/media.test.ts`, `CHANGELOG.md`, `.claude/prd-frontend.md`,
   `.claude/coordination/status/agent-b.md`.
+- **F4.7 — split `BackgroundControl.tsx` (~939 LOC) into 5 per-mode
+  sub-files under `src/admin/controls/background/`** (`ColorSub`,
+  `GradientSub`, `ImageSub`, `SlideshowSub`, `VideoSub`). The main
+  control becomes a thin mode-switcher + dispatcher under 200 LOC
+  (939 → 182). Behavior identical; refactor only. Also extracted:
+  `serialize.ts` (the `BackgroundConfig` type plus `parseBackground`
+  / `serializeBackground` / `buildBackgroundCss` helpers, kept
+  re-exported from `BackgroundControl.tsx` so existing import sites
+  continue working), `common.tsx` (shared `BgNumRow` / `BgToggleRow`
+  / `BgOptionRow` row components, the option-set arrays, and the
+  small icons used by image / video / slideshow modes), and
+  `TypeTabs.tsx` (the 5-tab strip). The color-picker popup (used by
+  Color + Gradient subs) and the media-picker modal (Image / Video /
+  Slideshow / video-fallback) remain in `BackgroundControl.tsx` so
+  they can be dispatched against any mode without round-tripping
+  through the sub-files. F4.3's lazy boundary at
+  `SectionRenderer.tsx`'s `case "background"` still wraps the
+  entire control via `BackgroundSection`; the new sub-files load as
+  part of the same deferred chunk. New smoke test:
+  `tests/backgroundSubs.test.ts` (13 cases — one render-shape check
+  per `<Mode>Sub`, a TypeTabs filter test, and a 5-case
+  serialize/parse round-trip suite). Tests: 350 → 363 (+13).
 
 - **F4.2 — In-memory LRU cache on `/layout` GET (200 entries,
   invalidates on POST/toggle/afterDelete). ETag on GET responses;
