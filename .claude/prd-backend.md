@@ -41,6 +41,39 @@ mysteriously falls back to the unresolved slug, or why an entry table read
 returned nothing. Control flow is unchanged either way; this is purely a
 visibility lever.
 
+## Host-table reads via `ctx.content` (post-F3.5peer hotfix)
+
+The plugin's route handlers occasionally need to read the host's
+`ec_<collection>` content tables — the `/entries` listing for the
+page-selector, and the slug→ULID fresh-entry resolver (`/layout` GET +
+POST, `/toggle`). F3.5 attempted to route those reads through
+`ctx.db` (Kysely) but `PluginContext` exposes no `db` field, so the
+casts (`(ctx as { db?: unknown }).db`) silently resolved to `undefined`
+at runtime and every host-table read short-circuited.
+
+The post-F3.5peer hotfix routes them through `ctx.content` instead —
+provided because the plugin declares the `content:read` capability:
+
+- **`/entries` listing** — `ctx.content.list(collection, { limit,
+  orderBy: { createdAt: "desc" } })`. Pages through the cursor when
+  the limit > 100. Title comes from `ContentItem.data.title`,
+  fallback `data.name`, ultimate fallback `slug ?? id`.
+- **Slug → ULID resolution** — `ctx.content.list(collection, ...)`
+  capped at 200 most-recent entries with `find(it => it.slug ===
+  pageId)`. KISS: a slug not in the first 200 rows is almost
+  certainly stale.
+- **`/toggle` mirror UPDATE** — gone. Was a runtime no-op anyway;
+  KISS says don't expand to `content:write` for a best-effort
+  duplicate enabled bit. Hosts read `_plugin_storage` directly if
+  they need to filter on the bit.
+
+This works transparently across SQLite, Postgres, libSQL, D1, and
+Turso — the multi-driver story F3.5 promised. Pre-0.9 EmDash hosts
+where `ctx.content` is `undefined` get an empty list rather than a
+500; the storage path still works for the layout get/put/delete
+codepaths because those go through `ctx.storage` (which IS a
+universal capability).
+
 ## Auto-augment `empixel_builder` column (v0.8.0 — removed in v0.9.0)
 
 Pre-F3.5 the plugin auto-augmented `ec_<collection>` with an
@@ -263,10 +296,12 @@ re-introduces SQL injection — see audit C1.
 ### `layout` — GET + POST
 **GET** `?pageId=<id>&collection=<name>` → Load layout.
 - If `pageId` doesn't match the ULID format, resolves slug → ULID once
-  via `ec_<collection>.slug`. This is needed only for the fresh-entry
-  case (host CMS hands the builder a slug for an entry never saved
-  through the builder before). On-disk rows are ULID-keyed after
-  `runSlugToUlidMigration_v1` (see Migrations).
+  via `resolveSlugToUlid(ctx, collection, pageId)`, which pages through
+  `ctx.content.list(collection, ...)` (capped at 200 most-recent
+  entries — KISS for the fresh-entry case). On-disk rows are ULID-keyed
+  after `runSlugToUlidMigration_v1` (see Migrations). Pre-F3.5peer this
+  used a Kysely handle on `ctx.db`, which never existed on
+  `PluginContext` — see `/entries` route docs for the diagnosis.
 - Reads through `readLayoutFromStorageOrLegacy(ctx, db, collection,
   pageId)` (v0.9 — F3.2): tries `ctx.storage.layouts.get` first, falls
   back to a single direct SELECT against `empixel_builder_layouts` if
@@ -285,14 +320,34 @@ re-introduces SQL injection — see audit C1.
 ### `entries` — GET
 **GET** `?collection=<name>&limit=<n>` → List all entries for a collection with builder metadata.
 - Returns `{ data: Entry[], collection }` where `Entry = { id, slug, title, created_at, updated_at, builder_enabled }`
-- Builder metadata (enabled flag + timestamps) merges
-  `ctx.storage.layouts.query({ where: { collection } })` with
-  `readLegacyEntryMetaForCollection(ctx, db, collection)`. Storage rows
-  win on conflict because F3.2 writes only land in `ctx.storage`. Pages
+- Implemented by the exported helper `listEntriesForCollection(ctx,
+  collection, limit)` so unit tests can drive every branch directly
+  (see `tests/entriesRoute.test.ts`).
+- Builder metadata (enabled flag + timestamps) comes from
+  `ctx.storage.layouts.query({ where: { collection } })` — paged
   through the storage `query` cursor until `hasMore` clears so
   collections larger than 100 layouts produce complete metadata.
-  The host's `ec_<collection>` table provides the entry rows
-  themselves (`id`, `slug`, `title`, host timestamps).
+  The orphan rows from F3.2 dev iterations (bare-ULID document id
+  with no `data.collection` field) are filtered out automatically
+  because the JSON-extracted `collection` field is `NULL` on those
+  rows.
+- Host entry rows come from `ctx.content.list(collection, { limit,
+  orderBy: { createdAt: "desc" } })` — provided because the plugin
+  declares the `content:read` capability. Works across SQLite,
+  Postgres, libSQL, D1, and Turso. The pre-0.9 fallback to a Kysely
+  handle on `ctx.db` was removed in the post-F3.5peer hotfix because
+  `PluginContext` does **not** expose a `db` field —
+  `(ctx as { db?: unknown }).db` was a type-level lie that always
+  resolved to `undefined` at runtime, leaving the entire entries
+  table blank.
+- Title comes from `entry.data.title` (any non-system column on
+  `ec_<collection>` lands in `ContentItem.data` per
+  `ContentRepository.mapRow`), with `entry.data.name` as a fallback
+  and `entry.slug ?? entry.id` as the ultimate fallback.
+- Pre-0.9 EmDash hosts where `ctx.content` is unavailable get an
+  empty list rather than a 500 (logged via `logCaught`). Storage
+  rows whose `(collection, entryId)` doesn't match a current host
+  entry are silently dropped.
 
 ### `collections` — GET
 **GET** → Returns list of collection names where builder is enabled at collection level.
@@ -311,18 +366,24 @@ re-introduces SQL injection — see audit C1.
 
 ### `toggle` — POST
 **POST** `{ entryId, collection, enabled }` → Enable/disable builder for a specific entry.
-- Resolves slug to ULID.
-- Reads the existing row through `readLayoutFromStorageOrLegacy` so the
+- Resolves slug → ULID at the route boundary via the helper
+  `resolveSlugToUlid(ctx, collection, entryId)`. Post-F3.5peer hotfix
+  the helper goes through `ctx.content.list(collection, ...)` (capped
+  at 200 most-recent entries) instead of the broken `ctx.db.selectFrom`
+  cast — see `/entries` for the full diagnosis.
+- Reads the existing row through `readLayoutFromStorage` so the
   current `sections` aren't lost on first toggle (or seeds `[]` when the
   row doesn't exist yet), then writes through `ctx.storage.layouts.put`
-  with the new `enabled` value (v0.9 — F3.2). The legacy table is no
-  longer touched on writes.
-- Also runs `ensureEmpixelBuilderColumn(...)` before
-  `UPDATE ec_<collection> SET empixel_builder = ?` so per-entry toggles
-  work even when the collection-level `/settings` enable was skipped.
-  Failures from the UPDATE itself now propagate (the previous soft-fail
-  catch is gone since the column is guaranteed present after the helper
-  runs).
+  with the new `enabled` value.
+- The pre-F3.5peer mirror UPDATE on
+  `ec_<collection>.empixel_builder` is **gone**. It was a runtime
+  no-op (the `ctx.db` cast resolved to `undefined`), and adding
+  `content:write` purely to keep a duplicate enabled bit fails KISS.
+  Hosts that need to filter on the `empixel_builder` column should
+  read from `_plugin_storage` instead — filter by `plugin_id`,
+  `collection = "layouts"`, JSON-extract `data.enabled`. The column
+  itself can stay declared in `seed.json` for back-compat; it just
+  won't be kept in sync by the plugin.
 - Returns `{ success: true }`
 
 ### `breakpoints` — GET + POST

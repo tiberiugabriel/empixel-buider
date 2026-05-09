@@ -5,6 +5,46 @@ SemVer.
 
 ## Unreleased — 0.9.5 prep
 
+- **Hotfix: `/entries` route now returns the entries the builder is
+  enabled for instead of an empty list.** F3.2's storage migration
+  produced rows under doc id `<collection>::<entryId>`, but the F3.5
+  rewrite of the `/entries` handler reached for a Kysely handle on
+  `(ctx as { db?: unknown }).db` which does not exist —
+  `PluginContext` only exposes `kv`, `storage`, `content?`, `media?`,
+  `http?`, `log`, `site`, `users?`, `cron?`, `email?`. The cast was a
+  type-level lie; at runtime `ctx.db === undefined` and the entire
+  host-table SELECT short-circuited, leaving the page-selector table
+  blank on Novapera (and any other production host). Cascade: the
+  builder topbar showed the bare ULID instead of the entry title
+  because `BuilderPage.tsx`'s `selected.title` falls back to
+  `selected.id` when the entries response doesn't contain the row.
+  - The handler now reads through `ctx.content.list(collection,
+    { limit, orderBy: { createdAt: "desc" } })` and merges in the
+    per-entry metadata (enabled flag + timestamps) from
+    `ctx.storage.layouts.query({ where: { collection } })`. Works
+    transparently on SQLite, Postgres, libSQL, D1, and Turso —
+    the multi-driver story F3.5 promised but didn't deliver.
+  - `resolveSlugToUlid` (the route-boundary slug→ULID resolver for
+    fresh entries) goes through `ctx.content.list` for the same
+    reason. Capped at 200 rows because the slug→ULID branch is
+    only a fresh-entry convenience; a slug that doesn't appear in
+    the first 200 most-recent entries is almost certainly stale.
+  - The `/toggle` route's "mirror enabled bit onto
+    `ec_<collection>.empixel_builder`" UPDATE has been **dropped**.
+    It was already a runtime no-op (same `ctx.db` lie); maintaining
+    a duplicate enabled bit purely for downstream host queries
+    would require expanding the capability surface to
+    `content:write`, which fails KISS for a best-effort mirror.
+    Hosts that need to filter on `empixel_builder` should read from
+    `_plugin_storage` instead (filter by `plugin_id`,
+    `collection = "layouts"`, JSON-extract `data.enabled`).
+  - New helper `listEntriesForCollection(ctx, collection, limit)` is
+    exported from `src/plugin.ts` so the unit test can drive every
+    branch directly without spinning up an HTTP layer. Public
+    response shape unchanged — `BuilderPage.tsx` /
+    `PageSelector.tsx` consume the same `{ id, slug, title,
+    created_at, updated_at, builder_enabled }` items as before.
+
 - **F3.5.6 — rewrite `RightPanel.tsx` on the declarative pipeline.**
   `RightPanel.tsx` is now a thin shell on top of the
   `BlockDef.fieldsTab` / `styleTab` declarations introduced in

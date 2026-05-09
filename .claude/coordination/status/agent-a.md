@@ -21,6 +21,81 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 16:05 · fix/F3.2-entries-empty started
+
+P0 hotfix landing under the `0.9.5 prep` Unreleased section (cascade-fixes
+bug 3 too). Manual browser test on Novapera surfaced a regression in the
+`/entries` route: page-list table is empty even though
+`_plugin_storage` has 4 properly-shaped rows for `plugin_id="empixel-builder"`,
+`collection="layouts"`, ids `pages::01KP...` / `posts::01KP...`.
+
+**Root cause** (after reading `src/plugin.ts`, `node_modules/emdash/dist/types-D19uBYWn.d.mts`,
+and `node_modules/emdash/dist/search-DkN-BqsS.mjs:5711` + the
+`ContentRepository.findMany` impl in `dist/content-C7G4QXkK.mjs:425`):
+
+The `/entries`, `resolveSlugToUlid`, and `/toggle` routes all reach for
+`(ctx as RouteContext & { db?: unknown }).db` to query the host's
+`ec_<collection>` tables via Kysely. **`PluginContext` has no `db`
+field** — verified at `types-D19uBYWn.d.mts:513-541`. The cast just lies
+at the type level; at runtime `ctx.db` is `undefined`, so the
+`if (kdb && typeof kdb.selectFrom === "function")` guard short-circuits
+and `items` stays `[]`. F3.5's status log confirms my own past prose
+("Slug → ULID resolution at the route boundary uses Kysely
+(`ctx.db.selectFrom('ec_<collection>')`) instead of the synchronous
+`better-sqlite3` SELECT") — that prose was wrong; `ctx.db` was never
+exposed by EmDash's plugin runtime. The pre-F3.5 code reached the host
+table through the plugin's own `getDb()` SQLite singleton; F3.5 dropped
+the singleton without replacing it with a working host-table read. Bug
+3 (topbar shows ULID instead of page title) cascades from this — the
+`selected.title` falls back to `selected.id` whenever entries[] is empty.
+
+**Fix.** The plugin already declares `content:read`, so `ctx.content`
+IS available — the correct multi-driver API for host-table reads.
+Replace:
+
+- `/entries`: `ctx.db.selectFrom("ec_<collection>").selectAll()...`
+  → `ctx.content.list(collection, { limit, orderBy: { createdAt: "desc" } })`.
+  `ContentItem.data.title` carries the title (verified at
+  `content-C7G4QXkK.mjs:860` `mapRow` — every non-system column lands
+  in `data`), `ContentItem.id` / `slug` / `createdAt` / `updatedAt`
+  are first-class. Skip rows where `ctx.content` is undefined (host
+  pre-0.9 EmDash without the capability surface) — gracefully return
+  `[]` instead of crashing.
+- `resolveSlugToUlid`: `ctx.content.get(collection, slugOrId)` —
+  `ContentRepository.findById` accepts identifier and falls back to
+  slug via `findByIdOrSlug` semantics (`content-C7G4QXkK.mjs:357`).
+  Actually the public `ContentAccess.get(collection, id)` only
+  accepts ID, not slug. Use `ctx.content.list(collection, ...)` and
+  `.find(item => item.slug === pageId)` instead — KISS, no extra
+  index lookup tooling needed. Cap the search at 200 rows for the
+  fresh-entry case; a slug that doesn't show up in the first 200
+  rows likely doesn't exist anyway and the row will simply not be
+  found.
+- `/toggle` mirror UPDATE: `ctx.content.update(collection, id,
+  { empixel_builder: 1 })`. Requires `content:write`, but the plugin
+  only declares `content:read` — adding `content:write` would expand
+  the capability surface for a "best-effort" mirror, which is wrong
+  per KISS. Drop the mirror UPDATE entirely. The host can recompute
+  the bit from `_plugin_storage` if it needs to, and the existing
+  best-effort logging will simply log "ctx.db is missing" silently
+  forever otherwise. Simpler: just remove the dead Kysely block and
+  log an info note that the mirror is no longer maintained.
+
+**Orphan rows in `_plugin_storage`.** The 2 ULID-only rows
+(`01KPBDETERP47GNZQCG66S2T4C`, `01KPBDEV2JHJ4BT2KNEXA18CS3` — no
+`<collection>::` prefix) are residue from F3.2 dev iterations.
+`ctx.storage.layouts.query({ where: { collection: "pages" } })` filters
+them out automatically because their JSON-extracted `data.collection`
+field is NULL. **No cleanup migration in this PR** — KISS, the read path
+already ignores them.
+
+**Plan.** One commit on `fix/F3.2-entries-empty`. Patch
+`src/plugin.ts` (3 sites), add `tests/entriesRoute.test.ts` that seeds
+fake `_plugin_storage` rows + a stub `ctx.content.list` and asserts the
+handler returns the expected merged shape, append CHANGELOG bullet under
+`## Unreleased — 0.9.5 prep`, document the read path in
+`prd-backend.md`. Pipeline must be green before commit.
+
 ## 2026-05-09 15:20 · F3.5 started
 
 Plan:
@@ -100,6 +175,113 @@ the `getBuilderLayout` story to drop the legacy fallback).
 *(empty)*
 
 ## Done
+
+## 2026-05-09 16:30 · fix/F3.2-entries-empty done
+
+- **P0 hotfix landing under `## Unreleased — 0.9.5 prep`**: the
+  `/entries` route now returns the entries the builder is enabled for
+  instead of an empty list. Bug 3 (topbar showing the bare ULID
+  instead of the entry title) cascade-resolves automatically because
+  `BuilderPage.tsx`'s `selected.title = entry.title` only falls back
+  to `selected.id` when `entries[]` is empty.
+
+- **Root cause**. F3.5's rewrite of `/entries`, `resolveSlugToUlid`,
+  and `/toggle`'s mirror UPDATE all reached for a Kysely handle on
+  `(ctx as RouteContext & { db?: unknown }).db`. **`PluginContext`
+  exposes no `db` field** — verified at
+  `node_modules/emdash/dist/types-D19uBYWn.d.mts:513-541` (the
+  context surface is `kv`, `storage`, `content?`, `media?`, `http?`,
+  `log`, `site`, `users?`, `cron?`, `email?`). The cast was a
+  type-level lie; at runtime `ctx.db === undefined` and the entire
+  host-table read/write paths short-circuited. F3.5's status-log
+  prose ("Slug → ULID resolution at the route boundary uses Kysely
+  (`ctx.db.selectFrom('ec_<collection>')`) … Works across SQLite,
+  Postgres, libSQL, and D1") was wrong on both counts.
+
+- **Fix**. Routed all three host-table sites through `ctx.content`
+  (provided because the plugin declares the `content:read`
+  capability — verified by the absence of any error from the
+  capability gate at `node_modules/emdash/dist/search-DkN-BqsS.mjs:6127-6128`):
+  - `/entries`: extracted the merge into `listEntriesForCollection(ctx,
+    collection, limit): Promise<EntryListItem[]>` so the unit test can
+    drive every branch directly. Reads via
+    `ctx.content.list(collection, { limit, orderBy: { createdAt: "desc" } })`,
+    paginated through the cursor when limit > 100. Title comes from
+    `ContentItem.data.title` → `data.name` → `slug ?? id` (matches
+    `ContentRepository.mapRow` which lands every non-system column on
+    `data` per `dist/content-C7G4QXkK.mjs:860`). Storage metadata
+    (enabled flag + timestamps) merges in from
+    `ctx.storage.layouts.query({ where: { collection } })` keyed by
+    `entryId`. Pre-0.9 hosts where `ctx.content` is `undefined` get
+    an empty list rather than a 500.
+  - `resolveSlugToUlid`: `ctx.content.list` capped at 200 most-recent
+    entries, with a single one-page-deep fallback when `hasMore` is
+    set. KISS — slugs not in the first 200 rows are almost certainly
+    stale and the layout will simply be returned as `null`.
+  - `/toggle` mirror UPDATE: **dropped**. It was a runtime no-op
+    anyway (same `ctx.db` lie). Adding `content:write` purely to keep
+    a duplicate enabled bit on `ec_<collection>.empixel_builder` for
+    downstream host queries fails KISS for a "best-effort" mirror.
+    Hosts that need the bit can read from `_plugin_storage` directly
+    (filter by `plugin_id`, `collection = "layouts"`, JSON-extract
+    `data.enabled`).
+
+- **Orphan rows in `_plugin_storage`**. Novapera has 2 ULID-only doc
+  IDs (`01KPBDETERP47GNZQCG66S2T4C`, `01KPBDEV2JHJ4BT2KNEXA18CS3` — no
+  `<collection>::` prefix) that are F3.2 dev-iteration residue with no
+  `data.collection` JSON field. `query({ where: { collection } })`
+  filters them out automatically because the JSON-extracted
+  `collection` field is `NULL` on those rows. **No cleanup migration
+  in this PR** — KISS. The read path already handles it.
+
+- **Public response shape unchanged.** `BuilderPage.tsx:18-30` and
+  `PageSelector.tsx:55-58` consume the same `{ id, slug, title,
+  created_at, updated_at, builder_enabled }` items as before — fixing
+  the producer is enough; no consumer changes needed.
+
+- **Test added.** `tests/entriesRoute.test.ts` (9 cases) seeds a stub
+  `ctx.storage.layouts` (with a working `where: { collection }` JSON-
+  extract emulator), a stub `ctx.content.list` (with cursor-based
+  pagination), and the rest of the `RouteContext` surface, then drives
+  `listEntriesForCollection` through every branch:
+  1. Novapera reproduction — 2 valid storage rows + 2 orphan rows + 1
+     host page → 1 merged entry returned with correct title and
+     timestamps.
+  2. Both layers populated for `posts` — verifies storage timestamps
+     win, boolean-coerced `enabled` reads as `true`.
+  3. Storage empty, host populated — verifies `builder_enabled=false`
+     fallback and host timestamps used.
+  4. `ctx.content` undefined — verifies empty list (not 500) for
+     pre-0.9 hosts.
+  5. Title falls back to slug when `data.title` is missing.
+  6. Title falls back to `data.name` when `data.title` is missing.
+  7. Pagination: 150 host entries with `limit: 200` produces all 150.
+  8. `limit: 5` truncates correctly.
+  9. Stale storage rows whose `entryId` doesn't match any host entry
+     are silently dropped.
+
+- **Files**: `src/plugin.ts` (extracted `listEntriesForCollection`
+  helper, rewrote `resolveSlugToUlid`, removed dead `/toggle` mirror
+  UPDATE block, removed dead `ctx.db` cast in `/entries`),
+  `tests/entriesRoute.test.ts` (new), `CHANGELOG.md` (hotfix bullet
+  under `## Unreleased — 0.9.5 prep`), `.claude/prd-backend.md`
+  (rewrote `/entries` + `/toggle` + `/layout` route docs, new
+  "Host-table reads via `ctx.content`" section), this status log.
+
+- **Pipeline**. Green: lint + typecheck + 207 tests + build all pass
+  (198 → 207, +9 in `tests/entriesRoute.test.ts`).
+
+- **Hard-restriction compliance**. Did NOT touch `src/types.ts`,
+  `src/components/db.ts` (Agent B's column for the related frontend
+  bug), `.claude/settings.json`, `AUDIT.html`, `REMAINING.md`, or any
+  file outside Agent A's column. No push, no merge.
+
+- Surprises / blockers: none — but the underlying mistake
+  (`ctx.db` doesn't exist) means anyone scanning the plugin to
+  understand "how does it read host content" would have to come
+  to the same realization. Adding the explicit
+  `ctx.content`-based prose to `prd-backend.md` should pin this
+  for future maintainers.
 
 ## 2026-05-09 15:35 · F3.5 done
 

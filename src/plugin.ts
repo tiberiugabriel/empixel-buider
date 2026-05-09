@@ -46,9 +46,11 @@ function logCaught(
   }
 }
 
-// Whitelist for SQL identifiers built from the `collection` user input. Used
-// by the `/entries` and `/toggle` routes that still touch the host's
-// `ec_<collection>` table via `ctx.db` for entry listings + flag mirror.
+// Whitelist for the `collection` user input. We don't interpolate it into
+// raw SQL anymore (the route-handler reads go through `ctx.content` and
+// `ctx.storage`), but the helper still validates each route param so a
+// malformed collection name fails fast instead of cascading through
+// EmDash's content layer.
 const COLLECTION_RE = /^[a-z0-9_]+$/;
 
 function isValidCollection(name: unknown): name is string {
@@ -202,16 +204,28 @@ const PLUGIN_STORAGE = {
 } as const satisfies PluginStorageConfig;
 
 /**
- * Resolve a slug → ULID against the host's `ec_<collection>` table via
- * `ctx.db` (Kysely) when available. Returns the original input on any
- * miss. Used at the route boundary for the fresh-entry case (host CMS
- * hands the builder a slug for an entry that has never been saved
- * through the builder before).
+ * Resolve a slug → ULID against the host's `ec_<collection>` table via the
+ * `ctx.content` capability surface. Returns the original input on any miss.
+ * Used at the route boundary for the fresh-entry case (host CMS hands the
+ * builder a slug for an entry that has never been saved through the builder
+ * before).
  *
- * Pre-F3.5 this used a synchronous `better-sqlite3` SELECT; post-F3.5
- * the plugin no longer holds a SQLite handle, so we route through
- * EmDash's `ctx.db` (Kysely) instead. Hosts on Postgres / libSQL get
- * the same behaviour through their respective drivers.
+ * Implementation note. Pre-F3.5 this went through the plugin's own
+ * `better-sqlite3` SELECT; F3.5 replaced that with a `ctx.db.selectFrom(...)`
+ * Kysely call — but `PluginContext` (verified at
+ * `node_modules/emdash/dist/types-D19uBYWn.d.mts:513`) never exposed a `db`
+ * field. The cast was a type-level lie; at runtime `ctx.db === undefined` and
+ * the lookup always failed, leaving every fresh-entry write keyed by the slug
+ * (or the route returning empty for slug-only reads). We now go through
+ * `ctx.content` (provided because the plugin declares the `content:read`
+ * capability) which works across SQLite, Postgres, libSQL, D1, and Turso —
+ * the multi-driver story F3.5 promised but didn't actually deliver.
+ *
+ * `ctx.content.get(collection, id)` only accepts an ID, so we page through
+ * `ctx.content.list(...)` and pick the matching slug. Capped at 200 rows
+ * because the slug→ULID branch is purely a fresh-entry convenience; a slug
+ * that doesn't appear in the first 200 most-recent entries is almost
+ * certainly stale and the layout will simply be returned as `null`.
  */
 async function resolveSlugToUlid(
   ctx: RouteContext,
@@ -219,24 +233,177 @@ async function resolveSlugToUlid(
   pageId: string
 ): Promise<string> {
   if (isUlid(pageId)) return pageId;
-  // Fallback: slug-shaped pageId. Try Kysely first; on any miss return
-  // the original input (the layout simply won't be found and the route
-  // returns null).
-  const kdb = (ctx as RouteContext & { db?: unknown }).db as
-    | { selectFrom: (t: string) => { select: (cols: string[]) => { where: (f: string, op: string, v: unknown) => { executeTakeFirst: () => Promise<{ id?: string } | undefined> } } } }
-    | undefined;
-  if (!kdb || typeof kdb.selectFrom !== "function") return pageId;
+  if (!ctx.content) return pageId;
   try {
-    const row = await kdb
-      .selectFrom(`ec_${collection}`)
-      .select(["id"])
-      .where("slug", "=", pageId)
-      .executeTakeFirst();
-    if (row && typeof row.id === "string" && row.id.length > 0) return row.id;
+    const result = await ctx.content.list(collection, {
+      limit: 100,
+      orderBy: { createdAt: "desc" },
+    });
+    const match = result.items.find((it) => it.slug === pageId);
+    if (match) return match.id;
+    if (result.hasMore && result.cursor) {
+      const next = await ctx.content.list(collection, {
+        limit: 100,
+        cursor: result.cursor,
+        orderBy: { createdAt: "desc" },
+      });
+      const m2 = next.items.find((it) => it.slug === pageId);
+      if (m2) return m2.id;
+    }
   } catch (err) {
-    logCaught(ctx, `resolveSlugToUlid: ec_${collection} lookup failed for slug=${pageId}`, err);
+    logCaught(ctx, `resolveSlugToUlid: ctx.content.list(${collection}) failed for slug=${pageId}`, err);
   }
   return pageId;
+}
+
+/**
+ * Per-entry merged shape returned by `/entries`. Consumed by
+ * `PageSelector.tsx` and `BuilderPage.tsx` (post-F3.5peer regression fix —
+ * see `prd-backend.md` § Read path / `/entries`).
+ *
+ * Exported for the unit test that drives the helper directly without going
+ * through the HTTP layer.
+ */
+export interface EntryListItem {
+  id: string;
+  slug?: string;
+  title?: string;
+  created_at: string;
+  updated_at: string;
+  builder_enabled: boolean;
+}
+
+/**
+ * `/entries` route core — list every host entry in `collection`, joined
+ * with the per-entry builder metadata from `ctx.storage.layouts`.
+ *
+ * **Why `ctx.content` instead of `ctx.db`.** The legacy implementation
+ * (and the F3.5 rewrite) reached for a Kysely handle on
+ * `(ctx as { db?: unknown }).db`. That cast was a type-level lie:
+ * `PluginContext` (verified at
+ * `node_modules/emdash/dist/types-D19uBYWn.d.mts:513`) exposes `kv`,
+ * `storage`, `content?`, `media?`, `http?`, `log`, `site`, `users?`,
+ * `cron?`, `email?` — but **no `db` field**. At runtime the cast
+ * resolved to `undefined` and the entire host-table SELECT was
+ * skipped, leaving `items = []` and the page-selector table blank
+ * (Bug 4) plus the topbar showing the ULID instead of the title
+ * (cascade Bug 3 — `selected.title` falls back to `selected.id` when
+ * the entries response doesn't contain the row).
+ *
+ * The plugin already declares the `content:read` capability, so
+ * `ctx.content` is provided by EmDash's plugin runtime and works
+ * transparently across SQLite, Postgres, libSQL, D1, and Turso. We
+ * page through `ctx.content.list(collection, ...)` — which surfaces
+ * `ContentItem.id` / `slug` / `data` (any non-system column lands in
+ * `data` per `dist/content-C7G4QXkK.mjs:860 mapRow`) / `createdAt` /
+ * `updatedAt` / `publishedAt` — and merge in the storage metadata
+ * (enabled flag + timestamps) keyed by `entryId`.
+ *
+ * Storage rows whose `(collection, entryId)` does not match a host
+ * entry are silently dropped. The two F3.2-iteration orphan rows in
+ * `_plugin_storage` (id is the bare ULID with no `<collection>::`
+ * prefix and no `data.collection` field) are also dropped because
+ * `query({ where: { collection } })` filters by the JSON-extracted
+ * `collection` field, which is `NULL` on those rows.
+ */
+export async function listEntriesForCollection(
+  ctx: RouteContext,
+  collection: string,
+  limit: number
+): Promise<EntryListItem[]> {
+  // F3.3 lazy gate — `/entries` is a heavy read so make sure the
+  // storage side is fully populated before merging. Idempotent.
+  await ensureStorageMigrationRan(ctx);
+
+  // Pull per-entry metadata (enabled flag + timestamps) from
+  // ctx.storage.layouts. Storage is the only source of truth as of F3.5.
+  interface LayoutMeta {
+    created_at?: string;
+    updated_at?: string;
+    enabled: number;
+  }
+  const meta: Record<string, LayoutMeta> = {};
+
+  try {
+    // The storage `query` API paginates with a 100-row default cap.
+    // Loop until `hasMore` clears so collections larger than one page
+    // still produce complete metadata.
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await getLayouts(ctx).query({
+        where: { collection },
+        limit: 100,
+        cursor,
+      });
+      for (const item of page.items) {
+        const row = item.data;
+        meta[row.entryId] = {
+          created_at: row.createdAt,
+          updated_at: row.updatedAt,
+          enabled: row.enabled === true || row.enabled === 1 ? 1 : 0,
+        };
+      }
+      if (!page.hasMore || !page.cursor) break;
+      cursor = page.cursor;
+    }
+  } catch (err) {
+    logCaught(ctx, `entries: ctx.storage.layouts.query failed for collection=${collection}`, err);
+  }
+
+  // Pre-0.9 EmDash hosts that don't expose `content` on the plugin context
+  // (because the capability surface predates the multi-driver rewrite) get
+  // an empty list rather than a 500 — the storage metadata is still useful
+  // for the toggle write paths but the entries selector renders "No
+  // entries found" instead of crashing.
+  if (!ctx.content) {
+    logCaught(
+      ctx,
+      `entries: ctx.content is unavailable (host EmDash version too old?), returning empty list`,
+      new Error("ctx.content is undefined despite content:read capability")
+    );
+    return [];
+  }
+
+  const items: EntryListItem[] = [];
+  try {
+    let cursor: string | undefined;
+    let fetched = 0;
+    while (fetched < limit) {
+      const pageSize = Math.min(100, limit - fetched);
+      const page = await ctx.content.list(collection, {
+        limit: pageSize,
+        cursor,
+        orderBy: { createdAt: "desc" },
+      });
+      for (const entry of page.items) {
+        const id = entry.id;
+        const slug = typeof entry.slug === "string" && entry.slug.length > 0 ? entry.slug : id;
+        let title = slug;
+        const data = entry.data ?? {};
+        if (typeof data.title === "string" && data.title.length > 0) {
+          title = data.title;
+        } else if (typeof (data as { name?: unknown }).name === "string" && ((data as { name: string }).name).length > 0) {
+          title = (data as { name: string }).name;
+        }
+        items.push({
+          id,
+          slug,
+          title,
+          created_at: meta[id]?.created_at ?? entry.createdAt,
+          updated_at: meta[id]?.updated_at ?? entry.updatedAt,
+          builder_enabled: (meta[id]?.enabled ?? 0) === 1,
+        });
+        fetched += 1;
+        if (fetched >= limit) break;
+      }
+      if (!page.hasMore || !page.cursor) break;
+      cursor = page.cursor;
+    }
+  } catch (err) {
+    logCaught(ctx, `entries: ctx.content.list(${collection}) failed`, err);
+  }
+
+  return items;
 }
 
 export function createPlugin() {
@@ -377,98 +544,7 @@ export function createPlugin() {
             return { error: "Invalid collection name" };
           }
 
-          // F3.3 lazy gate — `/entries` is a heavy read so make sure the
-          // storage side is fully populated before merging. Idempotent.
-          await ensureStorageMigrationRan(ctx);
-
-          // Pull per-entry metadata (enabled flag + timestamps) from
-          // ctx.storage.layouts. Storage is the only source of truth as
-          // of F3.5 — the legacy SQLite fallback that merged in
-          // unmigrated rows is gone.
-          interface LayoutMeta {
-            created_at?: string;
-            updated_at?: string;
-            enabled: number;
-          }
-          const meta: Record<string, LayoutMeta> = {};
-
-          try {
-            // The storage `query` API paginates with a 100-row default cap.
-            // Loop until `hasMore` clears so collections larger than one page
-            // still produce complete metadata.
-            let cursor: string | undefined;
-            for (;;) {
-              const page = await getLayouts(ctx).query({
-                where: { collection },
-                limit: 100,
-                cursor,
-              });
-              for (const item of page.items) {
-                const row = item.data;
-                meta[row.entryId] = {
-                  created_at: row.createdAt,
-                  updated_at: row.updatedAt,
-                  enabled: row.enabled === true || row.enabled === 1 ? 1 : 0,
-                };
-              }
-              if (!page.hasMore || !page.cursor) break;
-              cursor = page.cursor;
-            }
-          } catch (err) {
-            logCaught(ctx, `entries: ctx.storage.layouts.query failed for collection=${collection}`, err);
-          }
-
-          let items: { id: string; slug?: string; title?: string; created_at: string; updated_at: string; builder_enabled: boolean }[] = [];
-          // Read host entries via Kysely (`ctx.db`). Pre-F3.5 this used a
-          // synchronous `better-sqlite3` SELECT through the shared
-          // singleton; post-F3.5 we go through EmDash's multi-driver
-          // database handle so the listing works on Postgres / libSQL too.
-          const kdb = (ctx as RouteContext & { db?: unknown }).db as
-            | { selectFrom: (t: string) => { selectAll: () => { orderBy: (f: string, dir: string) => { limit: (n: number) => { execute: () => Promise<Array<{ id: string; slug?: string; title?: string; name?: string; data?: string; created_at: string; updated_at: string }>> } } } } }
-            | undefined;
-          if (kdb && typeof kdb.selectFrom === "function") {
-            try {
-              const contentRows = await kdb
-                .selectFrom(`ec_${collection}`)
-                .selectAll()
-                .orderBy("created_at", "desc")
-                .limit(limit)
-                .execute();
-
-              items = contentRows.map((entry) => {
-                const id = entry.id;
-                const slug = entry.slug ?? id;
-                let title = slug;
-
-                if (entry.title) {
-                  title = entry.title;
-                } else if (entry.name) {
-                  title = entry.name;
-                } else if (entry.data) {
-                  try {
-                    const dataObj = JSON.parse(entry.data);
-                    if (dataObj && dataObj.title) {
-                      title = dataObj.title;
-                    }
-                  } catch (err) {
-                    logCaught(ctx, `entries: failed to parse data JSON for entry ${entry.id}`, err);
-                  }
-                }
-
-                return {
-                  id,
-                  slug,
-                  title,
-                  created_at: meta[id]?.created_at ?? entry.created_at,
-                  updated_at: meta[id]?.updated_at ?? entry.updated_at,
-                  builder_enabled: (meta[id]?.enabled ?? 0) === 1,
-                };
-              });
-            } catch (e: unknown) {
-              logCaught(ctx, `entries: failed to fetch entries from ec_${collection}`, e);
-            }
-          }
-
+          const items = await listEntriesForCollection(ctx, collection, limit);
           return { data: items, collection };
         },
       },
@@ -511,26 +587,20 @@ export function createPlugin() {
           };
           await getLayouts(ctx).put(layoutDocId(collection, entryId), next);
 
-          // Mirror the enable bit onto the host's `ec_<collection>.empixel_builder`
-          // column for downstream consumers (host queries that filter by it).
-          // Best-effort — pre-F3.5 the plugin auto-augmented the column via
-          // ALTER TABLE; with the multi-driver storage abstraction the
-          // column has to be declared in `seed.json` (or the UPDATE will
-          // simply log + continue).
-          const kdb = (ctx as RouteContext & { db?: unknown }).db as
-            | { updateTable: (t: string) => { set: (s: Record<string, unknown>) => { where: (f: string, op: string, v: unknown) => { execute: () => Promise<unknown> } } } }
-            | undefined;
-          if (kdb && typeof kdb.updateTable === "function") {
-            try {
-              await kdb
-                .updateTable(`ec_${collection}`)
-                .set({ empixel_builder: body?.enabled ? 1 : 0 })
-                .where("id", "=", entryId)
-                .execute();
-            } catch (err) {
-              logCaught(ctx, `toggle: UPDATE ec_${collection} failed (column may be missing from seed.json)`, err);
-            }
-          }
+          // Note: pre-F3.5 the plugin mirrored the enable bit onto
+          // `ec_<collection>.empixel_builder` for downstream host queries
+          // (via auto-ALTER + direct SQLite UPDATE). F3.5 attempted to keep
+          // the mirror via `ctx.db.updateTable(...)` (Kysely), but
+          // `PluginContext` exposes no `db` field — so the mirror was a
+          // no-op all along. The plugin only declares `content:read`;
+          // adding `content:write` purely to maintain a duplicate enabled
+          // bit fails KISS. Hosts that need to filter on the
+          // `empixel_builder` column should instead read from
+          // `_plugin_storage` (filter by `plugin_id = "empixel-builder"`,
+          // `collection = "layouts"`, JSON-extract `data.collection` and
+          // `data.enabled`). The column itself can stay declared in
+          // `seed.json` for back-compat — it just won't be kept in sync
+          // by the plugin.
 
           return { success: true };
         },
