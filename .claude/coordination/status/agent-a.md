@@ -21,6 +21,62 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 
 ## Current task
 
+## 2026-05-09 15:20 · F3.5 started
+
+Plan:
+
+- **Migration fate decisions** (auditing the three cold-start migrations
+  against the spec's three options — delete / dynamic-import / opt-in):
+  1. `runSpacerMigration` (v0.6 spacer → divider-spacer) — **delete**.
+     Hosts who upgraded through 0.6+ have already run it; the F3.3
+     `runMigrationToStorageV1` migration copies the post-rewrite rows
+     into `ctx.storage` regardless of whether the spacer flag was
+     already set in `empixel_builder_meta`. Removing it eliminates the
+     last reason for the plugin runtime to hold a SQLite handle.
+  2. `runSlugToUlidMigration_v1` (F2.3 slug → ULID) — **delete**. Same
+     reasoning. The F3.3 migration copies whatever `entry_id` value
+     the legacy table currently holds; if a host somehow skipped F2.3
+     and still has slug-keyed rows, those rows migrate as-is and the
+     route boundary's `resolveSlugToUlid(ctx, ...)` (now via Kysely)
+     handles the fresh-entry case going forward. Dropping
+     `runSlugToUlidMigration_v1` saves the SQLite handle.
+  3. `runMigrationToStorageV1` (F3.3 → ctx.storage) — **keep**, rewrite
+     to own its own dynamically-imported `better-sqlite3` handle via
+     `_require("better-sqlite3")` inside `openLegacyDb()`. Wraps the
+     dynamic import in `try/catch` — on Postgres / libSQL / D1 hosts
+     where the binary is missing, the migration silently no-ops and the
+     KV flag is set so future requests are O(1).
+- **Delete legacy fallbacks**: `readLayoutFromStorageOrLegacy` becomes
+  `readLayoutFromStorage` (storage-only, inlined where trivial);
+  `readLegacyEntryMetaForCollection` removed entirely (the `/entries`
+  route reads only from `ctx.storage` now); `content:afterDelete`
+  legacy DELETE removed.
+- **Drop the SQLite singleton + `databasePath` option**: delete
+  `src/dbShared.ts` + `tests/dbShared.test.ts` + `tests/ensureEmpixelBuilderColumn.test.ts`
+  + `tests/slugToUlidMigration.test.ts`. Inline the legacy DB open
+  inline into `toStorageV1.ts`. `src/index.ts` drops the
+  `databasePath?: string` option (becomes `Record<string, never>`).
+- **Drop the peer dep**: `package.json` removes `better-sqlite3` from
+  `peerDependencies`; keeps it in `devDependencies` for tests.
+  Regenerate `package-lock.json`.
+- **Version + CHANGELOG + README + PRDs**: bump to 0.9.0; CHANGELOG
+  picks up the F3.5 final bullet + migration-checklist subsection;
+  README drops `databasePath` docs and adds a "Database driver"
+  pointer to EmDash root storage config; PRDs rewritten to reflect
+  storage-only reality.
+- **Tests**: drop the three deleted files; rewrite `storage.test.ts`
+  to assert storage-only `readLayoutFromStorage` + KV-only
+  `getMigrationFlag` / `setMigrationFlag`; rewrite
+  `getBuilderLayout.test.ts` to remove legacy-fallback path tests;
+  extend `toStorageV1.test.ts` with a graceful-skip case for the
+  dynamic-import path when `better-sqlite3` is unavailable.
+
+Cross-domain edits permitted for this task only (per
+`raport-empixel-emdash.html` Faza 3 row F3.5): `src/components/db.ts`
+(remove `readFromLegacyTable` + `getDb()` import); `tests/getBuilderLayout.test.ts`
+(drop legacy-fallback assertions); `.claude/prd-frontend.md` (rewrite
+the `getBuilderLayout` story to drop the legacy fallback).
+
 ## 2026-05-09 15:05 · F3.3 started
 
 ## 2026-05-09 14:50 · F3.2 started
@@ -44,6 +100,193 @@ Append-only log. Most recent entry on top. The orchestrator reads this to decide
 *(empty)*
 
 ## Done
+
+## 2026-05-09 15:35 · F3.5 done
+
+- **F3.5 ships 0.9.0 — `better-sqlite3` peer dep dropped, plugin no
+  longer opens its own SQLite handle.** All reads + writes go through
+  EmDash's `ctx.storage.layouts`. The legacy fallback paths in
+  `src/plugin.ts` and `src/components/db.ts` are gone; the only
+  remaining bridge to legacy SQLite rows is the F3.3
+  `runMigrationToStorageV1` migration, which now owns its own
+  dynamically-imported `better-sqlite3` handle (`_require("better-sqlite3")`
+  inside `openLegacyDb()`).
+
+- **Migration-fate decisions** (one line each per the spec):
+  - `runSpacerMigration` (v0.6 → divider-spacer): **deleted**. Hosts
+    upgrading through 0.6+ already ran it; the F3.3 row migration
+    copies the post-rewrite rows into `ctx.storage` regardless of
+    whether the legacy `migration_spacer_v1` flag was already set.
+  - `runSlugToUlidMigration_v1` (F2.3 → ULID-keyed rows): **deleted**.
+    Same reasoning — F3.3 copies whatever `entry_id` the legacy table
+    currently holds; the route boundary's `resolveSlugToUlid(ctx, ...)`
+    (now via Kysely on `ctx.db`) handles the fresh-entry case going
+    forward.
+  - `runMigrationToStorageV1` (F3.3 → ctx.storage): **kept and
+    rewritten** to use dynamic `require("better-sqlite3")` inside
+    `openLegacyDb()`. Returns `null` (treated as "no legacy data")
+    when the binary is unavailable on Postgres / libSQL / D1 / Turso
+    hosts. KV flag still set so subsequent requests are O(1).
+
+- **Legacy fallback removal in `src/plugin.ts`**:
+  - Helper `readLayoutFromStorageOrLegacy` → renamed to
+    `readLayoutFromStorage` (storage-only). The legacy SELECT branch
+    is gone.
+  - Helper `readLegacyEntryMetaForCollection` removed entirely. The
+    `/entries` route now reads metadata only from `ctx.storage.layouts`
+    via `query({ where: { collection } })`.
+  - `content:afterDelete` no longer issues the legacy
+    `DELETE FROM empixel_builder_layouts` statement — only
+    `ctx.storage.layouts.delete(layoutDocId)` remains.
+  - `getMigrationFlag` / `setMigrationFlag` no longer take a `db`
+    argument or mirror to `empixel_builder_meta`. They consult
+    `ctx.kv` only. The legacy-meta sync-forward path moved into
+    `toStorageV1.ts` against the migration's own dynamically-imported
+    SQLite handle (so hosts that ran the migration pre-F3.2 still get
+    the flag synced forward to KV on the F3.5 upgrade).
+  - `ensureEmpixelBuilderColumn` (F2.1's auto-ALTER helper) deleted —
+    schema augmentation is back to seed-driven (declare
+    `empixel_builder` in `seed.json`). The `/toggle` UPDATE that
+    mirrors the enable bit onto the host's row is now a best-effort
+    Kysely UPDATE on `ctx.db`; failures log via `logCaught` and don't
+    break the route.
+
+- **Legacy fallback removal in `src/components/db.ts`** (cross-domain
+  exception per F3.5's allocation): `readFromLegacyTable` deleted and
+  the import of `getDb` from `./dbShared` removed. The frontend reader
+  is now storage-only; pre-0.9 EmDash hosts that don't expose `db` on
+  `Astro.locals.emdash` get null sections plus the cache tag (so a
+  future EmDash upgrade still busts cleanly).
+
+- **`src/dbShared.ts` deleted.** The plugin no longer holds a SQLite
+  singleton. `setDefaultDatabasePath`, `resolveDatabasePath`, and the
+  shared `getDb()` factory are gone. The `databasePath?: string`
+  option on `empixelBuilder({ ... })` is removed; the options shape
+  is now `Record<string, never>` (still re-exported as
+  `EmpixelBuilderOptions` for forward-compat without a breaking
+  signature change).
+
+- **Slug → ULID resolution** at the route boundary uses Kysely
+  (`ctx.db.selectFrom('ec_<collection>')`) instead of the synchronous
+  `better-sqlite3` SELECT. Works across SQLite, Postgres, libSQL/Turso,
+  and D1. Same for the `/entries` route's host-table read and the
+  `/toggle` route's mirror UPDATE. Identifier validation
+  (`isValidCollection`) still gates each query.
+
+- **Peer dep dropped** in `package.json` (`peerDependencies` no longer
+  contains `better-sqlite3`). Kept in `devDependencies` for the test
+  suite. `package-lock.json` regenerated. Version bumped 0.8.0 → 0.9.0
+  in both `package.json` and `src/index.ts` (`PluginDescriptor.version`).
+
+- **Tests**:
+  - Deleted `tests/dbShared.test.ts` (file gone).
+  - Deleted `tests/ensureEmpixelBuilderColumn.test.ts` (helper deleted).
+  - Deleted `tests/slugToUlidMigration.test.ts` (migration deleted).
+  - Rewrote `tests/storage.test.ts` for storage-only:
+    `readLayoutFromStorage` (3 cases: present / absent / throws+logs);
+    `getMigrationFlag` (3 cases: KV hit / KV miss / KV throws);
+    `setMigrationFlag` (1 case: KV-only write).
+  - Rewrote `tests/getBuilderLayout.test.ts` to drop the legacy SQLite
+    fallback path tests; kept storage-stub tests for present /
+    absent / disabled / boolean-enabled / wrong-collection-filter.
+  - Extended `tests/toStorageV1.test.ts` to seed the legacy SQLite
+    file via the migration's own dynamic-import handle (using
+    `_setLegacyDbPathForTests` to pin the path) and added the
+    "non-SQLite host" test that points the migration at a path with
+    no `empixel_builder_layouts` table — verifying the graceful
+    no-op path + KV-flag-set behaviour.
+
+- **CHANGELOG**: renamed `## Unreleased — 0.9.0 prep` to
+  `## 0.9.0 — 2026-05-09`. Added the F3.5 final bullet:
+  > **Breaking** — drop the `better-sqlite3` peer dependency. Plugin
+  > no longer opens its own SQLite handle; all reads + writes go
+  > through EmDash's `ctx.storage` (multi-driver: SQLite, Postgres,
+  > libSQL/D1). Removed the `databasePath` option from
+  > `empixelBuilder({ ... })` — storage is configured at the EmDash
+  > root in `astro.config.mjs`. Hosts upgrading from 0.8.x: ensure
+  > F3.3's `migration_to_storage_v1` ran successfully (check the
+  > `_plugin_storage` table for your plugin id). Hosts on Postgres /
+  > libSQL: the migration is a no-op since the legacy table never
+  > existed.
+  Plus a "Migration steps for hosts" subsection with three numbered
+  steps (verify F3.3 ran → drop `databasePath` → optional drop of
+  `better-sqlite3` from host peerDeps).
+
+- **README**: removed the `databasePath` docs (was: "configure via
+  `empixelBuilder({ databasePath: './data.db' })`"); replaced with a
+  "Database driver" subsection pointing readers to EmDash's storage
+  configuration in `astro.config.mjs` (`database: database.sqlite(...)`
+  / `.postgres(...)` / `.libsql(...)`). Notes the plugin works on any
+  driver EmDash supports.
+
+- **PRDs**:
+  - `.claude/prd-backend.md`: rewrote the read/write/migration
+    sections for the post-F3.5 reality. The "Storage abstraction
+    (v0.9.0 prep — F3.1, F3.2)" section is renamed to reflect the
+    F3.5 final shape, drops the legacy-fallback paragraphs, and adds
+    explicit notes that the auto-ALTER helper is gone + the slug-to-
+    ULID + spacer migrations are deleted. The schema diagrams are
+    kept as historical context (the legacy table itself isn't
+    dropped — the plugin just doesn't touch it from the hot path
+    anymore).
+  - `.claude/prd-frontend.md`: rewrote the `getBuilderLayout` story
+    to drop the legacy-SQLite fallback step. Now reads "1. Storage
+    path (only). 2. No legacy fallback." with a short note that
+    pre-0.9 EmDash hosts without `db` on `Astro.locals.emdash` get
+    null sections + the cache tag.
+
+- **Files** (changes, count by category):
+  - Source: `src/plugin.ts` (remove legacy DB import + spacer/slug
+    migrations + auto-ALTER + legacy reads/writes; rewrite slug-to-
+    ULID via Kysely; rewrite `/entries` host-table read via Kysely;
+    rewrite `/toggle` mirror UPDATE via Kysely),
+    `src/components/db.ts` (drop `readFromLegacyTable` + `getDb`
+    import — cross-domain exception per F3.5 spec),
+    `src/index.ts` (drop `databasePath` option), `src/migrations/toStorageV1.ts`
+    (own dynamic-import bridge + `openLegacyDb`).
+  - Source deletions: `src/dbShared.ts`.
+  - Tests: `tests/storage.test.ts` (rewrite),
+    `tests/getBuilderLayout.test.ts` (rewrite),
+    `tests/toStorageV1.test.ts` (extend with non-SQLite host case).
+  - Test deletions: `tests/dbShared.test.ts`,
+    `tests/ensureEmpixelBuilderColumn.test.ts`,
+    `tests/slugToUlidMigration.test.ts`.
+  - Docs: `CHANGELOG.md` (rename + new bullet + migration steps),
+    `README.md` (drop `databasePath` docs + add "Database driver"
+    section), `.claude/prd-backend.md`, `.claude/prd-frontend.md`,
+    `.claude/coordination/status/agent-a.md`.
+  - Build artefacts: `package.json` (drop peer dep, bump to 0.9.0),
+    `package-lock.json` (regenerated).
+  - 16 files changed total: 11 modified, 4 deleted, 0 added (net).
+
+- **Test count delta**: 140 → 118 (−22). Drop is expected — three
+  test files (`dbShared`, `ensureEmpixelBuilderColumn`,
+  `slugToUlidMigration`) deleted along with their subjects;
+  `storage.test.ts` and `getBuilderLayout.test.ts` lost their legacy-
+  fallback assertions while retaining the storage-only path. Pipeline
+  green: lint + typecheck + 118 tests + build all pass.
+
+- **Acceptance grep results**:
+  - `grep -rn "better-sqlite3" src/` → matches only doc-comments in
+    `plugin.ts` / `components/db.ts` and the dynamic require in
+    `migrations/toStorageV1.ts:146`. (`src/add.js` retains its own
+    require — intentionally separate per `ownership.md`.)
+  - `grep -rn "from \"./dbShared\"" src/` → zero matches (file gone).
+  - `grep -n "databasePath" src/index.ts` → only one doc-comment hit
+    in the EmpixelBuilderOptions JSDoc explaining its removal.
+  - `package.json` peerDeps no longer contains `better-sqlite3`;
+    version is `0.9.0`.
+  - README no `databasePath` references.
+
+- Surprises / blockers: none. The Kysely-based slug-to-ULID resolver
+  inside the route handlers is the one new wrinkle — it adds an
+  `await` at the route boundary that wasn't there pre-F3.5 (the
+  legacy synchronous SQLite SELECT was sync). Negligible perf hit;
+  hosts on multi-driver back-ends benefit because the fresh-entry
+  case now works on Postgres / libSQL / D1 too. Did not touch
+  `src/types.ts` (orchestrator-owned). The cross-domain edits to
+  `src/components/db.ts` and `tests/getBuilderLayout.test.ts` are
+  the documented F3.5 exception per the report's allocation table.
 
 ## 2026-05-09 15:35 · F3.3 done
 - New `src/migrations/toStorageV1.ts` exposes `runMigrationToStorageV1(ctx, db): Promise<{migrated, skipped, conflicts}>` (the one-shot data migration runner) and `ensureStorageMigrationRan(ctx, db)` (the lazy-gate wrapper that's called from the top of every layout route handler). Copies every `empixel_builder_layouts` row into `ctx.storage.layouts` so existing hosts upgrade transparently. Legacy table left in place as a fallback for one version (F3.5 will drop it).

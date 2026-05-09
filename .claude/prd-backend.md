@@ -4,21 +4,22 @@
 RESTful API layer for layout persistence and integration with EmDash plugin system.
 
 ## Files
-- `src/index.ts` — Plugin descriptor (entry point)
-- `src/plugin.ts` — 6 REST routes + content hook + cold-start migrations (`runSpacerMigration`, `runSlugToUlidMigration_v1`) + `storage.layouts` declaration + storage-or-legacy read helpers (`readLayoutFromStorageOrLegacy`, `readLegacyEntryMetaForCollection`) + KV migration-flag helpers (`getMigrationFlag`, `setMigrationFlag`) + lazy gate `ensureStorageMigrationRan` at the top of every layout route + the `content:afterDelete` hook
-- `src/storage-types.ts` — `LayoutRow` + `StorageLayoutsCollection` types for `ctx.storage.layouts` (consumed by Agent B in F3.4)
-- `src/migrations/toStorageV1.ts` — F3.3 one-shot data migration (`runMigrationToStorageV1` + the lazy-gate wrapper `ensureStorageMigrationRan`)
+- `src/index.ts` — Plugin descriptor (entry point). No more options as of v0.9.0 (`databasePath` removed; storage is configured at the EmDash root)
+- `src/plugin.ts` — 6 REST routes + content hook + `storage.layouts` declaration + storage-only read helper (`readLayoutFromStorage`) + KV migration-flag helpers (`getMigrationFlag`, `setMigrationFlag`) + lazy gate `ensureStorageMigrationRan` at the top of every layout route + the `content:afterDelete` hook
+- `src/storage-types.ts` — `LayoutRow` + `StorageLayoutsCollection` types for `ctx.storage.layouts` (consumed by Agent B in `src/components/db.ts`)
+- `src/migrations/toStorageV1.ts` — F3.3 one-shot data migration (`runMigrationToStorageV1` + the lazy-gate wrapper `ensureStorageMigrationRan`). Owns its own dynamically-imported `better-sqlite3` handle for the SQLite-host upgrade bridge.
 - `src/types.ts` — Block interfaces + type definitions
-- `src/dbShared.ts` — Shared SQLite handle factory (`getDb()`)
+- ~~`src/dbShared.ts`~~ — **Deleted in F3.5.** The plugin no longer holds a SQLite singleton.
 
-## Runtime requirements (v0.7.1)
+## Runtime requirements (v0.9.0)
 
 The plugin descriptor declares the following peer-dep floor: `emdash >=0.9.0`,
-`better-sqlite3 >=12.0.0`, `astro >=6.0.0`, `react >=19.0.0`,
-`react-dom >=19.0.0`, plus optional `@emdash-cms/admin: "*"`. `better-sqlite3`
-12 ships native bindings built against Node 20, so the host site must run on
-**Node.js 20 or newer** — the README's Requirements section calls this out
-explicitly.
+`astro >=6.0.0`, `react >=19.0.0`, `react-dom >=19.0.0`, plus optional
+`@emdash-cms/admin: "*"`. The `better-sqlite3` peer dependency was dropped
+in F3.5 — the plugin no longer opens its own SQLite handle. Hosts on
+SQLite still work via EmDash core's transitive `better-sqlite3`; hosts on
+Postgres / libSQL / D1 / Turso don't carry the binary at all. Host site
+must run on **Node.js 20 or newer** (required by EmDash core).
 
 The plugin advertises a single capability now: `content:read`. The legacy
 `read:content` form was renamed in 0.7.1 because the EmDash marketplace
@@ -40,66 +41,24 @@ mysteriously falls back to the unresolved slug, or why an entry table read
 returned nothing. Control flow is unchanged either way; this is purely a
 visibility lever.
 
-## Auto-augment `empixel_builder` column (v0.8.0)
+## Auto-augment `empixel_builder` column (v0.8.0 — removed in v0.9.0)
 
-`ensureEmpixelBuilderColumn(db, collection, ctx)` (in `src/plugin.ts`) runs
-the DDL
+Pre-F3.5 the plugin auto-augmented `ec_<collection>` with an
+`empixel_builder INTEGER NOT NULL DEFAULT 0` column on first enable
+via `ALTER TABLE`. The auto-ALTER required direct SQLite access; with
+the multi-driver storage abstraction, schema augmentation is back to
+seed-driven — hosts must declare the column in `seed.json` again. The
+`/toggle` route still mirrors the enable bit onto the host's row via
+`ctx.db` (Kysely), but failures (e.g. column missing) are best-effort
+and logged via `logCaught` rather than blocking the route.
 
-```sql
-ALTER TABLE ec_<collection> ADD COLUMN empixel_builder INTEGER NOT NULL DEFAULT 0
-```
+## Shared DB factory (v0.7.1 — removed in v0.9.0)
 
-so hosts no longer need to declare the column in `seed.json`. Called from
-`POST /settings` (first enable per collection) and `POST /toggle` (first
-per-entry enable on a collection that skipped `/settings`). Idempotent —
-SQLite's `"duplicate column name"` error is swallowed and the helper
-returns silently. Any other ALTER failure (table missing, locked DB,
-corrupt schema) is routed through `logCaught(ctx, ...)` so it's visible
-in the host's log without breaking the route.
-
-**Security**: the caller is responsible for validating `collection` via
-`isValidCollection(...)` before the helper runs. SQLite doesn't accept
-identifiers as bound parameters, so the collection name is interpolated
-into the DDL — bypassing the regex allowlist re-introduces SQL injection
-(see audit C1).
-
-After this lands, the `/toggle` UPDATE no longer needs its previous
-soft-fail catch: the column is guaranteed present, so any UPDATE failure
-is a real bug that should propagate.
-
-## Shared DB factory (v0.7.1)
-
-`src/dbShared.ts` owns the process-wide SQLite handle. Both the plugin
-runtime (`plugin.ts`) and the frontend reader (`components/db.ts`) call
-`getDb()` from this module instead of constructing their own `new Database(...)`
-— the host site holds at most one open file handle to the layouts DB.
-
-Public surface:
-
-- `getDb(opts?: { databasePath?: string })` — returns the cached singleton
-  for the resolved path. Subsequent calls with the same path return the same
-  instance; calling with a different path closes the cached connection and
-  reopens against the new file.
-- `resolveDatabasePath(opts?)` — pure helper. Picks the explicit option, then
-  the configured default, then `<process.cwd()>/data.db`.
-- `setDefaultDatabasePath(databasePath)` — called from `index.ts` when the
-  user passes `empixelBuilder({ databasePath })`. Records the value so
-  later callers don't need to thread the option through.
-
-Plugin option (consumed by `index.ts`):
-
-```ts
-empixelBuilder({ databasePath: "./custom/path/data.db" })
-```
-
-Default behaviour (no option provided) is unchanged — the file lives at
-`process.cwd()/data.db`.
-
-`plugin.ts` keeps a local `getDb()` wrapper (now thin) that delegates to the
-shared factory and runs `CREATE TABLE` / `ALTER TABLE` /
-`runSpacerMigration` once per shared handle (tracked via a `WeakSet`). If
-the host swaps to a different `databasePath` mid-process, the next call
-re-runs schema setup against the new file.
+`src/dbShared.ts` was deleted in F3.5. The plugin no longer holds a
+SQLite singleton — all reads + writes go through EmDash's `ctx.storage`
+multi-driver abstraction. The `databasePath` option on
+`empixelBuilder({ ... })` was removed at the same time; storage is
+configured at the EmDash root in `astro.config.mjs`.
 
 ## Storage abstraction (v0.9.0 prep — F3.1, F3.2)
 

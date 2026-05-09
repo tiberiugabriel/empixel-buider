@@ -2,45 +2,51 @@
  * F3.3 — one-shot data migration `migration_to_storage_v1`.
  *
  * Copies every row from the legacy `empixel_builder_layouts` SQLite table
- * into `ctx.storage.layouts` so existing hosts upgrade transparently. The
- * legacy table is left in place as a fallback for one version (F3.5 drops
- * the fallback and the `better-sqlite3` peer dep).
+ * into `ctx.storage.layouts` so existing SQLite hosts upgrade transparently.
  *
- * Unlike `runSpacerMigration` and `runSlugToUlidMigration_v1` (which run
- * synchronously inside `getDb()`), this migration **needs an async ctx** —
- * `ctx.storage.layouts.put` is async. We don't have an EmDash lifecycle
- * hook that fires on every cold start (`plugin:install` / `plugin:activate`
- * only fire on state transitions, not on software upgrades), so the
- * runner is wired through a **lazy gate** that the route handlers call
- * before serving. After the KV flag is set the gate is a single
- * `ctx.kv.get` (cached to a process-local boolean for subsequent calls
- * within the same process).
+ * **Multi-driver story (post-F3.5).** This is the only place in the plugin
+ * that still reaches for `better-sqlite3` — and it does so via dynamic
+ * `import("better-sqlite3")`. The plugin no longer declares
+ * `better-sqlite3` as a peer dependency:
+ *
+ *   - Hosts on **SQLite** (the legacy default) already have
+ *     `better-sqlite3` installed because EmDash itself ships it. The
+ *     dynamic import resolves, the legacy table is read, and rows are
+ *     copied into `ctx.storage.layouts`.
+ *   - Hosts on **Postgres / libSQL / D1 / Turso** never had the legacy
+ *     `empixel_builder_layouts` table in the first place — the plugin
+ *     wrote rows directly through `ctx.storage` from day one. The
+ *     dynamic import either resolves but the SELECT fails (table
+ *     missing → treated as empty), or the import fails entirely
+ *     (binary unavailable → also treated as empty). Either way, the
+ *     migration is a graceful no-op and the KV flag is set so we don't
+ *     keep retrying on every request.
  *
  * Idempotency contract:
  *
- * - The KV flag `state:migration:to_storage_v1` is the **only** gate. Re-
- *   running the migration with the flag already set is a no-op (returns
- *   zeros, does not touch storage or SQLite).
- * - On failure, the flag is **NOT** set, so the next request retries the
- *   migration. Partial migration is acceptable — `ctx.storage.layouts.put`
- *   is idempotent per row, and the conflict resolution rule (newer
- *   updated_at wins) means a re-run after a partial pass simply finishes
- *   the work.
+ * - The KV flag `state:migration:to_storage_v1` is the **only** gate.
+ *   Re-running the migration with the flag already set is a no-op
+ *   (returns zeros, does not touch storage or SQLite).
+ * - On unexpected failure, the flag is **NOT** set, so the next request
+ *   retries the migration. Partial migration is acceptable —
+ *   `ctx.storage.layouts.put` is idempotent per row, and the conflict
+ *   resolution rule (newer `updatedAt` wins) means a re-run after a
+ *   partial pass simply finishes the work.
  *
  * Conflict resolution:
  *
  * - If both a legacy row and a storage row exist for the same
  *   `(collection, entryId)`, prefer the row with the newer `updatedAt`.
  * - On ties, **storage wins** — storage is the new source of truth post-
- *   migration. This mirrors `runSlugToUlidMigration_v1`'s "ULID wins on
- *   tie" rule applied to the new layer instead of the new key shape.
+ *   migration.
  */
 
 import type { PluginContext } from "emdash";
+import { createRequire } from "node:module";
+import { join } from "node:path";
 
 import { layoutDocId } from "../plugin.js";
 import { getMigrationFlag, setMigrationFlag } from "../plugin.js";
-import type { SqliteDb } from "../dbShared.js";
 import type { LayoutRow, StorageLayoutsCollection } from "../storage-types.js";
 import type { SectionBlock } from "../types.js";
 
@@ -54,8 +60,7 @@ export const MIGRATION_KEY = "to_storage_v1";
 /**
  * Counts returned to the caller (and logged via `ctx.log.info`) so a host
  * operator can verify the migration ran. The plus-skip-conflicts split
- * matches `runSlugToUlidMigration_v1`'s telemetry shape so dashboards
- * comparing "rows migrated this version" stay readable.
+ * matches the original telemetry shape.
  */
 export interface MigrationCounts {
   /** Rows successfully copied from legacy → storage (or overwriting an
@@ -81,6 +86,18 @@ interface LegacyRow {
 }
 
 /**
+ * Minimal SQLite handle interface. Just the methods we need. Defined
+ * locally so the file has no static dependency on `better-sqlite3` —
+ * the binary is resolved lazily through dynamic import.
+ */
+interface LegacyDbHandle {
+  prepare(sql: string): {
+    all(...args: unknown[]): unknown[];
+  };
+  close(): void;
+}
+
+/**
  * Process-local cache: once the migration has run inside this Node process
  * (or the KV flag was already set when we first checked), subsequent calls
  * short-circuit without touching `ctx.kv.get`. Worst case if the cache is
@@ -98,6 +115,43 @@ export function _resetMigrationCacheForTests(): void {
 }
 
 /**
+ * Optional override for the SQLite database path. Used by the test suite
+ * to point the migration at a tmpdir-backed scratch DB without exporting
+ * the legacy `getDb` factory. Production callers leave this untouched and
+ * the migration resolves to `<process.cwd()>/data.db` — the host EmDash
+ * site's database.
+ */
+let testDatabasePath: string | null = null;
+
+/** Test-only helper. Pin the SQLite database path the migration opens.
+ *  Pass `null` to clear. */
+export function _setLegacyDbPathForTests(path: string | null): void {
+  testDatabasePath = path;
+}
+
+const _require = createRequire(import.meta.url);
+
+/**
+ * Open the legacy `empixel_builder_layouts` SQLite database via dynamic
+ * `require("better-sqlite3")`. Returns `null` when the binary is
+ * unavailable (Postgres / libSQL hosts that never had the legacy table)
+ * or the open fails for any other reason. Caller treats `null` as "no
+ * legacy data to migrate".
+ */
+function openLegacyDb(): LegacyDbHandle | null {
+  try {
+    // `better-sqlite3` is no longer a peer dependency post-F3.5. SQLite
+    // hosts (where EmDash ships it transitively) still resolve it; non-
+    // SQLite hosts get `MODULE_NOT_FOUND` here and we silently skip.
+    const Database = _require("better-sqlite3") as new (path: string) => LegacyDbHandle;
+    const dbPath = testDatabasePath ?? join(process.cwd(), "data.db");
+    return new Database(dbPath);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Lazy gate. Called at the top of route handlers that touch
  * `ctx.storage.layouts`. Idempotent and cheap on the hot path:
  *
@@ -106,22 +160,22 @@ export function _resetMigrationCacheForTests(): void {
  * - Subsequent calls: O(1) — process-local cache hit.
  *
  * Errors are caught and logged. We **do not** propagate migration failures
- * back to the request handler — a partial migration plus a graceful
- * fallback (the F3.2 `readLayoutFromStorageOrLegacy` helper still serves
- * the legacy row when the storage side is missing) is preferable to
- * blocking a save.
+ * back to the request handler — graceful fallback is preferable to
+ * blocking a save. Note that as of F3.5 there is no read-side fallback
+ * for legacy SQLite rows in `plugin.ts` / `components/db.ts`; the
+ * one-shot migration is the entire bridge. Once the KV flag is set, the
+ * legacy table is unreachable from the plugin's hot path.
  */
 export async function ensureStorageMigrationRan(
   ctx: {
     log: PluginContext["log"];
     kv: PluginContext["kv"];
     storage: PluginContext["storage"];
-  },
-  db: SqliteDb
+  }
 ): Promise<MigrationCounts> {
   if (migrationRanThisProcess) return ZERO_COUNTS;
   try {
-    const counts = await runMigrationToStorageV1(ctx, db);
+    const counts = await runMigrationToStorageV1(ctx);
     migrationRanThisProcess = true;
     return counts;
   } catch (err) {
@@ -144,43 +198,63 @@ export async function ensureStorageMigrationRan(
  *    returns zero counts immediately. (Honors the legacy
  *    `empixel_builder_meta` table too via `getMigrationFlag` for hosts
  *    that already ran the migration before F3.2 moved flags to KV.)
- * 2. Otherwise, SELECTs every row from `empixel_builder_layouts`. For
- *    each: read the storage side, decide migrate vs. skip via the
- *    conflict-resolution rule, and `put` if the legacy row wins.
- * 3. On success, sets the KV flag so subsequent calls short-circuit.
- * 4. On any thrown error before the loop completes, the flag is NOT set
+ * 2. Otherwise, attempts to open the legacy SQLite database via
+ *    dynamic import. If the binary is missing (Postgres / libSQL host)
+ *    or the database file is unreachable, the legacy row set is treated
+ *    as empty — the flag is still set and the migration becomes a
+ *    permanent no-op for that host.
+ * 3. SELECTs every row from `empixel_builder_layouts`. For each: read
+ *    the storage side, decide migrate vs. skip via the conflict-
+ *    resolution rule, and `put` if the legacy row wins.
+ * 4. On success, sets the KV flag so subsequent calls short-circuit.
+ * 5. On any thrown error before the loop completes, the flag is NOT set
  *    — the next call retries from the top.
+ *
+ * Note: as of F3.5 the migration manages its own SQLite handle (opened
+ * via dynamic `require("better-sqlite3")`) instead of accepting an `db`
+ * argument from the caller. The plugin runtime no longer holds a SQLite
+ * handle of its own.
  */
 export async function runMigrationToStorageV1(
   ctx: {
     log: PluginContext["log"];
     kv: PluginContext["kv"];
     storage: PluginContext["storage"];
-  },
-  db: SqliteDb
+  }
 ): Promise<MigrationCounts> {
-  const alreadyRan = await getMigrationFlag(ctx, db, MIGRATION_KEY);
+  const alreadyRan = await getMigrationFlag(ctx, MIGRATION_KEY);
   if (alreadyRan) return { ...ZERO_COUNTS };
 
   const counts: MigrationCounts = { migrated: 0, skipped: 0, conflicts: 0 };
 
-  let legacyRows: LegacyRow[];
-  try {
-    legacyRows = db
-      .prepare(
-        "SELECT collection, entry_id, sections, enabled, created_at, updated_at FROM empixel_builder_layouts"
-      )
-      .all() as LegacyRow[];
-  } catch (err) {
-    // Legacy table missing entirely (fresh install) — treat as empty and
-    // mark the flag so we don't keep paying the SELECT cost on every
-    // request. This is the "no-data case" listed in the test plan.
-    const data = { err: err instanceof Error ? err.message : String(err) };
-    ctx.log.warn(
-      "[empixel-builder] runMigrationToStorageV1: legacy SELECT failed (table missing?), treating as empty",
-      data
+  const legacyDb = openLegacyDb();
+
+  let legacyRows: LegacyRow[] = [];
+  if (legacyDb) {
+    try {
+      legacyRows = legacyDb
+        .prepare(
+          "SELECT collection, entry_id, sections, enabled, created_at, updated_at FROM empixel_builder_layouts"
+        )
+        .all() as LegacyRow[];
+    } catch (err) {
+      // Legacy table missing entirely (fresh install or non-SQLite host
+      // whose `data.db` lacks the table) — treat as empty and mark the
+      // flag so we don't keep paying the SELECT cost on every request.
+      const data = { err: err instanceof Error ? err.message : String(err) };
+      ctx.log.warn(
+        "[empixel-builder] runMigrationToStorageV1: legacy SELECT failed (table missing?), treating as empty",
+        data
+      );
+      legacyRows = [];
+    }
+  } else {
+    // `better-sqlite3` could not be resolved — host is on Postgres /
+    // libSQL / D1 / Turso and never had the legacy table. Treat as
+    // empty and set the flag so future requests are O(1).
+    ctx.log.info(
+      "[empixel-builder] runMigrationToStorageV1: legacy SQLite unavailable (non-SQLite host?), skipping"
     );
-    legacyRows = [];
   }
 
   // Cast `ctx.storage.layouts` to the typed handle. The runtime shape is
@@ -264,21 +338,30 @@ export async function runMigrationToStorageV1(
   // Mark the flag only after the loop completes. Per-row failures above
   // increment `skipped` but don't abort the loop, so the flag still gets
   // set — the conflict-resolution rule means a re-run is a no-op for any
-  // rows that did succeed, and the few that failed are graceful-degraded
-  // by the F3.2 `readLayoutFromStorageOrLegacy` legacy fallback.
+  // rows that did succeed, and the few that failed will retry on the
+  // next process boot if/when the cache is reset.
   //
   // What WOULD prevent the flag from being set is the SELECT itself
   // throwing in a way that propagated out of this function, or one of
   // these two await-set calls throwing. In both cases the next request
-  // retries from the top. This matches step 6 of the spec ("On failure,
-  // ctx.log.error and DO NOT set the flag").
-  await setMigrationFlag(ctx, db, MIGRATION_KEY);
+  // retries from the top.
+  await setMigrationFlag(ctx, MIGRATION_KEY);
 
   ctx.log.info("[empixel-builder] migration_to_storage_v1 complete", {
     migrated: counts.migrated,
     skipped: counts.skipped,
     conflicts: counts.conflicts,
   });
+
+  // Best-effort close of the legacy handle so we don't leak the file
+  // handle across process lifetime. The handle is one-shot anyway.
+  if (legacyDb) {
+    try {
+      legacyDb.close();
+    } catch {
+      // best-effort
+    }
+  }
 
   return counts;
 }

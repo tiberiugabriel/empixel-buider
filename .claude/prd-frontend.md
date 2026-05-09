@@ -158,7 +158,7 @@ All exports return CSS **strings** (selector-based rules), not inline declaratio
 
 ## Database Query (db.ts)
 
-### getBuilderLayout(astro, collection, entryId, enabled?) — v0.9 (F3.4)
+### getBuilderLayout(astro, collection, entryId, enabled?) — v0.9 (F3.4 + F3.5)
 ```ts
 export interface BuilderLayoutContext {
   locals?: {
@@ -189,11 +189,11 @@ and the unawaited Promise on its `sections` prop, so
 `<BuilderWrapper sections={getBuilderLayout(Astro, ...)}>` works
 without an explicit `await` at the page level.
 
-Read order:
+Read path (post-F3.5 — storage-only):
 
-1. **Storage path (preferred).** When `Astro.locals.emdash.db` is
-   present (Kysely instance EmDash exposes since 0.9), the reader
-   queries the shared `_plugin_storage` table partitioned under
+1. **Storage path (only).** When `Astro.locals.emdash.db` is present
+   (Kysely instance EmDash exposes since 0.9), the reader queries the
+   shared `_plugin_storage` table partitioned under
    `plugin_id = "empixel-builder" AND collection = "layouts"` — the
    same partitioning EmDash's internal `PluginStorageRepository` uses
    for the typed `ctx.storage.layouts` handle. Rows live there once
@@ -203,23 +203,24 @@ Read order:
    Kysely with the same composite-key filter. No imports from
    `kysely` — only the public `selectFrom(...).select(...).where(...)`
    surface is consumed.
-2. **Legacy SQLite fallback.** When the storage path returns no row
-   (or the host hasn't upgraded EmDash yet, or `Astro.locals.emdash.db`
-   is unavailable), the reader falls through to the existing
-   `empixel_builder_layouts` SQLite table via `getDb()` from
-   `src/dbShared.ts`. Same query shape as F2.3/F2.4: slug → ULID
-   resolution at the boundary (only when needed), then a single
-   `SELECT sections, enabled, updated_at FROM empixel_builder_layouts
-   WHERE collection = ? AND entry_id = ?`. F3.5 drops this fallback
-   and the `better-sqlite3` peer dependency.
+2. **No legacy fallback.** F3.5 dropped the legacy
+   `empixel_builder_layouts` SQLite read path together with
+   `src/dbShared.ts` and the `better-sqlite3` peer dependency. Hosts
+   that upgrade to v0.9 without first running EmDash 0.9+ (i.e.
+   `Astro.locals.emdash.db` is missing) get `{ sections: null,
+   cacheHint }` — the page renders without a layout but the cache tag
+   is still emitted so a future EmDash upgrade busts cleanly. The
+   plugin runtime's lazy `runMigrationToStorageV1` migration takes
+   care of copying any legacy SQLite rows into `ctx.storage.layouts`
+   on the first request after upgrade, so by the time host pages
+   render the storage side is populated.
 
-Returns `{ sections, cacheHint }` (v0.8 — F2.4 contract preserved); `sections` is `null`
-when no row, builder disabled, input rejected, or both reads return
-empty. The `cacheHint.tags` always carries
-`empixel:layout:<collection>:<entryId>` so admin saves can invalidate
-the host page by tag. `cacheHint.lastModified` is parsed from the
-storage row's `updatedAt` (storage path) or the legacy row's
-`updated_at` column (fallback path); skipped when no row exists or
+Returns `{ sections, cacheHint }` (v0.8 — F2.4 contract preserved);
+`sections` is `null` when no row, builder disabled, input rejected, or
+the host has no Kysely handle on locals. The `cacheHint.tags` always
+carries `empixel:layout:<collection>:<entryId>` so admin saves can
+invalidate the host page by tag. `cacheHint.lastModified` is parsed
+from the storage row's `updatedAt`; skipped when no row exists or
 parsing fails. The hint is returned on every code path so host pages
 can call `Astro.cache.set(cacheHint)` unconditionally.
 

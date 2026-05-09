@@ -3,7 +3,74 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
-## Unreleased — 0.9.0 prep
+## 0.9.0 — 2026-05-09
+
+- **Breaking** — drop the `better-sqlite3` peer dependency. Plugin no
+  longer opens its own SQLite handle; all reads + writes go through
+  EmDash's `ctx.storage` (multi-driver: SQLite, Postgres, libSQL/D1).
+  Removed the `databasePath` option from `empixelBuilder({ ... })` —
+  storage is configured at the EmDash root in `astro.config.mjs`.
+  Hosts upgrading from 0.8.x: ensure F3.3's `migration_to_storage_v1`
+  ran successfully (check the `_plugin_storage` table for your plugin
+  id). Hosts on Postgres / libSQL: the migration is a no-op since the
+  legacy table never existed.
+
+  ### Migration steps for hosts
+
+  1. **Check that `migration_to_storage_v1` ran on your previous
+     deploy.** On 0.8.x the migration ran lazily on the first request
+     to a layout route after upgrade. Verify by querying your storage
+     back-end for the `_plugin_storage` row matching
+     `plugin_id = 'empixel-builder' AND collection = 'layouts'`. If
+     rows exist, you're done. (Hosts on Postgres / libSQL never had
+     the legacy table, so this is a no-op for you.)
+  2. **Remove the `databasePath` option** from your
+     `empixelBuilder({ ... })` call in `astro.config.mjs` if you set
+     it. The option is gone — storage is configured at the EmDash
+     root via `database()` in `astro.config.mjs`, not on the plugin.
+  3. **Optional: drop `better-sqlite3` from your host's
+     `peerDependencies`** if you only carried it for this plugin.
+     EmDash itself still uses `better-sqlite3` transitively for the
+     SQLite driver; only the explicit peer dep on the plugin side is
+     gone.
+
+- The legacy fallback paths in `src/plugin.ts` (route handlers
+  reading from `empixel_builder_layouts`, `content:afterDelete`
+  cascade DELETE) and `src/components/db.ts` (frontend reader's
+  `readFromLegacyTable`) are removed. The route handlers and frontend
+  reader are storage-only.
+- `src/dbShared.ts` is deleted. The shared SQLite handle factory
+  (`getDb`) and the `setDefaultDatabasePath` /
+  `resolveDatabasePath` helpers are gone — the plugin no longer
+  manages a SQLite singleton.
+- `runMigrationToStorageV1` keeps a dynamic-import bridge to
+  `better-sqlite3` so SQLite hosts upgrading from 0.8.x still copy
+  their legacy `empixel_builder_layouts` rows into `ctx.storage` on
+  first cold start. On Postgres / libSQL / D1 hosts where the
+  binary isn't installed, the migration silently no-ops and the KV
+  flag is set so future requests are O(1). The cold-start migrations
+  `runSpacerMigration` (v0.6 → divider-spacer) and
+  `runSlugToUlidMigration_v1` (v0.8 → ULID-keyed rows) are deleted —
+  both apply only to the legacy SQLite table that the plugin no
+  longer touches; any host that upgraded through 0.8.x already has
+  them flagged in `empixel_builder_meta`, and the F3.3 migration
+  copies the post-rewrite rows into `ctx.storage` regardless.
+- `getMigrationFlag` and `setMigrationFlag` no longer take a `db`
+  argument or mirror to the legacy `empixel_builder_meta` table. They
+  read/write `ctx.kv` only. The legacy-meta sync-forward path lives
+  inside `toStorageV1.ts` against the migration's own dynamically-
+  imported SQLite handle (so hosts that ran the migration pre-F3.2
+  still get the flag synced forward to KV on the F3.5 upgrade).
+- The `/settings` and `/toggle` routes no longer auto-add the
+  `empixel_builder INTEGER NOT NULL DEFAULT 0` column to
+  `ec_<collection>` via `ALTER TABLE`. The auto-augment helper
+  required direct SQLite access; with the multi-driver storage
+  abstraction, schema augmentation is back to seed-driven (declare
+  the column in your `seed.json`). The `/toggle` UPDATE that mirrors
+  the enable bit onto the host's row is best-effort via `ctx.db`
+  (Kysely) — failures log via `logCaught` and don't break the route.
+
+### Earlier work folded into 0.9.0
 
 - One-shot data migration `migration_to_storage_v1`. Copies every
   `empixel_builder_layouts` row into `ctx.storage.layouts` on first

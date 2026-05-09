@@ -1,43 +1,29 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
+import { describe, it, expect } from "vitest";
 
 import {
   createPlugin,
   layoutDocId,
-  readLayoutFromStorageOrLegacy,
+  readLayoutFromStorage,
   getMigrationFlag,
   setMigrationFlag,
 } from "../src/plugin.js";
-import {
-  _resetDbForTests,
-  getDb,
-  setDefaultDatabasePath,
-} from "../src/dbShared.js";
 import type { LayoutRow, StorageLayoutsCollection } from "../src/storage-types.js";
 import type { SectionBlock } from "../src/types.js";
 
 /**
- * F3.1 scope is **declarative**: declare `storage.layouts` on the plugin so
- * EmDash provisions the collection on `ctx.storage`. F3.2 will rewrite the
- * route handlers onto the typed storage handle; F3.3 will migrate rows.
+ * F3.1 + F3.2 + F3.5 unit coverage for the plugin's storage-side helpers.
  *
- * For now we verify three things without booting the EmDash core (which would
- * pull in a full Astro / DB stack just to inspect a config object):
+ * Post-F3.5 the read path is **storage-only** — `readLayoutFromStorage`
+ * just calls `ctx.storage.layouts.get(layoutDocId)`. The legacy SQLite
+ * fallback that lived in this file pre-F3.5 was deleted along with
+ * `dbShared.ts`. The only remaining bridge to the legacy table is the
+ * one-shot `runMigrationToStorageV1` migration in
+ * `src/migrations/toStorageV1.ts` (covered by `tests/toStorageV1.test.ts`).
  *
- *  1. `definePlugin` accepted our storage config and the resolved plugin
- *     surfaces it on `.storage` (sanity check: indexes + uniqueIndexes round
- *     trip exactly).
- *  2. The `LayoutRow` shape round-trips structurally through a stub
- *     `StorageLayoutsCollection` — proves Agent B can rely on the type alias
- *     without a runtime adapter.
- *  3. The composite `(collection, entryId)` index entry is the right shape
- *     for EmDash's `query({ where })` API (composite filter on the same pair).
- *
- * Once F3.2 lands we'll add a heavier integration test that boots a real
- * plugin manager + sqlite back-end. For F3.1 the lighter assertion keeps the
- * task self-contained.
+ * Likewise, `getMigrationFlag` / `setMigrationFlag` no longer take a
+ * `db` argument or mirror to `empixel_builder_meta`. They consult
+ * `ctx.kv` only — the migration runner owns the legacy-meta sync-forward
+ * path itself via dynamic-import inside `toStorageV1.ts`.
  */
 
 const ULID_A = "01HXAB000000000000000000AA";
@@ -54,8 +40,6 @@ describe("plugin.storage declaration", () => {
     const cfg = resolved.storage.layouts as {
       indexes: ReadonlyArray<readonly string[]>;
     };
-    // Composite index must be the first entry, exactly the (collection,
-    // entryId) pair — F3.2's query path relies on this.
     expect(cfg.indexes.length).toBeGreaterThanOrEqual(1);
     expect([...cfg.indexes[0]]).toEqual(["collection", "entryId"]);
   });
@@ -70,20 +54,12 @@ describe("plugin.storage declaration", () => {
   });
 
   it("does not declare a separate `meta` collection (KV is reused)", () => {
-    // F3.3's migration flag and any other plugin metadata stay on
-    // `ctx.kv` — the EmDash KV store already gives us key/value semantics
-    // without paying for a typed collection. Declared here so a future
-    // refactor doesn't accidentally split the metadata.
     expect(Object.keys(resolved.storage)).toEqual(["layouts"]);
   });
 });
 
 describe("LayoutRow round-trip through StorageLayoutsCollection", () => {
   it("structurally satisfies StorageCollection<LayoutRow>", async () => {
-    // Stub implementation that mirrors EmDash's `StorageCollection` surface
-    // (`get` / `put` / `delete` / `exists` / `getMany` / `putMany` /
-    // `deleteMany` / `query` / `count`). A real EmDash boot is gated behind
-    // the F3.2 task because it requires the full plugin manager.
     const store = new Map<string, LayoutRow>();
     const stub: StorageLayoutsCollection = {
       async get(id) {
@@ -138,8 +114,6 @@ describe("LayoutRow round-trip through StorageLayoutsCollection", () => {
       entryId: ULID_A,
       enabled: 1,
       sections,
-      // createdAt/updatedAt populated by the storage layer at runtime; on
-      // the writer side we just leave them off.
     };
 
     const docId = `pages::${ULID_A}`;
@@ -153,10 +127,7 @@ describe("LayoutRow round-trip through StorageLayoutsCollection", () => {
     expect(back!.sections).toEqual(sections);
   });
 
-  it("accepts boolean enabled (multi-driver coercion)", async () => {
-    // Postgres / D1 / Turso may coerce SQLite's INTEGER 0/1 into a boolean
-    // on read. The type alias accepts both shapes so consumers don't have
-    // to special-case the back-end.
+  it("accepts boolean enabled (multi-driver coercion)", () => {
     const store = new Map<string, LayoutRow>();
     const row: LayoutRow = {
       collection: "pages",
@@ -170,82 +141,7 @@ describe("LayoutRow round-trip through StorageLayoutsCollection", () => {
   });
 });
 
-// ─── F3.2 helper coverage ──────────────────────────────────────────────────
-
-const sandbox = mkdtempSync(join(tmpdir(), "empixel-storage-"));
-let counter = 0;
-function freshDbPath(): string {
-  counter += 1;
-  return join(sandbox, `test-${counter}.db`);
-}
-
-afterAll(() => {
-  _resetDbForTests();
-  rmSync(sandbox, { recursive: true, force: true });
-});
-
-/**
- * In-memory stub of `StorageLayoutsCollection`. Exposed as the
- * `ctx.storage.layouts` object passed to the helpers under test. We don't
- * boot the full EmDash plugin manager — too heavy for unit tests — so this
- * stub stands in.
- */
-function makeStorageStub(): {
-  collection: StorageLayoutsCollection;
-  store: Map<string, LayoutRow>;
-} {
-  const store = new Map<string, LayoutRow>();
-  const collection: StorageLayoutsCollection = {
-    async get(id) {
-      return store.get(id) ?? null;
-    },
-    async put(id, data) {
-      store.set(id, data);
-    },
-    async delete(id) {
-      return store.delete(id);
-    },
-    async exists(id) {
-      return store.has(id);
-    },
-    async getMany(ids) {
-      const map = new Map<string, LayoutRow>();
-      for (const id of ids) {
-        const v = store.get(id);
-        if (v) map.set(id, v);
-      }
-      return map;
-    },
-    async putMany(items) {
-      for (const { id, data } of items) store.set(id, data);
-    },
-    async deleteMany(ids) {
-      let n = 0;
-      for (const id of ids) if (store.delete(id)) n += 1;
-      return n;
-    },
-    async query(options) {
-      // Honor `where: { collection }` so the entries-route test can filter.
-      const where = options?.where ?? {};
-      const items: Array<{ id: string; data: LayoutRow }> = [];
-      for (const [id, data] of store.entries()) {
-        let pass = true;
-        for (const [field, value] of Object.entries(where)) {
-          if ((data as unknown as Record<string, unknown>)[field] !== value) {
-            pass = false;
-            break;
-          }
-        }
-        if (pass) items.push({ id, data });
-      }
-      return { items, hasMore: false };
-    },
-    async count() {
-      return store.size;
-    },
-  };
-  return { collection, store };
-}
+// ─── Helper coverage ────────────────────────────────────────────────────────
 
 interface StubLogCalls {
   warn: Array<{ msg: string; data?: unknown }>;
@@ -296,37 +192,51 @@ function makeKvStub(initial: Record<string, unknown> = {}): {
   return { kv, store, calls };
 }
 
-function bootstrapDbForFallback(collection: string): {
-  dbPath: string;
+function makeStorageStub(): {
+  collection: StorageLayoutsCollection;
+  store: Map<string, LayoutRow>;
 } {
-  _resetDbForTests();
-  const dbPath = freshDbPath();
-  setDefaultDatabasePath(dbPath);
-  const db = getDb();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS empixel_builder_layouts (
-      collection TEXT NOT NULL,
-      entry_id   TEXT NOT NULL,
-      sections   TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT DEFAULT (current_timestamp),
-      updated_at TEXT DEFAULT (current_timestamp),
-      enabled    INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (collection, entry_id)
-    )
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS empixel_builder_meta (
-      key   TEXT PRIMARY KEY,
-      value TEXT
-    )
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ec_${collection} (
-      id   TEXT PRIMARY KEY,
-      slug TEXT
-    )
-  `);
-  return { dbPath };
+  const store = new Map<string, LayoutRow>();
+  const collection: StorageLayoutsCollection = {
+    async get(id) {
+      return store.get(id) ?? null;
+    },
+    async put(id, data) {
+      store.set(id, data);
+    },
+    async delete(id) {
+      return store.delete(id);
+    },
+    async exists(id) {
+      return store.has(id);
+    },
+    async getMany(ids) {
+      const map = new Map<string, LayoutRow>();
+      for (const id of ids) {
+        const v = store.get(id);
+        if (v) map.set(id, v);
+      }
+      return map;
+    },
+    async putMany(items) {
+      for (const { id, data } of items) store.set(id, data);
+    },
+    async deleteMany(ids) {
+      let n = 0;
+      for (const id of ids) if (store.delete(id)) n += 1;
+      return n;
+    },
+    async query() {
+      return {
+        items: [...store.entries()].map(([id, data]) => ({ id, data })),
+        hasMore: false,
+      };
+    },
+    async count() {
+      return store.size;
+    },
+  };
+  return { collection, store };
 }
 
 describe("layoutDocId", () => {
@@ -335,15 +245,12 @@ describe("layoutDocId", () => {
   });
 
   it("uses `::` as the separator (so collection names with `:` would still parse)", () => {
-    // The COLLECTION_RE allowlist forbids `:` in collections, but we lock the
-    // separator anyway so future relaxations don't accidentally collide.
     expect(layoutDocId("a", "b").split("::")).toEqual(["a", "b"]);
   });
 });
 
-describe("readLayoutFromStorageOrLegacy — storage-first", () => {
-  it("returns the storage row when present (no legacy lookup)", async () => {
-    bootstrapDbForFallback("pages");
+describe("readLayoutFromStorage (F3.5 — storage-only)", () => {
+  it("returns the storage row when present", async () => {
     const { collection: layouts, store: storageStore } = makeStorageStub();
     const { log } = makeLogStub();
 
@@ -359,9 +266,8 @@ describe("readLayoutFromStorageOrLegacy — storage-first", () => {
       updatedAt: "2026-05-09T12:00:00.000Z",
     });
 
-    const row = await readLayoutFromStorageOrLegacy(
+    const row = await readLayoutFromStorage(
       { log, storage: { layouts } as unknown as import("emdash").PluginContext["storage"] },
-      getDb(),
       "pages",
       ULID_A
     );
@@ -371,144 +277,85 @@ describe("readLayoutFromStorageOrLegacy — storage-first", () => {
     expect(row!.sections).toEqual(sections);
   });
 
-  it("falls back to the legacy SELECT when storage is empty", async () => {
-    bootstrapDbForFallback("pages");
-    const db = getDb();
-    db.prepare(
-      "INSERT INTO empixel_builder_layouts (collection, entry_id, sections, enabled) VALUES (?, ?, ?, ?)"
-    ).run("pages", ULID_A, JSON.stringify([{ id: "y", type: "text", config: {} }]), 1);
-
+  it("returns null when storage doesn't have the row (no legacy fallback)", async () => {
     const { collection: layouts } = makeStorageStub();
     const { log } = makeLogStub();
 
-    const row = await readLayoutFromStorageOrLegacy(
+    const row = await readLayoutFromStorage(
       { log, storage: { layouts } as unknown as import("emdash").PluginContext["storage"] },
-      db,
-      "pages",
-      ULID_A
-    );
-    expect(row).not.toBeNull();
-    expect(row!.entryId).toBe(ULID_A);
-    expect(row!.enabled).toBe(1);
-    expect(row!.sections).toEqual([{ id: "y", type: "text", config: {} }]);
-  });
-
-  it("returns null when neither storage nor legacy has the row", async () => {
-    bootstrapDbForFallback("pages");
-    const { collection: layouts } = makeStorageStub();
-    const { log } = makeLogStub();
-
-    const row = await readLayoutFromStorageOrLegacy(
-      { log, storage: { layouts } as unknown as import("emdash").PluginContext["storage"] },
-      getDb(),
       "pages",
       ULID_A
     );
     expect(row).toBeNull();
   });
 
-  it("storage row shadows legacy row (storage wins)", async () => {
-    bootstrapDbForFallback("pages");
-    const db = getDb();
-    db.prepare(
-      "INSERT INTO empixel_builder_layouts (collection, entry_id, sections, enabled) VALUES (?, ?, ?, ?)"
-    ).run("pages", ULID_A, JSON.stringify([{ id: "stale", type: "text", config: {} }]), 1);
-
-    const { collection: layouts, store: storageStore } = makeStorageStub();
-    const { log } = makeLogStub();
-
-    storageStore.set(layoutDocId("pages", ULID_A), {
-      collection: "pages",
-      entryId: ULID_A,
-      enabled: 0,
-      sections: [{ id: "fresh", type: "text", config: {} } as SectionBlock],
-    });
-
-    const row = await readLayoutFromStorageOrLegacy(
-      { log, storage: { layouts } as unknown as import("emdash").PluginContext["storage"] },
-      db,
-      "pages",
-      ULID_A
-    );
-    expect(row).not.toBeNull();
-    expect(row!.sections).toEqual([{ id: "fresh", type: "text", config: {} }]);
-    expect(row!.enabled).toBe(0);
-  });
-
-  it("legacy fallback parses bad sections JSON without throwing (returns empty array + logs)", async () => {
-    bootstrapDbForFallback("pages");
-    const db = getDb();
-    db.prepare(
-      "INSERT INTO empixel_builder_layouts (collection, entry_id, sections, enabled) VALUES (?, ?, ?, ?)"
-    ).run("pages", ULID_A, "not valid json", 1);
-
-    const { collection: layouts } = makeStorageStub();
+  it("returns null and logs when ctx.storage.layouts.get throws", async () => {
+    const flakyLayouts: StorageLayoutsCollection = {
+      ...makeStorageStub().collection,
+      async get() {
+        throw new Error("simulated storage outage");
+      },
+    };
     const { log, calls } = makeLogStub();
 
-    const row = await readLayoutFromStorageOrLegacy(
-      { log, storage: { layouts } as unknown as import("emdash").PluginContext["storage"] },
-      db,
+    const row = await readLayoutFromStorage(
+      {
+        log,
+        storage: { layouts: flakyLayouts } as unknown as import("emdash").PluginContext["storage"],
+      },
       "pages",
       ULID_A
     );
-    expect(row).not.toBeNull();
-    expect(row!.sections).toEqual([]);
-    // The parse error is surfaced via the log, not thrown.
-    expect(calls.warn.some((c) => /parse sections JSON/.test(c.msg))).toBe(true);
+    expect(row).toBeNull();
+    expect(calls.warn.some((c) => /readLayoutFromStorage/.test(c.msg))).toBe(true);
   });
 });
 
-describe("getMigrationFlag", () => {
-  it("returns true when ctx.kv has the flag (no legacy lookup needed)", async () => {
-    bootstrapDbForFallback("pages");
+describe("getMigrationFlag (F3.5 — KV-only)", () => {
+  it("returns true when ctx.kv has the flag", async () => {
     const { kv } = makeKvStub({ "state:migration:foo_v1": "ts" });
     const { log } = makeLogStub();
 
-    const result = await getMigrationFlag({ log, kv }, getDb(), "foo_v1");
+    const result = await getMigrationFlag({ log, kv }, "foo_v1");
     expect(result).toBe(true);
   });
 
-  it("syncs legacy meta flag forward to KV when KV is empty but meta has it", async () => {
-    bootstrapDbForFallback("pages");
-    const db = getDb();
-    db.prepare("INSERT INTO empixel_builder_meta (key, value) VALUES (?, ?)").run("foo_v1", "1234");
-
-    const { kv, calls } = makeKvStub({});
-    const { log } = makeLogStub();
-
-    const result = await getMigrationFlag({ log, kv }, db, "foo_v1");
-    expect(result).toBe(true);
-    // The legacy value should have been pushed to KV so subsequent calls
-    // skip the SQL lookup.
-    expect(calls.set).toHaveLength(1);
-    expect(calls.set[0].key).toBe("state:migration:foo_v1");
-    expect(calls.set[0].value).toBe("1234");
-  });
-
-  it("returns false when neither KV nor legacy meta has the flag", async () => {
-    bootstrapDbForFallback("pages");
+  it("returns false when KV doesn't have the flag (no legacy meta lookup)", async () => {
     const { kv } = makeKvStub({});
     const { log } = makeLogStub();
 
-    const result = await getMigrationFlag({ log, kv }, getDb(), "missing_v1");
+    const result = await getMigrationFlag({ log, kv }, "missing_v1");
     expect(result).toBe(false);
+  });
+
+  it("returns false and logs when ctx.kv.get throws", async () => {
+    const flakyKv: import("emdash").KVAccess = {
+      async get() {
+        throw new Error("kv outage");
+      },
+      async set() {},
+      async delete() {
+        return false;
+      },
+      async list() {
+        return [];
+      },
+    };
+    const { log, calls } = makeLogStub();
+
+    const result = await getMigrationFlag({ log, kv: flakyKv }, "foo_v1");
+    expect(result).toBe(false);
+    expect(calls.warn.some((c) => /getMigrationFlag/.test(c.msg))).toBe(true);
   });
 });
 
-describe("setMigrationFlag", () => {
-  it("writes to both KV and the legacy meta table", async () => {
-    bootstrapDbForFallback("pages");
-    const db = getDb();
+describe("setMigrationFlag (F3.5 — KV-only)", () => {
+  it("writes to KV (no legacy meta mirror)", async () => {
     const { kv, store: kvStore } = makeKvStub({});
     const { log } = makeLogStub();
 
-    await setMigrationFlag({ log, kv }, db, "bar_v1", "789");
+    await setMigrationFlag({ log, kv }, "bar_v1", "789");
 
     expect(kvStore.get("state:migration:bar_v1")).toBe("789");
-
-    const row = db
-      .prepare("SELECT value FROM empixel_builder_meta WHERE key = ?")
-      .get("bar_v1") as { value: string } | undefined;
-    expect(row?.value).toBe("789");
   });
 });

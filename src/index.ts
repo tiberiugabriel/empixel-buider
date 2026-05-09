@@ -1,25 +1,23 @@
 import type { PluginDescriptor } from "emdash";
-import { setDefaultDatabasePath } from "./dbShared.js";
 
-export interface EmpixelBuilderOptions {
-  /**
-   * Override the path to the SQLite file backing the plugin's layout store.
-   * Defaults to `<process.cwd()>/data.db` (the host EmDash site's database).
-   * Both the plugin runtime and the frontend reader resolve through the
-   * shared `getDb()` factory in `src/dbShared.ts`.
-   */
-  databasePath?: string;
-}
+/**
+ * Plugin options. As of v0.9.0 this shape is empty — the
+ * `databasePath` option (introduced in v0.7.1, removed in v0.9.0) is
+ * gone because the plugin no longer opens its own SQLite handle. All
+ * reads + writes go through EmDash's `ctx.storage` multi-driver
+ * abstraction; the database driver is configured at the EmDash root in
+ * `astro.config.mjs`, not on the plugin.
+ *
+ * Defined as an alias of `Record<string, never>` so future options can
+ * be added without a breaking signature change while keeping ESLint's
+ * `no-empty-object-type` happy.
+ */
+export type EmpixelBuilderOptions = Record<string, never>;
 
-export function empixelBuilder(options?: EmpixelBuilderOptions): PluginDescriptor {
-  // Record the path so subsequent `getDb()` calls (from `plugin.ts` and the
-  // Astro reader in `components/db.ts`) resolve to it without each call site
-  // having to thread the option through.
-  setDefaultDatabasePath(options?.databasePath);
-
+export function empixelBuilder(_options?: EmpixelBuilderOptions): PluginDescriptor {
   return {
     id: "empixel-builder",
-    version: "0.8.0",
+    version: "0.9.0",
     format: "native",
     entrypoint: "empixel-builder/plugin",
     adminEntry: "empixel-builder/admin",

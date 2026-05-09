@@ -4,7 +4,7 @@
 
 > **Work in progress** — this plugin is in active development and may contain bugs. Contributions are welcome!
 
-> **Native plugin only** — empixel-builder uses a custom React admin page and relies on Node.js APIs (SQLite via `better-sqlite3`). It cannot be used in Cloudflare Workers or other edge/serverless environments.
+> **Native plugin only** — empixel-builder uses a custom React admin page and relies on Node.js APIs. It cannot be used in Cloudflare Workers or other edge/serverless environments.
 
 Page builder plugin for [EmDash](https://github.com/emdash-cms/emdash) — drag-and-drop sections with custom styles, saved as JSON.
 
@@ -20,12 +20,7 @@ Then register the plugin automatically:
 npx empixel-builder add
 ```
 
-This command does two things:
-
-1. Adds the import and registers the plugin in your `astro.config.mjs`
-2. Creates the `empixel_builder_layouts` table in `data.db` (EmDash's SQLite database)
-
-> **Note:** Run `npx emdash dev` at least once before running `npx empixel-builder add` so that `data.db` exists. If the database is not found, the table will be created automatically on the first server start.
+This command adds the import and registers the plugin in your `astro.config.mjs`, then patches your `[slug].astro` page files to render layouts via `<BuilderWrapper>`.
 
 Restart your dev server after running the command.
 
@@ -45,17 +40,30 @@ export default defineConfig({
 });
 ```
 
-### Options
+### Database driver
 
-`empixelBuilder()` accepts an optional configuration object:
-
-| Option         | Type     | Default                       | Description                                                                                                              |
-| -------------- | -------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `databasePath` | `string` | `<process.cwd()>/data.db`     | Path to the SQLite file backing the plugin. Both the plugin runtime and the Astro frontend reader share this connection. |
+As of v0.9.0, the plugin no longer opens its own SQLite handle. All
+reads + writes go through EmDash's `ctx.storage` multi-driver storage
+abstraction — your layouts are persisted in whichever back-end you
+configure at the EmDash root in `astro.config.mjs`:
 
 ```js
-empixelBuilder({ databasePath: "./custom/path/data.db" });
+import { defineConfig } from "astro/config";
+import { emdash, database } from "emdash";
+import { empixelBuilder } from "empixel-builder";
+
+export default defineConfig({
+  integrations: [
+    emdash({
+      database: database.sqlite("./data.db"),  // or .postgres(...) / .libsql(...)
+      plugins: [empixelBuilder()],
+    }),
+  ],
+});
 ```
+
+The plugin works on any driver EmDash supports — SQLite (default),
+Postgres, libSQL/Turso, and Cloudflare D1.
 
 ## Usage
 
@@ -65,23 +73,23 @@ Open the editor, build your page layout with drag-and-drop sections, and save. T
 
 ## Caching builder layouts
 
-`getBuilderLayout` returns `{ sections, cacheHint }`. The `cacheHint` carries
-the layout-scoped tag `empixel:layout:<collection>:<entryId>` plus a
-`lastModified` derived from the row's `updated_at`. Pass it to
-`Astro.cache.set(...)` and admin layout saves invalidate the host page
-automatically.
+`getBuilderLayout` returns `Promise<{ sections, cacheHint }>`. The
+`cacheHint` carries the layout-scoped tag
+`empixel:layout:<collection>:<entryId>` plus a `lastModified` derived
+from the storage row's `updatedAt`. Pass it to `Astro.cache.set(...)`
+and admin layout saves invalidate the host page automatically.
 
 ### Automatic — recommended
 
-`<BuilderWrapper>` reads the result object and calls `Astro.cache.set`
-for you. Pass the whole `BuilderLayoutResult` through and the cache hint
-is plumbed transparently:
+`<BuilderWrapper>` reads the (resolved or unawaited) result object and
+calls `Astro.cache.set` for you:
 
 ```astro
 ---
 import { getBuilderLayout, BuilderWrapper } from "empixel-builder/astro";
 
 const builderLayout = getBuilderLayout(
+  Astro,
   "posts",
   post.data.id,
   post.data.empixel_builder,
@@ -97,13 +105,15 @@ const builderLayout = getBuilderLayout(
 
 ### Manual — for pages that don't use `<BuilderWrapper>`
 
-Destructure the result and call `Astro.cache.set` yourself:
+`await` the call, destructure the result, and call `Astro.cache.set`
+yourself:
 
 ```astro
 ---
 import { getBuilderLayout, LayoutRenderer } from "empixel-builder/astro";
 
-const { sections, cacheHint } = getBuilderLayout(
+const { sections, cacheHint } = await getBuilderLayout(
+  Astro,
   "posts",
   post.data.id,
   post.data.empixel_builder,
@@ -120,11 +130,10 @@ that creates the row still busts the host page's cache by tag.
 
 ## Requirements
 
-- **Node.js >= 20** (required by `better-sqlite3` 12, which ships native bindings built against Node 20)
+- **Node.js >= 20** (required by EmDash core)
 - `emdash` >= 0.9.0
 - `astro` >= 6.0.0
 - `react` >= 19.0.0
-- `better-sqlite3` >= 12.0.0 (included with EmDash)
 
 ---
 
