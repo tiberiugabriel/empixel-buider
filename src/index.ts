@@ -17,7 +17,7 @@ export type EmpixelBuilderOptions = Record<string, never>;
 export function empixelBuilder(_options?: EmpixelBuilderOptions): PluginDescriptor {
   return {
     id: "empixel-builder",
-    version: "0.9.0",
+    version: "0.9.5",
     format: "native",
     entrypoint: "empixel-builder/plugin",
     adminEntry: "empixel-builder/admin",

@@ -3,7 +3,7 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
-## Unreleased — 0.9.5 prep
+## 0.9.5 — 2026-05-09
 
 - **F3.5.8 — block-author guide added to `.claude/prd-blocks.md`.** Phase
   F3.5 (Block Settings Standardization) is now complete: declarative
