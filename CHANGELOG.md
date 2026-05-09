@@ -3,6 +3,49 @@
 All notable changes to `empixel-builder`. Format roughly Keep-a-Changelog,
 SemVer.
 
+## 1.0.2 — 2026-05-09
+
+**P0 fix — F4.2 ETag/304 dropped; GET handler now returns plain object.**
+F4.2's `Response` returns from the `/layout` GET handler broke under
+EmDash's plugin route framework (`route.handler` return value is wrapped
+as `{ data: <return-value> }` — `Response` objects serialize to `{}`,
+so the client saw `{"data":{}}` and the builder loaded with empty
+sections; verified at
+`node_modules/emdash/dist/search-DkN-BqsS.mjs:7332-7336`). The handler
+now returns the payload directly (`{ sections: SectionBlock[] }` or
+`null`); EmDash wraps it.
+
+- ETag computation, `If-None-Match` 304 short-circuit, and
+  `Last-Modified` header all removed from the GET handler. They were
+  incompatible with the framework wrap. CDN / reverse-proxy HTTP-level
+  caching is the host's call.
+- In-memory LRU cache stays — still skips the storage round-trip on a
+  warm hit. `LayoutCacheEntry` shape changed from
+  `{ body: string; etag: string; lastModified: Date }` to
+  `{ payload: { sections: SectionBlock[] } | null; lastModified: Date }`.
+  Capacity 200, LRU eviction, recency promotion on hit.
+- `badRequest` helper switched from returning `Response` (same wrap
+  problem) to throwing `PluginRouteError("BAD_REQUEST", ..., 400)` so
+  EmDash returns a proper 400 status with structured error payload.
+  New `methodNotAllowed()` helper does the same for 405. All
+  `new Response(...)` returns scattered across the route handlers
+  (settings, toggle, breakpoints, layout method-not-allowed) replaced
+  with the same throw pattern; the bare-object `{ error: "..." }`
+  returns in `entries` / `toggle` likewise replaced with throws.
+- `buildBlockChromeCss` memoize in `styleUtils.ts` (orthogonal F4.2
+  perf win) is untouched.
+
+Test suite adapted: dropped the ETag round-trip / mismatch / 304 tests
+(no longer applicable); kept the cache hit / eviction / recency /
+invalidation / cross-collection-isolation tests with the new
+parsed-payload assertions. 413 → 414 tests (added a deep-equality
+case on the cached payload).
+
+Files: `src/plugin.ts`, `tests/cacheETag.test.ts`, `package.json`,
+`src/index.ts`, `CHANGELOG.md`, `.claude/prd-backend.md`,
+`.claude/coordination/status/agent-a.md`. Pipeline: lint + typecheck +
+414 tests + build all green.
+
 ## 1.0.1 — 2026-05-09
 
 **P0 hotfix on top of 1.0.0** — F4.1 (CSS coalescing) reverted because the

@@ -373,39 +373,60 @@ re-introduces SQL injection — see audit C1.
   after `runSlugToUlidMigration_v1` (see Migrations). Pre-F3.5peer this
   used a Kysely handle on `ctx.db`, which never existed on
   `PluginContext` — see `/entries` route docs for the diagnosis.
-- Reads through `readLayoutFromStorageOrLegacy(ctx, db, collection,
-  pageId)` (v0.9 — F3.2): tries `ctx.storage.layouts.get` first, falls
-  back to a single direct SELECT against `empixel_builder_layouts` if
-  the storage collection doesn't yet have the row. The fallback exists
-  for one version while F3.3 migrates rows; F3.5 drops it.
-- F4.2 — response goes through an **in-memory LRU cache** keyed by
-  the post-slug-→-ULID `${collection}::${entryId}`, capacity 200,
-  eviction LRU via `Map` re-set on hit. Cache holds the serialized
-  body, the ETag, and the parsed `lastModified` (from the row's
-  `updatedAt`). A conditional GET with `If-None-Match` matching the
-  cached ETag returns **304 Not Modified** without a body. Cache
-  busts on `POST /layout`, `POST /toggle`, and the
-  `content:afterDelete` hook for the same key. Missing rows
-  (`{ data: null }`) are also cached — repeat reads on a not-yet-built
-  page short-circuit to 304 the same way.
-- Returns `{ data: { sections: SectionBlock[] } }` or `{ data: null }`
+- Reads through `readLayoutFromStorage(ctx, collection, pageId)` —
+  storage-only via `ctx.storage.layouts.get(layoutDocId)`. The legacy
+  SQLite fallback was dropped in F3.5; the cold-start migration
+  `runMigrationToStorageV1` is the bridge for old installs.
+- Response is cached in the in-memory LRU (see "Layout LRU cache" below).
+- **Return shape — handler returns the payload directly.** The route
+  handler returns `{ sections: SectionBlock[] }` for an existing row or
+  `null` for a missing row. The EmDash plugin route framework then
+  wraps the return value as `{ success: true, data: <return-value>,
+  status: 200 }` (verified at
+  `node_modules/emdash/dist/search-DkN-BqsS.mjs:7332-7336`), so the
+  HTTP response body is `{"data":{"sections":[...]}}` or
+  `{"data":null}`. Client's `useBuilderPersistence.ts` does
+  `data?.sections ?? []` and handles both paths.
 
 **POST** `{ pageId, collection, sections }` → Save layout.
 - Same slug → ULID resolution as GET — writes always land under the canonical ULID key.
-- Reads the existing row first (storage-then-legacy) so the per-entry
-  `enabled` flag isn't clobbered. Then writes through
-  `ctx.storage.layouts.put(...)` ONLY (v0.9 — F3.2). The legacy table is
-  no longer touched on writes; reads still consult it for one version.
-- F4.2 — calls `invalidateLayoutCache(collection, entryId)` after the
+- Reads the existing row first so the per-entry `enabled` flag isn't
+  clobbered. Then writes through `ctx.storage.layouts.put(...)` ONLY
+  (v0.9 — F3.2).
+- Calls `invalidateLayoutCache(collection, entryId)` after the
   storage `put` so the next GET serves the fresh row.
-- Returns `{ success: true }`
+- Returns `{ success: true }` (framework wraps to
+  `{"data":{"success":true}}`).
 
-### Layout LRU + ETag (v0.9.7 — F4.2)
+### EmDash plugin route framework — return-shape contract
 
-`/layout` GET sits on the hot path of every admin canvas open and
-every host-page render of an enabled entry. F4.2 adds an in-process
-LRU cache + ETag round trip so warm hits skip the storage round-trip
-and conditional GETs short-circuit to 304.
+`route.handler(ctx)` return values are wrapped as `{ success: true,
+data: <return-value>, status: 200 }` (verified at
+`node_modules/emdash/dist/search-DkN-BqsS.mjs:7332-7336`). The framework
+controls Content-Type / status / headers — handlers cannot return
+`Response` instances without breaking the wrap (a `Response` object
+serializes to `{}` because it has no enumerable own properties; the
+client sees `{"data":{}}`).
+
+For non-200 statuses, throw `PluginRouteError(code, message, status,
+details?)` — the framework catches it and produces
+`{ success: false, error: { code, message, details }, status }`. Use
+the local helpers `badRequest(msg)` (throws 400) and
+`methodNotAllowed()` (throws 405). Both are typed `: never` so TS
+narrows non-null assertions correctly after the call.
+
+This contract is the reason F4.2's HTTP-level caching (ETag / 304 /
+`Last-Modified` headers via `Response` returns) was dropped in 1.0.2 —
+it wasn't compatible with the framework wrap. The in-memory LRU cache
+stays because it's an internal implementation detail (the route handler
+still returns a payload, the cache just skips the storage read on a
+warm hit).
+
+### Layout LRU cache (v1.0.2 — F4.2 reshaped)
+
+`/layout` GET sits on the hot path of every admin canvas open and every
+host-page render of an enabled entry. The in-process LRU cache lets
+warm hits skip the storage round-trip + the `stripUnknownBlocks` walk.
 
 - **Cache key** — `${collection}::${entryId}` (after slug→ULID
   resolution). Distinct collections with the same entry id stay
@@ -413,31 +434,34 @@ and conditional GETs short-circuit to 304.
 - **Capacity** — 200 entries. Eviction on overflow drops the
   insertion-order head (oldest); on a hit, the entry is `delete`d
   and `set` again so insertion order tracks recency.
-- **Cache value** — `{ body: string; etag: string; lastModified: Date }`.
-  The body is the already-serialized JSON so warm hits don't
-  re-`JSON.stringify`. The ETag is `"<sha1>"` of the body
-  (`crypto.createHash("sha1").update(body).digest("hex")`,
-  double-quoted per RFC 7232). `lastModified` is parsed from the
-  row's `updatedAt`; falls back to "now" when the row is absent.
+- **Cache value** — `{ payload: { sections: SectionBlock[] } | null;
+  lastModified: Date }`. The `payload` is the parsed object that the
+  handler returns directly (the framework wraps it to
+  `{ data: payload }` on the way out). Pre-1.0.2 this stored the
+  serialized body string + ETag + `lastModified` for HTTP-level
+  caching, but the `Response` returns required to surface ETag /
+  `Last-Modified` headers were incompatible with the EmDash route
+  framework wrap.
+- **`lastModified`** — parsed from the row's `updatedAt`; falls back
+  to "now" when the row is absent. Retained on the cache entry so a
+  future re-introduction of HTTP-level caching (CDN / reverse proxy
+  / framework upgrade) has the value handy without a re-read.
 - **Invalidation** — `POST /layout`, `POST /toggle`, and
   `content:afterDelete` each call `invalidateLayoutCache(collection,
   entryId)` after a successful storage mutation. Cache miss on the
-  next GET re-populates with fresh body + ETag.
-- **304 semantics** — GET checks the request's `If-None-Match`
-  header. If it matches the cached ETag, returns 304 with `ETag:`
-  and `Last-Modified:` headers and an empty body. Otherwise the
-  cached body is returned with a fresh `Content-Type: application/json`.
+  next GET re-populates with the fresh payload.
 - **Test exports** — `_resetLayoutCache()` and `_layoutCacheSize()`
-  are underscore-prefixed test-only helpers. Not part of the
-  public surface.
+  are underscore-prefixed test-only helpers. Not part of the public
+  surface.
 
-The cache is process-local. EmDash multi-worker hosts (or future
-horizontally-scaled deployments) get one cache per worker — the
-storage layer is the source of truth, so workers stay consistent
-because invalidation is local-only and the next GET on a stale
-worker just falls through to `ctx.storage.layouts.get`. Hosts who
-need cross-worker invalidation should layer a CDN / reverse-proxy
-cache in front using the ETag we already emit.
+The cache is process-local. EmDash multi-worker hosts get one cache per
+worker — the storage layer is the source of truth, so workers stay
+consistent because invalidation is local-only and the next GET on a
+stale worker just falls through to `ctx.storage.layouts.get`. Hosts who
+need cross-worker / HTTP-level caching should layer a CDN /
+reverse-proxy cache in front and tune the cache headers there (the
+plugin route framework controls the response envelope, so we can't set
+ETag / Last-Modified ourselves).
 
 ### `entries` — GET
 **GET** `?collection=<name>&limit=<n>` → List all entries for a collection with builder metadata.

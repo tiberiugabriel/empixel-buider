@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { definePlugin } from "emdash";
+import { definePlugin, PluginRouteError } from "emdash";
 import type { RouteContext, PluginContext, PluginStorageConfig } from "emdash";
 import type { SectionBlock, BreakpointsConfig, BreakpointId } from "./types.js";
 import { DEFAULT_BREAKPOINTS_CONFIG, stripUnknownBlocks } from "./types.js";
@@ -96,20 +95,25 @@ function getLayouts(ctx: { storage: PluginContext["storage"] }): StorageLayoutsC
   return ctx.storage.layouts as StorageLayoutsCollection;
 }
 
-// ─── F4.2: in-memory LRU cache + ETag for /layout GET ───────────────────────
+// ─── F4.2 (post-1.0.2): in-memory LRU cache for /layout GET ─────────────────
 //
 // `/layout` GET is hit on every admin canvas open and every host-page render
-// of an enabled entry. The full path is fast-but-not-free: two lazy-gate
-// migration checks → slug-resolve → `ctx.storage.layouts.get` →
-// `stripUnknownBlocks` → `JSON.stringify` for the response body. We cache the
-// final response body string keyed by `${collection}::${entryId}`, served back
-// in O(1) on a hit. Capacity 200 entries with LRU eviction (`Map` re-set on
-// hit; insertion order = recency).
+// of an enabled entry. The path is fast-but-not-free: two lazy-gate migration
+// checks → slug-resolve → `ctx.storage.layouts.get` → `stripUnknownBlocks`.
+// We cache the parsed payload keyed by `${collection}::${entryId}` so warm
+// hits skip the storage round-trip entirely. Capacity 200 entries with LRU
+// eviction (`Map` re-set on hit; insertion order = recency).
 //
-// ETag: SHA-1 of the response body. Returned as `ETag: "<hash>"`. A
-// conditional GET that includes `If-None-Match` matching the cached ETag
-// short-circuits to `304 Not Modified` with no body. ETags are persisted
-// alongside the body in the cache so we don't recompute the hash on hits.
+// **No HTTP-level caching.** F4.2 (1.0.0/1.0.1) attempted ETag / `If-None-Match`
+// 304 / `Last-Modified` via `Response` returns from the route handler, but
+// EmDash's plugin route framework wraps the handler return value as
+// `{ success: true, data: <return-value>, status: 200 }` (verified at
+// `node_modules/emdash/dist/search-DkN-BqsS.mjs:7332-7336`). A `Response`
+// instance has no enumerable own properties, so `JSON.stringify` produced
+// `{}` and the client saw `{"data":{}}` with empty sections (P0 in 1.0.2).
+// The route framework owns Content-Type / status / headers — we can't return
+// `Response` from the handler. So 1.0.2 drops the HTTP-level cache and keeps
+// only the in-memory LRU. CDN / reverse-proxy caching is the host's call.
 //
 // Invalidation: every write path that mutates a layout calls
 // `invalidateLayoutCache(collection, entryId)`. Today that's
@@ -117,8 +121,7 @@ function getLayouts(ctx: { storage: PluginContext["storage"] }): StorageLayoutsC
 const LAYOUT_CACHE_CAPACITY = 200;
 
 interface LayoutCacheEntry {
-  body: string;
-  etag: string;
+  payload: { sections: SectionBlock[] } | null;
   lastModified: Date;
 }
 
@@ -165,10 +168,6 @@ export function _resetLayoutCache(): void {
  */
 export function _layoutCacheSize(): number {
   return layoutCache.size;
-}
-
-function computeEtag(body: string): string {
-  return `"${createHash("sha1").update(body).digest("hex")}"`;
 }
 
 /**
@@ -250,11 +249,27 @@ export async function setMigrationFlag(
   }
 }
 
-function badRequest(message: string): Response {
-  return new Response(
-    JSON.stringify({ error: { message } }),
-    { status: 400, headers: { "Content-Type": "application/json" } }
-  );
+/**
+ * Throw a 400 Bad Request through the EmDash plugin route framework.
+ *
+ * Pre-1.0.2 this returned a `Response` object. EmDash's route framework
+ * wraps `route.handler(ctx)` return values as `{ success: true, data:
+ * <return-value>, status: 200 }` (verified at
+ * `node_modules/emdash/dist/search-DkN-BqsS.mjs:7332-7336`); a `Response`
+ * has no enumerable own properties so `JSON.stringify` produced `{}` and
+ * clients saw `{"data":{}}` instead of the validation error. The framework
+ * has explicit `PluginRouteError` support — it catches the throw and
+ * produces a proper `{ success: false, error: { code, message }, status }`
+ * response, so we throw instead. Caller never sees the helper return.
+ */
+function badRequest(message: string): never {
+  throw new PluginRouteError("BAD_REQUEST", message, 400);
+}
+
+/** Throw a 405 Method Not Allowed through the framework. Same wrap story
+ * as `badRequest`. */
+function methodNotAllowed(): never {
+  throw new PluginRouteError("METHOD_NOT_ALLOWED", "Method Not Allowed", 405);
 }
 
 /**
@@ -505,10 +520,10 @@ export function createPlugin() {
             let pageId = url.searchParams.get("pageId");
             const collection = url.searchParams.get("collection");
             if (!pageId || !collection) {
-              return badRequest("pageId and collection are required");
+              badRequest("pageId and collection are required");
             }
             if (!isValidCollection(collection)) {
-              return badRequest("Invalid collection name");
+              badRequest("Invalid collection name");
             }
 
             // F3.3 lazy gate — migrate legacy SQLite rows into ctx.storage
@@ -525,77 +540,40 @@ export function createPlugin() {
 
             // Fresh-entry case: the host CMS may pass a slug for an entry
             // that has never been saved through the builder before.
-            // Resolve through `ctx.db` (Kysely) — works across SQLite,
-            // Postgres, libSQL, etc.
             pageId = await resolveSlugToUlid(ctx, collection, pageId);
 
-            // F4.2 — cache hit path. If we have a body cached for the
-            // resolved (collection, entryId), check `If-None-Match`
-            // against the stored ETag and return 304 on a match;
-            // otherwise serve the cached body straight away. Both paths
-            // skip the `ctx.storage.layouts.get` round trip + the
-            // `stripUnknownBlocks` walk.
-            const ifNoneMatch = ctx.request.headers.get("if-none-match");
+            // Cache hit path. We return the parsed payload directly — the
+            // EmDash route framework wraps it to `{ data: payload }` on the
+            // way out (the wrap is unconditional and we can't return a
+            // `Response` here without breaking the wrap; see the comment on
+            // `LayoutCacheEntry` above + the 1.0.2 P0 fix).
             const cached = getLayoutCache(collection, pageId);
             if (cached) {
-              if (ifNoneMatch && ifNoneMatch === cached.etag) {
-                return new Response(null, {
-                  status: 304,
-                  headers: {
-                    ETag: cached.etag,
-                    "Last-Modified": cached.lastModified.toUTCString(),
-                  },
-                });
-              }
-              return new Response(cached.body, {
-                status: 200,
-                headers: {
-                  "Content-Type": "application/json",
-                  ETag: cached.etag,
-                  "Last-Modified": cached.lastModified.toUTCString(),
-                },
-              });
+              return cached.payload;
             }
 
             // Storage-only read. The legacy SQLite fallback was removed
             // in F3.5; `runMigrationToStorageV1` is the bridge for old
             // installs.
             const row = await readLayoutFromStorage(ctx, collection, pageId);
-            const payload = row
-              ? { data: { sections: stripUnknownBlocks(row.sections) } }
-              : { data: null };
-            const body = JSON.stringify(payload);
-            const etag = computeEtag(body);
-            // `lastModified` derives from the row's `updatedAt` (so
-            // hosts get accurate `If-Modified-Since` semantics on
-            // subsequent reads); fall back to "now" when the row is
-            // absent so the cache still has a value, even though the
-            // 304 path won't actually use it on a missing row.
+            const payload: { sections: SectionBlock[] } | null = row
+              ? { sections: stripUnknownBlocks(row.sections) }
+              : null;
+            // `lastModified` derives from the row's `updatedAt` so an
+            // upcoming HTTP-level cache (CDN / reverse proxy / future redo)
+            // can still surface it. Falls back to "now" when the row is
+            // absent so the cache entry always has a value.
             const lastModifiedDate = row?.updatedAt
               ? new Date(row.updatedAt)
               : new Date();
             const lastModified = isNaN(lastModifiedDate.getTime())
               ? new Date()
               : lastModifiedDate;
-            setLayoutCache(collection, pageId, { body, etag, lastModified });
-
-            if (ifNoneMatch && ifNoneMatch === etag) {
-              return new Response(null, {
-                status: 304,
-                headers: {
-                  ETag: etag,
-                  "Last-Modified": lastModified.toUTCString(),
-                },
-              });
-            }
-            return new Response(body, {
-              status: 200,
-              headers: {
-                "Content-Type": "application/json",
-                ETag: etag,
-                "Last-Modified": lastModified.toUTCString(),
-              },
-            });
+            setLayoutCache(collection, pageId, { payload, lastModified });
+            // EmDash wraps `null` to `{ data: null }`; the client's
+            // `useBuilderPersistence.ts` handles that path via
+            // `data?.sections ?? []`.
+            return payload;
           }
 
           if (method === "POST") {
@@ -603,10 +581,10 @@ export function createPlugin() {
             let pageId = body?.pageId;
             const { collection, sections } = body ?? {};
             if (!pageId || !collection || !sections) {
-              return badRequest("pageId, collection and sections are required");
+              badRequest("pageId, collection and sections are required");
             }
             if (!isValidCollection(collection)) {
-              return badRequest("Invalid collection name");
+              badRequest("Invalid collection name");
             }
 
             // F3.3 lazy gate — same as GET. Idempotent + cached after first run.
@@ -637,7 +615,7 @@ export function createPlugin() {
             return { success: true };
           }
 
-          return new Response("Method Not Allowed", { status: 405 });
+          methodNotAllowed();
         },
       },
 
@@ -653,17 +631,14 @@ export function createPlugin() {
       settings: {
         handler: async (ctx: RouteContext) => {
           if (ctx.request.method !== "POST") {
-            return new Response("Method Not Allowed", { status: 405 });
+            methodNotAllowed();
           }
           const body = ctx.input as { collection?: string; enabled?: boolean } | undefined;
           if (!body?.collection) {
-            return new Response(
-              JSON.stringify({ error: { message: "collection is required" } }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
-            );
+            badRequest("collection is required");
           }
           if (!isValidCollection(body.collection)) {
-            return badRequest("Invalid collection name");
+            badRequest("Invalid collection name");
           }
 
           // The pre-F3.5 implementation auto-augmented the host's
@@ -691,7 +666,7 @@ export function createPlugin() {
           const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10), 200);
 
           if (!isValidCollection(collection)) {
-            return { error: "Invalid collection name" };
+            badRequest("Invalid collection name");
           }
 
           const items = await listEntriesForCollection(ctx, collection, limit);
@@ -703,17 +678,17 @@ export function createPlugin() {
       toggle: {
         handler: async (ctx: RouteContext) => {
           if (ctx.request.method !== "POST") {
-            return { error: "Method Not Allowed" };
+            methodNotAllowed();
           }
           const body = ctx.input as { entryId?: string; collection?: string; enabled?: boolean } | undefined;
           let entryId = body?.entryId;
           const collection = body?.collection;
 
           if (!entryId || !collection) {
-            return { error: "entryId and collection are required" };
+            badRequest("entryId and collection are required");
           }
           if (!isValidCollection(collection)) {
-            return { error: "Invalid collection name" };
+            badRequest("Invalid collection name");
           }
 
           // F3.3 lazy gate — toggle is one of the first writes a host hits
@@ -775,10 +750,7 @@ export function createPlugin() {
           if (ctx.request.method === "POST") {
             const body = ctx.input as Partial<BreakpointsConfig> | undefined;
             if (!body || !Array.isArray(body.enabled)) {
-              return new Response(
-                JSON.stringify({ error: { message: "enabled array is required" } }),
-                { status: 400, headers: { "Content-Type": "application/json" } }
-              );
+              badRequest("enabled array is required");
             }
             // Non-removable breakpoints are always included
             const enabled = Array.from(new Set([...NON_REMOVABLE_BREAKPOINTS, ...body.enabled])) as BreakpointId[];
@@ -789,7 +761,7 @@ export function createPlugin() {
             await ctx.kv.set(KV_BREAKPOINTS, config);
             return { success: true, data: config };
           }
-          return new Response("Method Not Allowed", { status: 405 });
+          methodNotAllowed();
         },
       },
     },
